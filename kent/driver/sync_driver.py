@@ -56,6 +56,7 @@ from kent.data_types import (
     ArchiveResponse,
     BaseRequest,
     BaseScraper,
+    EstimateData,
     NavigatingRequest,
     NonNavigatingRequest,
     ParsedData,
@@ -708,6 +709,8 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
                 match item:
                     case ParsedData():
                         self.handle_data(item.unwrap())
+                    case EstimateData():
+                        pass
                     case NavigatingRequest():
                         self.enqueue_request(item, response)
                     case NonNavigatingRequest() | ArchiveRequest():

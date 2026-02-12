@@ -557,7 +557,7 @@ class WorkerMixin:
             DataFormatAssumptionException,
             HTMLStructuralAssumptionException,
         )
-        from kent.data_types import ParsedData
+        from kent.data_types import EstimateData, ParsedData
 
         try:
             for item in gen:
@@ -584,6 +584,19 @@ class WorkerMixin:
                         else:
                             await self._store_result(request_id, raw_data)
                             await self.handle_data(raw_data)
+
+                    case EstimateData():
+                        import json as _json
+
+                        types_json = _json.dumps(
+                            [t.__name__ for t in item.expected_types]
+                        )
+                        await self.db.store_estimate(
+                            request_id=request_id,
+                            expected_types_json=types_json,
+                            min_count=item.min_count,
+                            max_count=item.max_count,
+                        )
 
                     case NavigatingRequest():
                         await self.enqueue_request(item, response, request_id)

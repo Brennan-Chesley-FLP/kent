@@ -1,10 +1,12 @@
 """Tests for LocalDevDriverDebugger integrity check and ghost request detection.
 
-Tests for check_integrity, get_orphan_details, and get_ghost_requests methods.
+Tests for check_integrity, get_orphan_details, get_ghost_requests, and
+check_estimates methods.
 """
 
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
 
@@ -687,3 +689,460 @@ class TestGhostRequestDetection:
 
             # Failed requests should not be ghosts
             assert result["total_count"] == 0
+
+
+class TestEstimateChecks:
+    """Tests for check_estimates method."""
+
+    async def test_check_estimates_no_estimates(
+        self, db_path: Path, initialized_db
+    ) -> None:
+        """Test check_estimates when no estimates exist."""
+        engine, _session_factory = initialized_db
+        await engine.dispose()
+
+        async with LocalDevDriverDebugger.open(db_path) as debugger:
+            result = await debugger.check_estimates()
+
+            assert result["summary"]["total"] == 0
+            assert result["summary"]["passed"] == 0
+            assert result["summary"]["failed"] == 0
+            assert result["estimates"] == []
+
+    async def test_check_estimates_passing(
+        self, db_path: Path, initialized_db
+    ) -> None:
+        """Test check_estimates with an estimate that passes."""
+        engine, session_factory = initialized_db
+        sql_manager = SQLManager(engine, session_factory)
+
+        # Create parent request (the one that emits the estimate)
+        parent_id = await sql_manager.insert_request(
+            priority=1,
+            request_type="navigating",
+            method="GET",
+            url="https://example.com/search",
+            headers_json="{}",
+            cookies_json="{}",
+            body=None,
+            continuation="parse_search",
+            current_location="",
+            accumulated_data_json="{}",
+            aux_data_json="{}",
+            permanent_json="{}",
+            expected_type=None,
+            dedup_key=None,
+            parent_id=None,
+        )
+
+        # Store estimate: expect 3 CaseData results
+        await sql_manager.store_estimate(
+            request_id=parent_id,
+            expected_types_json=json.dumps(["CaseData"]),
+            min_count=3,
+            max_count=3,
+        )
+
+        # Create child requests that produce results
+        for i in range(3):
+            child_id = await sql_manager.insert_request(
+                priority=1,
+                request_type="navigating",
+                method="GET",
+                url=f"https://example.com/case/{i}",
+                headers_json="{}",
+                cookies_json="{}",
+                body=None,
+                continuation="parse_case",
+                current_location="",
+                accumulated_data_json="{}",
+                aux_data_json="{}",
+                permanent_json="{}",
+                expected_type=None,
+                dedup_key=None,
+                parent_id=parent_id,
+            )
+            await sql_manager.store_result(
+                request_id=child_id,
+                result_type="CaseData",
+                data_json=json.dumps({"id": i}),
+            )
+
+        await engine.dispose()
+
+        async with LocalDevDriverDebugger.open(db_path) as debugger:
+            result = await debugger.check_estimates()
+
+            assert result["summary"]["total"] == 1
+            assert result["summary"]["passed"] == 1
+            assert result["summary"]["failed"] == 0
+            est = result["estimates"][0]
+            assert est["status"] == "pass"
+            assert est["actual_count"] == 3
+
+    async def test_check_estimates_failing_too_few(
+        self, db_path: Path, initialized_db
+    ) -> None:
+        """Test check_estimates fails when too few results produced."""
+        engine, session_factory = initialized_db
+        sql_manager = SQLManager(engine, session_factory)
+
+        parent_id = await sql_manager.insert_request(
+            priority=1,
+            request_type="navigating",
+            method="GET",
+            url="https://example.com/search",
+            headers_json="{}",
+            cookies_json="{}",
+            body=None,
+            continuation="parse_search",
+            current_location="",
+            accumulated_data_json="{}",
+            aux_data_json="{}",
+            permanent_json="{}",
+            expected_type=None,
+            dedup_key=None,
+            parent_id=None,
+        )
+
+        # Expect 10 results but only produce 2
+        await sql_manager.store_estimate(
+            request_id=parent_id,
+            expected_types_json=json.dumps(["CaseData"]),
+            min_count=10,
+            max_count=10,
+        )
+
+        for i in range(2):
+            child_id = await sql_manager.insert_request(
+                priority=1,
+                request_type="navigating",
+                method="GET",
+                url=f"https://example.com/case/{i}",
+                headers_json="{}",
+                cookies_json="{}",
+                body=None,
+                continuation="parse_case",
+                current_location="",
+                accumulated_data_json="{}",
+                aux_data_json="{}",
+                permanent_json="{}",
+                expected_type=None,
+                dedup_key=None,
+                parent_id=parent_id,
+            )
+            await sql_manager.store_result(
+                request_id=child_id,
+                result_type="CaseData",
+                data_json=json.dumps({"id": i}),
+            )
+
+        await engine.dispose()
+
+        async with LocalDevDriverDebugger.open(db_path) as debugger:
+            result = await debugger.check_estimates()
+
+            assert result["summary"]["failed"] == 1
+            est = result["estimates"][0]
+            assert est["status"] == "fail"
+            assert est["actual_count"] == 2
+            assert est["min_count"] == 10
+
+    async def test_check_estimates_failing_too_many(
+        self, db_path: Path, initialized_db
+    ) -> None:
+        """Test check_estimates fails when too many results produced."""
+        engine, session_factory = initialized_db
+        sql_manager = SQLManager(engine, session_factory)
+
+        parent_id = await sql_manager.insert_request(
+            priority=1,
+            request_type="navigating",
+            method="GET",
+            url="https://example.com/search",
+            headers_json="{}",
+            cookies_json="{}",
+            body=None,
+            continuation="parse_search",
+            current_location="",
+            accumulated_data_json="{}",
+            aux_data_json="{}",
+            permanent_json="{}",
+            expected_type=None,
+            dedup_key=None,
+            parent_id=None,
+        )
+
+        # Expect at most 2 but produce 5
+        await sql_manager.store_estimate(
+            request_id=parent_id,
+            expected_types_json=json.dumps(["CaseData"]),
+            min_count=1,
+            max_count=2,
+        )
+
+        for i in range(5):
+            child_id = await sql_manager.insert_request(
+                priority=1,
+                request_type="navigating",
+                method="GET",
+                url=f"https://example.com/case/{i}",
+                headers_json="{}",
+                cookies_json="{}",
+                body=None,
+                continuation="parse_case",
+                current_location="",
+                accumulated_data_json="{}",
+                aux_data_json="{}",
+                permanent_json="{}",
+                expected_type=None,
+                dedup_key=None,
+                parent_id=parent_id,
+            )
+            await sql_manager.store_result(
+                request_id=child_id,
+                result_type="CaseData",
+                data_json=json.dumps({"id": i}),
+            )
+
+        await engine.dispose()
+
+        async with LocalDevDriverDebugger.open(db_path) as debugger:
+            result = await debugger.check_estimates()
+
+            assert result["summary"]["failed"] == 1
+            est = result["estimates"][0]
+            assert est["status"] == "fail"
+            assert est["actual_count"] == 5
+            assert est["max_count"] == 2
+
+    async def test_check_estimates_unbounded_max(
+        self, db_path: Path, initialized_db
+    ) -> None:
+        """Test check_estimates passes with unbounded max when min is met."""
+        engine, session_factory = initialized_db
+        sql_manager = SQLManager(engine, session_factory)
+
+        parent_id = await sql_manager.insert_request(
+            priority=1,
+            request_type="navigating",
+            method="GET",
+            url="https://example.com/search",
+            headers_json="{}",
+            cookies_json="{}",
+            body=None,
+            continuation="parse_search",
+            current_location="",
+            accumulated_data_json="{}",
+            aux_data_json="{}",
+            permanent_json="{}",
+            expected_type=None,
+            dedup_key=None,
+            parent_id=None,
+        )
+
+        # min_count=5, max_count=None ("at least 5")
+        await sql_manager.store_estimate(
+            request_id=parent_id,
+            expected_types_json=json.dumps(["CaseData"]),
+            min_count=5,
+            max_count=None,
+        )
+
+        for i in range(20):
+            child_id = await sql_manager.insert_request(
+                priority=1,
+                request_type="navigating",
+                method="GET",
+                url=f"https://example.com/case/{i}",
+                headers_json="{}",
+                cookies_json="{}",
+                body=None,
+                continuation="parse_case",
+                current_location="",
+                accumulated_data_json="{}",
+                aux_data_json="{}",
+                permanent_json="{}",
+                expected_type=None,
+                dedup_key=None,
+                parent_id=parent_id,
+            )
+            await sql_manager.store_result(
+                request_id=child_id,
+                result_type="CaseData",
+                data_json=json.dumps({"id": i}),
+            )
+
+        await engine.dispose()
+
+        async with LocalDevDriverDebugger.open(db_path) as debugger:
+            result = await debugger.check_estimates()
+
+            assert result["summary"]["passed"] == 1
+            est = result["estimates"][0]
+            assert est["status"] == "pass"
+            assert est["actual_count"] == 20
+
+    async def test_check_estimates_deep_descendants(
+        self, db_path: Path, initialized_db
+    ) -> None:
+        """Test check_estimates counts results from deep descendants (grandchildren)."""
+        engine, session_factory = initialized_db
+        sql_manager = SQLManager(engine, session_factory)
+
+        # search_page -> page_2 -> detail_page (results here)
+        search_id = await sql_manager.insert_request(
+            priority=1,
+            request_type="navigating",
+            method="GET",
+            url="https://example.com/search",
+            headers_json="{}",
+            cookies_json="{}",
+            body=None,
+            continuation="parse_search",
+            current_location="",
+            accumulated_data_json="{}",
+            aux_data_json="{}",
+            permanent_json="{}",
+            expected_type=None,
+            dedup_key=None,
+            parent_id=None,
+        )
+
+        await sql_manager.store_estimate(
+            request_id=search_id,
+            expected_types_json=json.dumps(["CaseData"]),
+            min_count=2,
+            max_count=2,
+        )
+
+        # Child: page 2 of results
+        page2_id = await sql_manager.insert_request(
+            priority=1,
+            request_type="navigating",
+            method="GET",
+            url="https://example.com/search?page=2",
+            headers_json="{}",
+            cookies_json="{}",
+            body=None,
+            continuation="parse_search",
+            current_location="",
+            accumulated_data_json="{}",
+            aux_data_json="{}",
+            permanent_json="{}",
+            expected_type=None,
+            dedup_key=None,
+            parent_id=search_id,
+        )
+
+        # Grandchildren: detail pages producing results
+        for i in range(2):
+            detail_id = await sql_manager.insert_request(
+                priority=1,
+                request_type="navigating",
+                method="GET",
+                url=f"https://example.com/case/{i}",
+                headers_json="{}",
+                cookies_json="{}",
+                body=None,
+                continuation="parse_case",
+                current_location="",
+                accumulated_data_json="{}",
+                aux_data_json="{}",
+                permanent_json="{}",
+                expected_type=None,
+                dedup_key=None,
+                parent_id=page2_id,
+            )
+            await sql_manager.store_result(
+                request_id=detail_id,
+                result_type="CaseData",
+                data_json=json.dumps({"id": i}),
+            )
+
+        await engine.dispose()
+
+        async with LocalDevDriverDebugger.open(db_path) as debugger:
+            result = await debugger.check_estimates()
+
+            assert result["summary"]["passed"] == 1
+            est = result["estimates"][0]
+            assert est["status"] == "pass"
+            assert est["actual_count"] == 2
+
+    async def test_check_estimates_filters_by_type(
+        self, db_path: Path, initialized_db
+    ) -> None:
+        """Test check_estimates only counts results of expected types."""
+        engine, session_factory = initialized_db
+        sql_manager = SQLManager(engine, session_factory)
+
+        parent_id = await sql_manager.insert_request(
+            priority=1,
+            request_type="navigating",
+            method="GET",
+            url="https://example.com/search",
+            headers_json="{}",
+            cookies_json="{}",
+            body=None,
+            continuation="parse_search",
+            current_location="",
+            accumulated_data_json="{}",
+            aux_data_json="{}",
+            permanent_json="{}",
+            expected_type=None,
+            dedup_key=None,
+            parent_id=None,
+        )
+
+        # Expect 2 CaseData results only
+        await sql_manager.store_estimate(
+            request_id=parent_id,
+            expected_types_json=json.dumps(["CaseData"]),
+            min_count=2,
+            max_count=2,
+        )
+
+        child_id = await sql_manager.insert_request(
+            priority=1,
+            request_type="navigating",
+            method="GET",
+            url="https://example.com/case/1",
+            headers_json="{}",
+            cookies_json="{}",
+            body=None,
+            continuation="parse_case",
+            current_location="",
+            accumulated_data_json="{}",
+            aux_data_json="{}",
+            permanent_json="{}",
+            expected_type=None,
+            dedup_key=None,
+            parent_id=parent_id,
+        )
+
+        # 2 CaseData + 1 DocumentData (should not count)
+        await sql_manager.store_result(
+            request_id=child_id,
+            result_type="CaseData",
+            data_json=json.dumps({"id": 1}),
+        )
+        await sql_manager.store_result(
+            request_id=child_id,
+            result_type="CaseData",
+            data_json=json.dumps({"id": 2}),
+        )
+        await sql_manager.store_result(
+            request_id=child_id,
+            result_type="DocumentData",
+            data_json=json.dumps({"id": 3}),
+        )
+
+        await engine.dispose()
+
+        async with LocalDevDriverDebugger.open(db_path) as debugger:
+            result = await debugger.check_estimates()
+
+            assert result["summary"]["passed"] == 1
+            est = result["estimates"][0]
+            assert est["actual_count"] == 2  # Only CaseData counted

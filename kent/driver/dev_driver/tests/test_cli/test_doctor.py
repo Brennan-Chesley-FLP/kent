@@ -69,7 +69,7 @@ class TestDoctorCommand:
 
         assert result.exit_code == 0
         lines = result.output.strip().split("\n")
-        assert len(lines) == 4  # status, integrity, ghosts, errors
+        assert len(lines) == 5  # status, integrity, ghosts, errors, estimates
 
         # Each line should be valid JSON with section field
         for line in lines:
@@ -277,3 +277,83 @@ class TestDoctorCommand:
 
         assert result.exit_code == 0
         assert "No ghost requests found" in result.output
+
+    def test_doctor_health_includes_estimates(
+        self, runner: CliRunner, populated_db: Path
+    ) -> None:
+        """Test that doctor health includes estimates section."""
+        result = runner.invoke(
+            cli, ["doctor", "health", "--db", str(populated_db)]
+        )
+
+        assert result.exit_code == 0
+        assert "Estimates:" in result.output
+
+    def test_doctor_health_json_includes_estimates(
+        self, runner: CliRunner, populated_db: Path
+    ) -> None:
+        """Test that doctor health JSON includes estimates."""
+        result = runner.invoke(
+            cli,
+            [
+                "doctor",
+                "health",
+                "--db",
+                str(populated_db),
+                "--format",
+                "json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "estimates" in data
+
+    def test_doctor_estimates_table_format(
+        self, runner: CliRunner, populated_db: Path
+    ) -> None:
+        """Test doctor estimates command with table format."""
+        result = runner.invoke(
+            cli, ["doctor", "estimates", "--db", str(populated_db)]
+        )
+
+        assert result.exit_code == 0
+        assert "Estimate Checks" in result.output
+
+    def test_doctor_estimates_json_format(
+        self, runner: CliRunner, populated_db: Path
+    ) -> None:
+        """Test doctor estimates command with JSON format."""
+        result = runner.invoke(
+            cli,
+            [
+                "doctor",
+                "estimates",
+                "--db",
+                str(populated_db),
+                "--format",
+                "json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "estimates" in data
+        assert "summary" in data
+
+    def test_doctor_estimates_failures_only(
+        self, runner: CliRunner, populated_db: Path
+    ) -> None:
+        """Test doctor estimates command with --failures-only flag."""
+        result = runner.invoke(
+            cli,
+            [
+                "doctor",
+                "estimates",
+                "--db",
+                str(populated_db),
+                "--failures-only",
+            ],
+        )
+
+        assert result.exit_code == 0

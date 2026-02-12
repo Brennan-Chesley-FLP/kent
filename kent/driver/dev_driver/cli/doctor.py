@@ -83,6 +83,7 @@ def doctor_health(
             ghosts = await debugger.get_ghost_requests()
             status = await debugger.get_run_status()
             stats = await debugger.get_stats()
+            estimates = await debugger.check_estimates()
 
             if format_type == "json":
                 # JSON output
@@ -91,6 +92,7 @@ def doctor_health(
                     "integrity": integrity,
                     "ghosts": ghosts,
                     "error_stats": stats["errors"],
+                    "estimates": estimates,
                 }
                 format_output(output, format_type)
             elif format_type == "jsonl":
@@ -101,6 +103,7 @@ def doctor_health(
                 click.echo(
                     json.dumps({"section": "errors", **stats["errors"]})
                 )
+                click.echo(json.dumps({"section": "estimates", **estimates}))
             else:
                 # Table output (default)
                 click.echo("=== Health Report ===\n")
@@ -144,6 +147,19 @@ def doctor_health(
                         click.echo(f"    {continuation}: {count}")
                 else:
                     click.echo("  No ghost requests found")
+                click.echo()
+
+                # Estimate Check Summary
+                click.echo("Estimates:")
+                est_summary = estimates["summary"]
+                if est_summary["total"] > 0:
+                    click.echo(
+                        f"  Total: {est_summary['total']}  "
+                        f"Passed: {est_summary['passed']}  "
+                        f"Failed: {est_summary['failed']}"
+                    )
+                else:
+                    click.echo("  No estimates recorded")
 
     asyncio.run(run())
 
@@ -401,6 +417,99 @@ def doctor_ghosts(
                         format_output(items, "table", headers)
                 else:
                     click.echo("No ghost requests found")
+
+    asyncio.run(run())
+
+
+@doctor.command("estimates")
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to the database file",
+)
+@click.option(
+    "--format",
+    "format_type",
+    type=click.Choice(["table", "json", "jsonl"]),
+    default="table",
+    help="Output format",
+)
+@click.option(
+    "--failures-only",
+    is_flag=True,
+    help="Only show failed estimates",
+)
+@click.pass_context
+def doctor_estimates(
+    ctx: click.Context,
+    db_path: str | None,
+    format_type: str,
+    failures_only: bool,
+) -> None:
+    """Check EstimateData predictions against actual result counts.
+
+    Verifies that the actual number of results produced by downstream
+    requests matches the estimates declared by scraper steps.
+
+    \b
+    Examples:
+        ldd-debug doctor estimates --db run.db
+        ldd-debug doctor --db run.db estimates --failures-only
+        ldd-debug doctor estimates --db run.db --format json
+    """
+    db_path = _resolve_db_path(ctx, db_path)
+
+    async def run() -> None:
+        async with LocalDevDriverDebugger.open(db_path) as debugger:
+            result = await debugger.check_estimates()
+
+            estimates = result["estimates"]
+            if failures_only:
+                estimates = [e for e in estimates if e["status"] == "fail"]
+
+            if format_type == "json":
+                format_output(result, format_type)
+            elif format_type == "jsonl":
+                for est in estimates:
+                    click.echo(json.dumps(est))
+                click.echo(
+                    json.dumps({"section": "summary", **result["summary"]})
+                )
+            else:
+                click.echo("=== Estimate Checks ===\n")
+
+                if not estimates:
+                    if failures_only:
+                        click.echo("No failed estimates.")
+                    else:
+                        click.echo("No estimates recorded.")
+                    return
+
+                for est in estimates:
+                    types_str = ", ".join(est["expected_types"])
+                    max_str = (
+                        str(est["max_count"])
+                        if est["max_count"] is not None
+                        else "unbounded"
+                    )
+                    status_marker = (
+                        "PASS" if est["status"] == "pass" else "FAIL"
+                    )
+                    click.echo(
+                        f"  [{status_marker}] request_id={est['request_id']} "
+                        f"types=[{types_str}] "
+                        f"expected={est['min_count']}-{max_str} "
+                        f"actual={est['actual_count']}"
+                    )
+
+                click.echo()
+                s = result["summary"]
+                click.echo(
+                    f"Summary: {s['total']} estimates, "
+                    f"{s['passed']} passed, {s['failed']} failed"
+                )
 
     asyncio.run(run())
 

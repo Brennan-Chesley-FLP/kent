@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import sqlalchemy as sa
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 
 from kent.driver.dev_driver.models import (
+    Estimate,
     Request,
     Response,
     Result,
@@ -16,7 +18,7 @@ from kent.driver.dev_driver.models import (
 
 
 class IntegrityMixin:
-    """Integrity checks: orphaned requests/responses, ghost requests."""
+    """Integrity checks: orphaned requests/responses, ghost requests, estimates."""
 
     _session_factory: async_sessionmaker
 
@@ -233,4 +235,101 @@ class IntegrityMixin:
             "total_count": total_count,
             "by_continuation": by_continuation,
             "ghosts": ghosts,
+        }
+
+    async def check_estimates(self) -> dict[str, Any]:
+        """Check EstimateData predictions against actual result counts.
+
+        For each stored estimate, walks the request tree (via recursive CTE
+        on parent_request_id) to count actual results of the expected types
+        produced by descendant requests.
+
+        Returns:
+            Dictionary with estimate check results:
+                - estimates: List of per-estimate results with
+                  {request_id, expected_types, min_count, max_count,
+                   actual_count, status}
+                - summary: {total, passed, failed}
+        """
+        async with self._session_factory() as session:
+            # Fetch all estimates
+            estimate_rows = await session.execute(
+                select(
+                    Estimate.id,
+                    Estimate.request_id,
+                    Estimate.expected_types_json,
+                    Estimate.min_count,
+                    Estimate.max_count,
+                )
+            )
+            estimates = estimate_rows.all()
+
+        results: list[dict[str, Any]] = []
+        for est_id, request_id, types_json, min_count, max_count in estimates:
+            expected_types: list[str] = json.loads(types_json)
+
+            # Recursive CTE: find all descendant request IDs
+            # Start with direct children of the estimate's request
+            req_table = Request.__table__
+            descendants = (
+                select(req_table.c.id)
+                .where(req_table.c.parent_request_id == request_id)
+                .cte(name="descendants", recursive=True)
+            )
+            descendants = descendants.union_all(
+                select(req_table.c.id).where(
+                    req_table.c.parent_request_id == descendants.c.id
+                )
+            )
+
+            # Count results of expected types in the descendant tree
+            # Include results from the estimate's own request too
+            async with self._session_factory() as session:
+                count_result = await session.execute(
+                    select(sa.func.count())
+                    .select_from(Result)
+                    .where(
+                        Result.result_type.in_(expected_types),  # type: ignore[attr-defined]
+                        sa.or_(
+                            Result.request_id == request_id,
+                            Result.request_id.in_(  # type: ignore[union-attr]
+                                select(descendants.c.id)
+                            ),
+                        ),
+                    )
+                )
+                actual_count = count_result.scalar() or 0
+
+            # Determine pass/fail
+            if (
+                actual_count < min_count
+                or max_count is not None
+                and actual_count > max_count
+            ):
+                status = "fail"
+            else:
+                status = "pass"
+
+            results.append(
+                {
+                    "estimate_id": est_id,
+                    "request_id": request_id,
+                    "expected_types": expected_types,
+                    "min_count": min_count,
+                    "max_count": max_count,
+                    "actual_count": actual_count,
+                    "status": status,
+                }
+            )
+
+        passed = sum(1 for r in results if r["status"] == "pass")
+        failed = sum(1 for r in results if r["status"] == "fail")
+
+        return {
+            "estimates": results,
+            "summary": {
+                "total": len(results),
+                "passed": passed,
+                "failed": failed,
+            },
         }

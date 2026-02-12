@@ -492,6 +492,27 @@ class SpeculationTracking(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
 
+class Estimate(SQLModel, table=True):  # type: ignore[call-arg]
+    """Estimated downstream result counts from EstimateData yields."""
+
+    __tablename__ = "estimates"
+    __table_args__ = (sa.Index("idx_estimates_request", "request_id"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    request_id: int = Field(foreign_key="requests.id")
+
+    # Estimate parameters
+    expected_types_json: str  # JSON list of type name strings
+    min_count: int
+    max_count: int | None = None
+
+    # Timestamps
+    created_at: str | None = Field(
+        default=None,
+        sa_column_kwargs={"server_default": sa.text("CURRENT_TIMESTAMP")},
+    )
+
+
 class IncidentalRequest(SQLModel, table=True):  # type: ignore[call-arg]
     """Browser-initiated network requests (Playwright driver)."""
 

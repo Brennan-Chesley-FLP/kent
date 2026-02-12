@@ -16,6 +16,7 @@ The SQLManager handles:
 
 from kent.driver.dev_driver.sql_manager._base import SQLManagerBase
 from kent.driver.dev_driver.sql_manager._errors import ErrorRequeueMixin
+from kent.driver.dev_driver.sql_manager._estimates import EstimateStorageMixin
 from kent.driver.dev_driver.sql_manager._listing import ListingMixin
 from kent.driver.dev_driver.sql_manager._rate_limiter import (
     RateLimiterMixin,
@@ -46,6 +47,7 @@ class SQLManager(
     RequestQueueMixin,
     ResponseStorageMixin,
     ResultStorageMixin,
+    EstimateStorageMixin,
     ErrorRequeueMixin,
     SpeculationMixin,
     RateLimiterMixin,

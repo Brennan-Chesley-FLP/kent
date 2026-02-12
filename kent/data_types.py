@@ -587,6 +587,36 @@ class ParsedData(Generic[T]):
         return self.data
 
 
+@dataclass(frozen=True)
+class EstimateData:
+    """Estimate of downstream ParsedData items from a step.
+
+    Yielded by steps that can predict how many items of certain types
+    will be produced by follow-on requests (e.g., a search results page
+    showing a total count). Used as a post-hoc integrity check in the
+    LocalDevDriver debugger.
+
+    Attributes:
+        expected_types: Tuple of data model classes expected downstream.
+        min_count: Minimum number of items expected.
+        max_count: Maximum number of items expected, or None for "at least min_count".
+
+    Example::
+
+        @step
+        def parse_search_results(self, response):
+            total = int(tree.xpath("//span[@class='count']/text()")[0])
+            yield EstimateData((CaseData,), min_count=total, max_count=total)
+
+            for link in result_links:
+                yield NavigatingRequest(...)
+    """
+
+    expected_types: tuple[type, ...]
+    min_count: int
+    max_count: int | None = None
+
+
 # =============================================================================
 # Step 2: NavigatingRequest and Response
 # =============================================================================
@@ -1208,11 +1238,12 @@ class ArchiveResponse(Response):
 # Type Alias for Scraper Yields
 # =============================================================================
 
-# A scraper can yield ParsedData, NavigatingRequest, NonNavigatingRequest,
-# ArchiveRequest, or None.
+# A scraper can yield ParsedData, EstimateData, NavigatingRequest,
+# NonNavigatingRequest, ArchiveRequest, or None.
 # This type alias enables exhaustive pattern matching in the driver.
 ScraperYield = (
     ParsedData[T]
+    | EstimateData
     | NavigatingRequest
     | NonNavigatingRequest
     | ArchiveRequest
