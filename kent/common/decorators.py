@@ -43,6 +43,11 @@ from kent.common.checked_html import CheckedHtmlElement
 from kent.common.exceptions import (
     ScraperAssumptionException,
 )
+from kent.common.speculation_types import (
+    SimpleSpeculation,
+    SpeculationType,
+    YearlySpeculation,
+)
 from kent.data_types import (
     ArchiveResponse,
     BaseRequest,
@@ -598,37 +603,49 @@ class EntryMetadata:
         return_type: The data type this entry produces (e.g. Docket).
         param_types: Mapping of parameter name to type (BaseModel subclass or primitive).
         func_name: Name of the decorated function.
-        speculative: Whether this is a speculative entry point.
-        observation_date: For speculative: date when metadata was last updated.
-        highest_observed: For speculative: highest known ID.
-        largest_observed_gap: For speculative: largest gap in sequence.
+        speculation: Speculation config (SimpleSpeculation, YearlySpeculation, or None).
     """
 
     return_type: type
     param_types: dict[str, type]
     func_name: str
-    speculative: bool = False
-    observation_date: date | None = None
-    highest_observed: int = 1
-    largest_observed_gap: int = 10
+    speculation: SpeculationType = None
+
+    @property
+    def speculative(self) -> bool:
+        """Whether this is a speculative entry point."""
+        return self.speculation is not None
 
     def validate_params(self, kwargs_dict: dict[str, Any]) -> dict[str, Any]:
         """Validate and coerce parameters for this entry function.
 
-        For BaseModel parameters, uses model_validate() for full Pydantic
-        validation. For primitives (str, int, date), performs type coercion.
+        For non-speculative entries, validates against the function signature:
+        BaseModel parameters use model_validate(), primitives are coerced.
+
+        For speculative entries, validates against the range schema:
+        - SimpleSpeculation: single param mapped to [start, end] range
+        - YearlySpeculation: year (int) + speculative param as [start, end] + optional frozen (bool)
 
         Args:
             kwargs_dict: Raw parameter dict from JSON deserialization.
 
         Returns:
-            Dict of validated/coerced parameter values ready for function call.
+            Dict of validated/coerced parameter values ready for function call
+            (non-speculative) or range config dict (speculative).
 
         Raises:
             pydantic.ValidationError: If a BaseModel parameter fails validation.
             TypeError: If a primitive parameter can't be coerced.
             ValueError: If unexpected parameters are provided.
         """
+        if self.speculation is not None:
+            return self._validate_speculative_params(kwargs_dict)
+        return self._validate_direct_params(kwargs_dict)
+
+    def _validate_direct_params(
+        self, kwargs_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Validate params for direct function invocation."""
         validated: dict[str, Any] = {}
 
         # Check for unexpected parameters
@@ -675,14 +692,98 @@ class EntryMetadata:
 
         return validated
 
+    def _validate_speculative_params(
+        self, kwargs_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Validate params as range config for speculative entries.
+
+        For SimpleSpeculation: expect {param_name: [start, end]}
+        For YearlySpeculation: expect {year: int, param_name: [start, end], frozen?: bool}
+        """
+        validated: dict[str, Any] = {}
+
+        if isinstance(self.speculation, SimpleSpeculation):
+            # Single param, must be a 2-element range
+            (param_name,) = self.param_types.keys()
+            expected_keys = {param_name}
+            unexpected = set(kwargs_dict.keys()) - expected_keys
+            if unexpected:
+                raise ValueError(
+                    f"Unexpected parameters for speculative entry "
+                    f"'{self.func_name}': {unexpected}. "
+                    f"Expected: {list(expected_keys)}"
+                )
+            if param_name not in kwargs_dict:
+                raise ValueError(
+                    f"Missing required parameter '{param_name}' "
+                    f"for speculative entry '{self.func_name}'"
+                )
+            raw_range = kwargs_dict[param_name]
+            validated[param_name] = _validate_int_range(
+                raw_range, param_name, self.func_name
+            )
+
+        elif isinstance(self.speculation, YearlySpeculation):
+            # year param + speculative axis param + optional frozen
+            spec_axis = _get_speculative_axis(self.param_types)
+            expected_keys = {"year", spec_axis, "frozen"}
+            unexpected = set(kwargs_dict.keys()) - expected_keys
+            if unexpected:
+                raise ValueError(
+                    f"Unexpected parameters for speculative entry "
+                    f"'{self.func_name}': {unexpected}. "
+                    f"Expected: year, {spec_axis}, and optionally frozen"
+                )
+
+            if "year" not in kwargs_dict:
+                raise ValueError(
+                    f"Missing required parameter 'year' "
+                    f"for speculative entry '{self.func_name}'"
+                )
+            validated["year"] = int(kwargs_dict["year"])
+
+            if spec_axis not in kwargs_dict:
+                raise ValueError(
+                    f"Missing required parameter '{spec_axis}' "
+                    f"for speculative entry '{self.func_name}'"
+                )
+            validated[spec_axis] = _validate_int_range(
+                kwargs_dict[spec_axis], spec_axis, self.func_name
+            )
+
+            if "frozen" in kwargs_dict:
+                validated["frozen"] = bool(kwargs_dict["frozen"])
+            else:
+                validated["frozen"] = False
+
+        return validated
+
+
+def _validate_int_range(
+    raw_value: Any, param_name: str, func_name: str
+) -> tuple[int, int]:
+    """Validate that a value is a 2-element integer range."""
+    if not isinstance(raw_value, (list, tuple)) or len(raw_value) != 2:
+        raise ValueError(
+            f"Parameter '{param_name}' for speculative entry "
+            f"'{func_name}' must be a 2-element [start, end] range, "
+            f"got {raw_value!r}"
+        )
+    return (int(raw_value[0]), int(raw_value[1]))
+
+
+def _get_speculative_axis(param_types: dict[str, type]) -> str:
+    """Get the speculative axis param name (the one that isn't 'year')."""
+    for name in param_types:
+        if name != "year":
+            return name
+    raise ValueError("No non-year parameter found in param_types")
+
 
 def entry(
     return_type: type | Any,
     *,
-    speculative: bool = False,
-    observation_date: date | None = None,
-    highest_observed: int = 1,
-    largest_observed_gap: int = 10,
+    speculative: SpeculationType = None,
 ) -> Callable[..., Any]:
     """Decorator for scraper entry point methods with typed parameters.
 
@@ -699,16 +800,21 @@ def entry(
         def search_by_number(self, docket_number: str) -> Generator[NavigatingRequest, None, None]:
             ...
 
-        @entry(Docket, speculative=True, highest_observed=105336, largest_observed_gap=20)
+        @entry(Docket, speculative=SimpleSpeculation(highest_observed=105336, largest_observed_gap=20))
         def fetch_docket(self, crn: int) -> NavigatingRequest:
+            ...
+
+        @entry(Docket, speculative=YearlySpeculation(
+            backfill=(YearPartition(year=2025, number=(1, 4000), frozen=False),),
+            trailing_period=timedelta(days=60),
+            largest_observed_gap=15,
+        ))
+        def docket_stabber(self, year: int, number: int) -> NavigatingRequest:
             ...
 
     Args:
         return_type: The data type this entry produces.
-        speculative: Whether this is a speculative entry point.
-        observation_date: For speculative: date when metadata was last updated.
-        highest_observed: For speculative: highest known ID.
-        largest_observed_gap: For speculative: largest gap in sequence.
+        speculative: Speculation config (SimpleSpeculation, YearlySpeculation, or None).
 
     Returns:
         Decorator that attaches EntryMetadata to the function.
@@ -793,14 +899,44 @@ def entry(
 
             param_types[param_name] = param_type
 
+        # Validate speculation config against param_types
+        if isinstance(speculative, SimpleSpeculation):
+            non_self_params = [
+                (n, t) for n, t in param_types.items()
+            ]
+            if len(non_self_params) != 1 or non_self_params[0][1] is not int:
+                raise TypeError(
+                    f"Entry function '{fn.__name__}' with SimpleSpeculation "
+                    f"must have exactly one int parameter (besides self). "
+                    f"Got: {param_types}"
+                )
+        elif isinstance(speculative, YearlySpeculation):
+            non_self_params = list(param_types.items())
+            if len(non_self_params) != 2:
+                raise TypeError(
+                    f"Entry function '{fn.__name__}' with YearlySpeculation "
+                    f"must have exactly two parameters (besides self). "
+                    f"Got: {param_types}"
+                )
+            if "year" not in param_types:
+                raise TypeError(
+                    f"Entry function '{fn.__name__}' with YearlySpeculation "
+                    f"must have a parameter named 'year'. "
+                    f"Got: {list(param_types.keys())}"
+                )
+            for name, ptype in non_self_params:
+                if ptype is not int:
+                    raise TypeError(
+                        f"Entry function '{fn.__name__}' with "
+                        f"YearlySpeculation: parameter '{name}' must be int, "
+                        f"got {ptype}"
+                    )
+
         metadata = EntryMetadata(
             return_type=return_type,
             param_types=param_types,
             func_name=fn.__name__,
-            speculative=speculative,
-            observation_date=observation_date,
-            highest_observed=highest_observed,
-            largest_observed_gap=largest_observed_gap,
+            speculation=speculative,
         )
 
         fn._entry_metadata = metadata  # type: ignore[attr-defined]

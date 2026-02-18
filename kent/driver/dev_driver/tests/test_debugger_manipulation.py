@@ -540,8 +540,10 @@ class TestSeedSpeculativeRequests:
         await engine.dispose()
 
         # Create a simple test scraper with a speculative @entry function
+        from kent.common.speculation_types import SimpleSpeculation
+
         class TestSpeculateScraper(BaseScraper):
-            @entry(dict, speculative=True, highest_observed=100)
+            @entry(dict, speculative=SimpleSpeculation(highest_observed=100))
             def fetch_item(self, item_id: int) -> NavigatingRequest:
                 return NavigatingRequest(
                     request=HTTPRequestParams(

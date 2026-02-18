@@ -1,15 +1,16 @@
 """Tests for speculative entry functions and related functionality.
 
 This test module verifies:
-- The @entry(speculative=True) decorator attaches metadata correctly
+- The @entry(speculative=SimpleSpeculation(...)) decorator attaches metadata correctly
 - Speculative entry functions automatically set is_speculative=True on requests
-- BaseScraper.list_speculators() discovers speculative entries
+- BaseScraper.list_speculative_entries() discovers speculative entries
 - Default values are applied correctly
 - The old @speculate decorator still works for backward compatibility
+- YearlySpeculation discovery, seeding, tracking, and end-to-end behavior
 """
 
 from collections.abc import Generator
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,6 +24,11 @@ from kent.common.decorators import (
     is_speculate,
     speculate,
     step,
+)
+from kent.common.speculation_types import (
+    SimpleSpeculation,
+    YearPartition,
+    YearlySpeculation,
 )
 from kent.data_types import (
     BaseScraper,
@@ -136,16 +142,17 @@ class TestSpeculateDecorator:
 
 
 class TestEntrySpeculative:
-    """Test @entry(speculative=True) decorator for speculative functions."""
+    """Test @entry(speculative=SimpleSpeculation(...)) decorator."""
 
     def test_entry_speculative_attaches_metadata(self):
-        """Test that @entry(speculative=True) attaches EntryMetadata."""
+        """Test that @entry(speculative=SimpleSpeculation(...)) attaches EntryMetadata."""
 
         @entry(
             dict,
-            speculative=True,
-            highest_observed=100,
-            largest_observed_gap=15,
+            speculative=SimpleSpeculation(
+                highest_observed=100,
+                largest_observed_gap=15,
+            ),
         )
         def fetch_case(self, case_id: int) -> NavigatingRequest:
             return NavigatingRequest(
@@ -159,13 +166,14 @@ class TestEntrySpeculative:
         assert metadata is not None
         assert isinstance(metadata, EntryMetadata)
         assert metadata.speculative is True
-        assert metadata.highest_observed == 100
-        assert metadata.largest_observed_gap == 15
+        assert isinstance(metadata.speculation, SimpleSpeculation)
+        assert metadata.speculation.highest_observed == 100
+        assert metadata.speculation.largest_observed_gap == 15
 
     def test_entry_speculative_defaults(self):
-        """Test @entry(speculative=True) with default values."""
+        """Test @entry(speculative=SimpleSpeculation()) with default values."""
 
-        @entry(dict, speculative=True)
+        @entry(dict, speculative=SimpleSpeculation())
         def fetch_item(self, item_id: int) -> NavigatingRequest:
             return NavigatingRequest(
                 request=HTTPRequestParams(
@@ -177,15 +185,15 @@ class TestEntrySpeculative:
         metadata = get_entry_metadata(fetch_item)
         assert metadata is not None
         assert metadata.speculative is True
-        assert metadata.highest_observed == 1
-        assert metadata.largest_observed_gap == 10
+        assert metadata.speculation.highest_observed == 1
+        assert metadata.speculation.largest_observed_gap == 10
 
 
-class TestListSpeculators:
-    """Test BaseScraper.list_speculators() method."""
+class TestListSpeculativeEntries:
+    """Test BaseScraper.list_speculative_entries() method."""
 
-    def test_list_speculators_empty(self):
-        """Test list_speculators() on a scraper with no speculative functions."""
+    def test_list_speculative_entries_empty(self):
+        """Test list_speculative_entries() on a scraper with no speculative functions."""
 
         class EmptyScraper(BaseScraper[dict]):
             @entry(dict)
@@ -197,18 +205,19 @@ class TestListSpeculators:
                     continuation="parse",
                 )
 
-        speculators = EmptyScraper.list_speculators()
-        assert speculators == []
+        entries = EmptyScraper.list_speculative_entries()
+        assert entries == []
 
-    def test_list_speculators_single(self):
-        """Test list_speculators() with one speculative entry function."""
+    def test_list_speculative_entries_single(self):
+        """Test list_speculative_entries() with one speculative entry function."""
 
         class SingleSpecScraper(BaseScraper[dict]):
             @entry(
                 dict,
-                speculative=True,
-                highest_observed=100,
-                largest_observed_gap=15,
+                speculative=SimpleSpeculation(
+                    highest_observed=100,
+                    largest_observed_gap=15,
+                ),
             )
             def fetch_case(self, case_id: int) -> NavigatingRequest:
                 return NavigatingRequest(
@@ -227,27 +236,28 @@ class TestListSpeculators:
                     continuation="parse",
                 )
 
-        speculators = SingleSpecScraper.list_speculators()
-        assert len(speculators) == 1
+        entries = SingleSpecScraper.list_speculative_entries()
+        assert len(entries) == 1
 
-        name, highest, obs_date, gap = speculators[0]
-        assert name == "fetch_case"
-        assert highest == 100
-        assert obs_date is None
-        assert gap == 15
+        info = entries[0]
+        assert info.name == "fetch_case"
+        assert info.speculative is True
+        assert isinstance(info.speculation, SimpleSpeculation)
+        assert info.speculation.highest_observed == 100
+        assert info.speculation.largest_observed_gap == 15
 
-    def test_list_speculators_multiple(self):
-        """Test list_speculators() with multiple speculative entry functions."""
+    def test_list_speculative_entries_multiple(self):
+        """Test list_speculative_entries() with multiple speculative entry functions."""
         obs_date_1 = date(2024, 1, 10)
-        obs_date_2 = date(2024, 2, 15)
 
         class MultiSpecScraper(BaseScraper[dict]):
             @entry(
                 dict,
-                speculative=True,
-                highest_observed=500,
-                largest_observed_gap=20,
-                observation_date=obs_date_1,
+                speculative=SimpleSpeculation(
+                    highest_observed=500,
+                    largest_observed_gap=20,
+                    observation_date=obs_date_1,
+                ),
             )
             def fetch_case(self, case_id: int) -> NavigatingRequest:
                 return NavigatingRequest(
@@ -259,10 +269,10 @@ class TestListSpeculators:
 
             @entry(
                 dict,
-                speculative=True,
-                highest_observed=1000,
-                largest_observed_gap=50,
-                observation_date=obs_date_2,
+                speculative=SimpleSpeculation(
+                    highest_observed=1000,
+                    largest_observed_gap=50,
+                ),
             )
             def fetch_docket(self, docket_id: int) -> NavigatingRequest:
                 return NavigatingRequest(
@@ -281,23 +291,20 @@ class TestListSpeculators:
                     continuation="parse",
                 )
 
-        speculators = MultiSpecScraper.list_speculators()
-        assert len(speculators) == 2
+        entries = MultiSpecScraper.list_speculative_entries()
+        assert len(entries) == 2
 
-        # Sort by name for deterministic testing
-        speculators_dict = {name: (h, d, g) for name, h, d, g in speculators}
+        by_name = {e.name: e for e in entries}
+        assert by_name["fetch_case"].speculation.highest_observed == 500
+        assert by_name["fetch_case"].speculation.largest_observed_gap == 20
+        assert by_name["fetch_docket"].speculation.highest_observed == 1000
+        assert by_name["fetch_docket"].speculation.largest_observed_gap == 50
 
-        assert "fetch_case" in speculators_dict
-        assert speculators_dict["fetch_case"] == (500, obs_date_1, 20)
-
-        assert "fetch_docket" in speculators_dict
-        assert speculators_dict["fetch_docket"] == (1000, obs_date_2, 50)
-
-    def test_list_speculators_defaults(self):
-        """Test list_speculators() with default metadata values."""
+    def test_list_speculative_entries_defaults(self):
+        """Test list_speculative_entries() with default metadata values."""
 
         class DefaultsScraper(BaseScraper[dict]):
-            @entry(dict, speculative=True)
+            @entry(dict, speculative=SimpleSpeculation())
             def fetch_item(self, item_id: int) -> NavigatingRequest:
                 return NavigatingRequest(
                     request=HTTPRequestParams(
@@ -315,14 +322,13 @@ class TestListSpeculators:
                     continuation="parse",
                 )
 
-        speculators = DefaultsScraper.list_speculators()
-        assert len(speculators) == 1
+        entries = DefaultsScraper.list_speculative_entries()
+        assert len(entries) == 1
 
-        name, highest, obs_date, gap = speculators[0]
-        assert name == "fetch_item"
-        assert highest == 1  # default
-        assert obs_date is None  # default
-        assert gap == 10  # default
+        info = entries[0]
+        assert info.name == "fetch_item"
+        assert info.speculation.highest_observed == 1
+        assert info.speculation.largest_observed_gap == 10
 
 
 class TestSpeculateMetadata:
@@ -395,12 +401,18 @@ class TestIsSpeculativeField:
 
 
 class SpeculationTestScraper(BaseScraper[dict]):
-    """Test scraper with @entry(speculative=True) for driver integration tests."""
+    """Test scraper with @entry(speculative=SimpleSpeculation(...)) for driver integration tests."""
 
     def __init__(self) -> None:
         self.processed_ids: list[int] = []
 
-    @entry(dict, speculative=True, highest_observed=5, largest_observed_gap=2)
+    @entry(
+        dict,
+        speculative=SimpleSpeculation(
+            highest_observed=5,
+            largest_observed_gap=2,
+        ),
+    )
     def fetch_case(self, case_id: int) -> NavigatingRequest:
         """Speculative request factory."""
         return NavigatingRequest(
@@ -432,7 +444,7 @@ class TestSyncDriverSpeculationDiscovery:
     """Test SyncDriver discovers and initializes speculation state."""
 
     def test_driver_discovers_speculate_functions(self):
-        """Test that _discover_speculate_functions finds @entry(speculative=True) methods."""
+        """Test that _discover_speculate_functions finds @entry(speculative=...) methods."""
         scraper = SpeculationTestScraper()
         driver = SyncDriver(scraper)
 
@@ -440,8 +452,9 @@ class TestSyncDriverSpeculationDiscovery:
 
         assert "fetch_case" in state
         assert state["fetch_case"].func_name == "fetch_case"
-        assert state["fetch_case"].metadata.highest_observed == 5
-        assert state["fetch_case"].metadata.largest_observed_gap == 2
+        assert isinstance(state["fetch_case"].speculation, SimpleSpeculation)
+        assert state["fetch_case"].speculation.highest_observed == 5
+        assert state["fetch_case"].speculation.largest_observed_gap == 2
 
     def test_driver_seeds_speculative_queue(self):
         """Test that speculation is seeded to the queue with correct range."""
@@ -579,6 +592,351 @@ class TestSyncDriverSpeculationTracking:
 
 
 # =============================================================================
+# YearlySpeculation Integration Tests
+# =============================================================================
+
+
+class YearlySpeculationTestScraper(BaseScraper[dict]):
+    """Test scraper with YearlySpeculation for integration tests."""
+
+    def __init__(self) -> None:
+        self.processed: list[tuple[int, int]] = []
+
+    @entry(
+        dict,
+        speculative=YearlySpeculation(
+            backfill=(
+                YearPartition(year=2023, number=(1, 5), frozen=True),
+                YearPartition(year=2024, number=(1, 3), frozen=False),
+            ),
+            trailing_period=timedelta(days=60),
+            largest_observed_gap=2,
+        ),
+    )
+    def fetch_docket(self, year: int, number: int) -> NavigatingRequest:
+        """Speculative request factory for year-partitioned dockets."""
+        return NavigatingRequest(
+            request=HTTPRequestParams(
+                method=HttpMethod.GET,
+                url=f"https://example.com/docket/{year}/{number}",
+            ),
+            continuation="parse_docket",
+            is_speculative=True,
+        )
+
+    @step
+    def parse_docket(
+        self, response: Response
+    ) -> Generator[ScraperYield, None, None]:
+        """Parse a docket page."""
+        parts = response.url.rstrip("/").split("/")
+        year, number = int(parts[-2]), int(parts[-1])
+        self.processed.append((year, number))
+        yield ParsedData({"year": year, "number": number})
+
+    @entry(dict)
+    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+        return
+        yield
+
+
+class TestYearlySpeculationDiscovery:
+    """Test SyncDriver discovers YearlySpeculation partitions."""
+
+    def test_discovers_yearly_partitions(self):
+        """Test that discovery creates per-year SpeculationState entries."""
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        state = driver._discover_speculate_functions()
+
+        # Should have at least the 2023 and 2024 backfill partitions
+        assert "fetch_docket:2023" in state
+        assert "fetch_docket:2024" in state
+
+        # 2023 is frozen
+        s2023 = state["fetch_docket:2023"]
+        assert s2023.year == 2023
+        assert s2023.frozen is True
+        assert s2023.base_func_name == "fetch_docket"
+        assert s2023.config.definite_range == (1, 5)
+
+        # 2024 is not frozen
+        s2024 = state["fetch_docket:2024"]
+        assert s2024.year == 2024
+        assert s2024.frozen is False
+        assert s2024.config.definite_range == (1, 3)
+
+    def test_rollover_creates_current_year(self):
+        """Test that current year is auto-created if not in backfill."""
+        from datetime import date as date_cls
+
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        state = driver._discover_speculate_functions()
+
+        current_year = date_cls.today().year
+        current_key = f"fetch_docket:{current_year}"
+
+        # Current year should be created unless it's already in backfill
+        if current_year not in (2023, 2024):
+            assert current_key in state
+            s_current = state[current_key]
+            assert s_current.year == current_year
+            assert s_current.frozen is False
+            assert s_current.config.definite_range == (1, 2)  # (1, largest_observed_gap)
+
+
+class TestYearlySpeculationSeeding:
+    """Test SyncDriver seeds YearlySpeculation with year+number calls."""
+
+    def test_seeds_frozen_partition(self):
+        """Test that frozen partitions are seeded and then stopped."""
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        # Only keep the 2023 frozen partition for isolated testing
+        driver._speculation_state = {
+            k: v
+            for k, v in driver._speculation_state.items()
+            if k == "fetch_docket:2023"
+        }
+        driver._seed_speculative_queue()
+
+        # Should have 5 requests (IDs 1-5)
+        assert len(driver.request_queue) == 5
+
+        # Verify URLs contain year and number
+        for _p, _c, req in driver.request_queue:
+            assert "/docket/2023/" in req.request.url
+            assert req.is_speculative is True
+
+        # Frozen partition should be stopped after seeding
+        assert driver._speculation_state["fetch_docket:2023"].stopped is True
+
+    def test_seeds_non_frozen_partition(self):
+        """Test that non-frozen partitions are seeded but not stopped."""
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        # Only keep the 2024 non-frozen partition
+        driver._speculation_state = {
+            k: v
+            for k, v in driver._speculation_state.items()
+            if k == "fetch_docket:2024"
+        }
+        driver._seed_speculative_queue()
+
+        # Should have 3 requests (IDs 1-3)
+        assert len(driver.request_queue) == 3
+
+        # Non-frozen partition should NOT be stopped
+        assert driver._speculation_state["fetch_docket:2024"].stopped is False
+
+    def test_speculation_id_uses_composite_key(self):
+        """Test that speculation_id uses func_name:year composite key."""
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        driver._speculation_state = {
+            k: v
+            for k, v in driver._speculation_state.items()
+            if k == "fetch_docket:2024"
+        }
+        driver._seed_speculative_queue()
+
+        for _p, _c, req in driver.request_queue:
+            assert req.speculation_id is not None
+            state_key, spec_id = req.speculation_id
+            assert state_key == "fetch_docket:2024"
+            assert isinstance(spec_id, int)
+
+
+class TestYearlySpeculationFrozen:
+    """Test that frozen partitions never extend."""
+
+    def test_frozen_does_not_extend(self):
+        """Test that _extend_speculation returns early for frozen partitions."""
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        s2023 = driver._speculation_state["fetch_docket:2023"]
+        s2023.current_ceiling = 5
+        s2023.highest_successful_id = 5  # At ceiling
+
+        # Extension should do nothing
+        initial_ceiling = s2023.current_ceiling
+        driver._extend_speculation("fetch_docket:2023")
+        assert s2023.current_ceiling == initial_ceiling
+
+
+class TestYearlySpeculationTracking:
+    """Test tracking with composite keys for YearlySpeculation."""
+
+    def test_tracking_with_composite_key(self):
+        """Test that tracking works with func_name:year composite keys."""
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        s2024 = driver._speculation_state["fetch_docket:2024"]
+
+        # Create a speculative request with composite key
+        request = scraper.fetch_docket(2024, 2).speculative(
+            "fetch_docket:2024", 2
+        )
+
+        # Success response
+        response = Response(
+            status_code=200,
+            headers={},
+            content=b"",
+            text="",
+            url="https://example.com/docket/2024/2",
+            request=request,
+        )
+
+        driver._track_speculation_outcome(request, response)
+        assert s2024.highest_successful_id == 2
+        assert s2024.consecutive_failures == 0
+
+    def test_tracking_failure_with_composite_key(self):
+        """Test tracking failure with composite key."""
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        s2024 = driver._speculation_state["fetch_docket:2024"]
+        s2024.highest_successful_id = 2
+
+        # Failure for ID beyond highest
+        request = scraper.fetch_docket(2024, 4).speculative(
+            "fetch_docket:2024", 4
+        )
+        response = Response(
+            status_code=404,
+            headers={},
+            content=b"",
+            text="",
+            url="https://example.com/docket/2024/4",
+            request=request,
+        )
+
+        driver._track_speculation_outcome(request, response)
+        assert s2024.consecutive_failures == 1
+
+    def test_yearly_stops_after_gap_failures(self):
+        """Test that yearly speculation stops after largest_observed_gap failures."""
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        s2024 = driver._speculation_state["fetch_docket:2024"]
+        s2024.highest_successful_id = 2
+        s2024.consecutive_failures = 1  # One failure already
+
+        request = scraper.fetch_docket(2024, 4).speculative(
+            "fetch_docket:2024", 4
+        )
+        response = Response(
+            status_code=404,
+            headers={},
+            content=b"",
+            text="",
+            url="https://example.com/docket/2024/4",
+            request=request,
+        )
+
+        driver._track_speculation_outcome(request, response)
+        assert s2024.consecutive_failures == 2
+        assert s2024.stopped is True
+
+
+class TestYearlySpeculationSchema:
+    """Test schema generation for YearlySpeculation entries."""
+
+    def test_yearly_schema(self):
+        """Test that schema() produces correct format for YearlySpeculation."""
+        schema = YearlySpeculationTestScraper.schema()
+        entry = schema["entries"]["fetch_docket"]
+
+        assert entry["speculative"] is True
+        assert entry["largest_observed_gap"] == 2
+        assert entry["trailing_period_days"] == 60
+
+        props = entry["parameters"]["properties"]
+        assert props["year"] == {"type": "integer"}
+        assert props["number"] == {
+            "type": "array",
+            "items": {"type": "integer"},
+            "minItems": 2,
+            "maxItems": 2,
+        }
+        assert props["frozen"] == {"type": "boolean", "default": False}
+
+        required = entry["parameters"]["required"]
+        assert "year" in required
+        assert "number" in required
+        # frozen is optional
+        assert "frozen" not in required
+
+
+class TestYearlySpeculationValidateParams:
+    """Test validate_params for YearlySpeculation entries."""
+
+    def test_validates_yearly_params(self):
+        """Test that validate_params handles YearlySpeculation range format."""
+        meta = get_entry_metadata(
+            YearlySpeculationTestScraper.fetch_docket
+        )
+        result = meta.validate_params(
+            {"year": 2025, "number": [1, 100]}
+        )
+        assert result == {"year": 2025, "number": (1, 100), "frozen": False}
+
+    def test_validates_yearly_params_with_frozen(self):
+        """Test that validate_params handles frozen flag."""
+        meta = get_entry_metadata(
+            YearlySpeculationTestScraper.fetch_docket
+        )
+        result = meta.validate_params(
+            {"year": 2023, "number": [1, 50], "frozen": True}
+        )
+        assert result == {"year": 2023, "number": (1, 50), "frozen": True}
+
+    def test_validates_yearly_params_missing_year_raises(self):
+        """Test that missing year raises."""
+        meta = get_entry_metadata(
+            YearlySpeculationTestScraper.fetch_docket
+        )
+        with pytest.raises(ValueError, match="Missing required parameter.*year"):
+            meta.validate_params({"number": [1, 50]})
+
+
+class TestYearlySpeculationInitialSeed:
+    """Test initial_seed with YearlySpeculation entries."""
+
+    def test_yearly_initial_seed_stores_overrides(self):
+        """Test that speculative yearly entries store overrides."""
+        scraper = YearlySpeculationTestScraper()
+        requests = list(
+            scraper.initial_seed(
+                [{"fetch_docket": {"year": 2025, "number": [1, 100]}}]
+            )
+        )
+        assert len(requests) == 0
+        assert "fetch_docket" in scraper._speculation_overrides
+        assert scraper._speculation_overrides["fetch_docket"] == [
+            {"year": 2025, "number": (1, 100), "frozen": False}
+        ]
+
+
+# =============================================================================
 # End-to-End Integration Tests with HTTP Mocking
 # =============================================================================
 
@@ -599,7 +957,13 @@ class EndToEndSpeculationScraper(BaseScraper[dict]):
     def __init__(self) -> None:
         self.processed_ids: list[int] = []
 
-    @entry(dict, speculative=True, highest_observed=5, largest_observed_gap=3)
+    @entry(
+        dict,
+        speculative=SimpleSpeculation(
+            highest_observed=5,
+            largest_observed_gap=3,
+        ),
+    )
     def fetch_case(self, case_id: int) -> NavigatingRequest:
         """Speculative request for case IDs."""
         return NavigatingRequest(
@@ -630,7 +994,7 @@ class EndToEndSpeculationScraper(BaseScraper[dict]):
 
 
 class TestSyncDriverEndToEndSpeculation:
-    """End-to-end tests for SyncDriver with @entry(speculative=True) functions."""
+    """End-to-end tests for SyncDriver with @entry(speculative=SimpleSpeculation(...)) functions."""
 
     def test_stops_after_consecutive_failures(self):
         """Test that driver stops after largest_observed_gap consecutive failures."""

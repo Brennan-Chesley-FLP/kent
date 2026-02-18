@@ -8,10 +8,15 @@ from typing import TYPE_CHECKING, Any
 
 from kent.common.decorators import (
     SpeculateMetadata,
+    _get_speculative_axis,
     get_entry_metadata,
 )
 from kent.common.searchable import (
     SpeculateFunctionConfig,
+)
+from kent.common.speculation_types import (
+    SimpleSpeculation,
+    YearlySpeculation,
 )
 from kent.data_types import (
     BaseRequest,
@@ -56,33 +61,115 @@ class SpeculationMixin:
     def _discover_speculate_functions(self) -> dict[str, SpeculationState]:
         """Discover speculative functions on the scraper and initialize tracking state.
 
-        Finds methods decorated with @entry(speculative=True) and creates
-        SpeculationState for each.
+        Uses BaseScraper.list_speculative_entries() to find speculative entries.
+
+        For SimpleSpeculation: creates one SpeculationState keyed by func_name.
+        For YearlySpeculation: creates one SpeculationState per year partition,
+            keyed by ``func_name:year``.
 
         Returns:
-            Dictionary mapping function names to their SpeculationState.
+            Dictionary mapping state keys to their SpeculationState.
         """
+        from datetime import date as date_cls
+
         state: dict[str, SpeculationState] = {}
+        overrides = getattr(self.scraper, "_speculation_overrides", {})
 
-        for name in dir(self.scraper):
-            if name.startswith("_"):
-                continue
-            func = getattr(self.scraper, name, None)
-            if func is None:
-                continue
+        for entry_info in self.scraper.list_speculative_entries():
+            spec = entry_info.speculation
 
-            entry_meta = get_entry_metadata(func)
-            if entry_meta is not None and entry_meta.speculative:
+            if isinstance(spec, SimpleSpeculation):
                 metadata = SpeculateMetadata(
-                    observation_date=entry_meta.observation_date,
-                    highest_observed=entry_meta.highest_observed,
-                    largest_observed_gap=entry_meta.largest_observed_gap,
+                    observation_date=spec.observation_date,
+                    highest_observed=spec.highest_observed,
+                    largest_observed_gap=spec.largest_observed_gap,
                 )
-                state[name] = SpeculationState(
-                    func_name=name,
-                    metadata=metadata,
+                state[entry_info.name] = SpeculationState(
+                    func_name=entry_info.name,
+                    speculation=spec,
                     config=SpeculateFunctionConfig(),
+                    base_func_name=entry_info.name,
+                    metadata=metadata,
                 )
+
+            elif isinstance(spec, YearlySpeculation):
+                if entry_info.name in overrides:
+                    partitions = overrides[entry_info.name]
+                else:
+                    axis_name = _get_speculative_axis(entry_info.param_types)
+                    partitions = [
+                        {
+                            "year": p.year,
+                            axis_name: p.number,
+                            "frozen": p.frozen,
+                        }
+                        for p in spec.backfill
+                    ]
+
+                for partition in partitions:
+                    year = partition["year"]
+                    axis_name = _get_speculative_axis(entry_info.param_types)
+                    number_range = partition[axis_name]
+                    frozen = partition.get("frozen", False)
+                    key = f"{entry_info.name}:{year}"
+
+                    metadata = SpeculateMetadata(
+                        highest_observed=number_range[1],
+                        largest_observed_gap=spec.largest_observed_gap,
+                    )
+                    state[key] = SpeculationState(
+                        func_name=key,
+                        speculation=spec,
+                        config=SpeculateFunctionConfig(
+                            definite_range=tuple(number_range),
+                        ),
+                        base_func_name=entry_info.name,
+                        year=year,
+                        frozen=frozen,
+                        metadata=metadata,
+                    )
+
+                # Rollover: auto-create current year if missing
+                today = date_cls.today()
+                current_year = today.year
+                current_key = f"{entry_info.name}:{current_year}"
+                if current_key not in state:
+                    metadata = SpeculateMetadata(
+                        highest_observed=spec.largest_observed_gap,
+                        largest_observed_gap=spec.largest_observed_gap,
+                    )
+                    state[current_key] = SpeculationState(
+                        func_name=current_key,
+                        speculation=spec,
+                        config=SpeculateFunctionConfig(
+                            definite_range=(1, spec.largest_observed_gap),
+                        ),
+                        base_func_name=entry_info.name,
+                        year=current_year,
+                        frozen=False,
+                        metadata=metadata,
+                    )
+
+                # Trailing period
+                prev_year = current_year - 1
+                prev_key = f"{entry_info.name}:{prev_year}"
+                jan1 = date_cls(current_year, 1, 1)
+                if (today - jan1) < spec.trailing_period and prev_key not in state:
+                    metadata = SpeculateMetadata(
+                        highest_observed=spec.largest_observed_gap,
+                        largest_observed_gap=spec.largest_observed_gap,
+                    )
+                    state[prev_key] = SpeculationState(
+                        func_name=prev_key,
+                        speculation=spec,
+                        config=SpeculateFunctionConfig(
+                            definite_range=(1, spec.largest_observed_gap),
+                        ),
+                        base_func_name=entry_info.name,
+                        year=prev_year,
+                        frozen=False,
+                        metadata=metadata,
+                    )
 
         return state
 
@@ -106,46 +193,43 @@ class SpeculationMixin:
     # --- Queue Seeding ---
 
     async def _seed_speculative_queue(self) -> None:
-        """Seed the queue with initial speculative requests based on params config.
+        """Seed the queue with initial speculative requests.
 
-        For each @speculate function:
-        - If definite_range is configured, use that range
-        - Otherwise, use (1, highest_observed) from decorator metadata
-        - Enqueue requests for all IDs in the range
+        For SimpleSpeculation: calls func(id_value) for each ID in range.
+        For YearlySpeculation: calls func(year, number) for each ID in range.
 
         When resuming, skips IDs that have already been processed (based on
         current_ceiling from persisted state).
         """
-        for func_name, spec_state in self._speculation_state.items():
+        for state_key, spec_state in self._speculation_state.items():
             if spec_state.stopped:
-                # Speculation was stopped in previous run, skip
                 continue
 
-            # Get the speculate function
-            func = getattr(self.scraper, func_name)
+            func = getattr(self.scraper, spec_state.base_func_name)
 
             # Determine the range
             if spec_state.config.definite_range is not None:
                 start, end = spec_state.config.definite_range
-            else:
-                # Use defaults from decorator metadata
+            elif spec_state.metadata is not None:
                 start = 1
                 end = spec_state.metadata.highest_observed
+            else:
+                continue
 
             # If resuming, start from current_ceiling + 1
             if spec_state.current_ceiling > 0:
                 start = max(start, spec_state.current_ceiling + 1)
                 if start > end:
-                    # Already processed all IDs in range
                     continue
 
             # Seed the queue
             for id_value in range(start, end + 1):
-                request = func(id_value)
-                # Ensure speculative fields are set
-                request = request.speculative(func_name, id_value)
+                if spec_state.year is not None:
+                    request = func(spec_state.year, id_value)
+                else:
+                    request = func(id_value)
+                request = request.speculative(state_key, id_value)
 
-                # Serialize and enqueue via DB
                 request_data = self._serialize_request(request)
                 await self.db.insert_request(
                     priority=request.priority,
@@ -169,55 +253,52 @@ class SpeculationMixin:
                     speculation_id=request_data["speculation_id"],
                 )
 
-            # Update current_ceiling to the highest seeded ID
             spec_state.current_ceiling = end
+            if spec_state.frozen:
+                spec_state.stopped = True
 
     # --- Dynamic Extension ---
 
-    async def _extend_speculation(self, func_name: str) -> None:
-        """Extend speculation for a function when approaching the ceiling.
+    async def _extend_speculation(self, state_key: str) -> None:
+        """Extend speculation for a partition when approaching the ceiling.
 
-        Called when a speculative request succeeds. If highest_successful_id
-        approaches current_ceiling and we haven't hit plus consecutive failures,
-        seed additional IDs.
+        Frozen partitions never extend.
 
         Args:
-            func_name: Name of the @speculate function to extend.
+            state_key: Key in _speculation_state.
         """
-        spec_state = self._speculation_state.get(func_name)
-        if spec_state is None or spec_state.stopped:
+        spec_state = self._speculation_state.get(state_key)
+        if spec_state is None or spec_state.stopped or spec_state.frozen:
             return
 
         # Determine plus threshold
         if spec_state.config.plus is not None:
             plus = spec_state.config.plus
+        elif isinstance(spec_state.speculation, (SimpleSpeculation, YearlySpeculation)):
+            plus = spec_state.speculation.largest_observed_gap
         else:
-            plus = spec_state.metadata.largest_observed_gap
+            return
 
-        # If consecutive failures >= plus, stop extending
         if spec_state.consecutive_failures >= plus:
             spec_state.stopped = True
             return
 
-        # Extend if highest_successful_id is near the ceiling
-        # We extend when within 'plus' of the ceiling
         if (
             spec_state.highest_successful_id
             >= spec_state.current_ceiling - plus
         ):
-            # Get the speculate function
-            func = getattr(self.scraper, func_name)
+            func = getattr(self.scraper, spec_state.base_func_name)
 
-            # Seed additional IDs up to ceiling + plus
             new_ceiling = spec_state.current_ceiling + plus
             for id_value in range(
                 spec_state.current_ceiling + 1, new_ceiling + 1
             ):
-                request = func(id_value)
-                # Ensure speculative fields are set
-                request = request.speculative(func_name, id_value)
+                if spec_state.year is not None:
+                    request = func(spec_state.year, id_value)
+                else:
+                    request = func(id_value)
+                request = request.speculative(state_key, id_value)
 
-                # Serialize and enqueue via DB
                 request_data = self._serialize_request(request)
                 await self.db.insert_request(
                     priority=request.priority,
@@ -252,45 +333,34 @@ class SpeculationMixin:
 
         Updates highest_successful_id and consecutive_failures based on response.
         Persists state to DB after update.
-
-        Args:
-            request: The speculative request.
-            response: The HTTP response.
         """
         if not request.is_speculative or request.speculation_id is None:
             return
 
-        # Extract function name and ID from speculation_id tuple
-        func_name, speculative_id = request.speculation_id
-
-        # Find the spec_state for this function
-        spec_state = self._speculation_state.get(func_name)
+        state_key, speculative_id = request.speculation_id
+        spec_state = self._speculation_state.get(state_key)
         if spec_state is None:
             return
 
         is_success = 200 <= response.status_code < 300
         if is_success and not self.scraper.fails_successfully(response):
-            # Soft 404 - treat as failure
             is_success = False
 
         async with self._speculation_lock:
             if is_success:
-                # Success - update highest_successful_id and reset failures
                 if speculative_id > spec_state.highest_successful_id:
                     spec_state.highest_successful_id = speculative_id
                 spec_state.consecutive_failures = 0
-                # Extend speculation if needed
-                await self._extend_speculation(spec_state.func_name)
+                await self._extend_speculation(state_key)
             else:
-                # Failure - increment consecutive_failures if beyond highest_successful_id
                 if speculative_id > spec_state.highest_successful_id:
                     spec_state.consecutive_failures += 1
-                    # Check if we should stop
-                    plus = (
-                        spec_state.config.plus
-                        if spec_state.config.plus is not None
-                        else spec_state.metadata.largest_observed_gap
-                    )
+                    if spec_state.config.plus is not None:
+                        plus = spec_state.config.plus
+                    elif isinstance(spec_state.speculation, (SimpleSpeculation, YearlySpeculation)):
+                        plus = spec_state.speculation.largest_observed_gap
+                    else:
+                        return
                     if spec_state.consecutive_failures >= plus:
                         spec_state.stopped = True
 

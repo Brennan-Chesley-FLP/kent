@@ -1,4 +1,4 @@
-Step 20: Search and Standardization
+Step 17: Search and Standardization
 ====================================
 
 The Problem
@@ -11,7 +11,7 @@ As scrapers grow in number and complexity, several challenges emerge:
 3. **Documentation** - How do we auto-generate accurate documentation?
 4. **Parameterization** - How do users configure what a scraper fetches?
 
-In Step 20, we introduce **standardized metadata** on scrapers and
+In Step 17, we introduce **standardized metadata** on scrapers and
 **@entry decorators** with typed parameters for configuring scraper
 entry points.
 
