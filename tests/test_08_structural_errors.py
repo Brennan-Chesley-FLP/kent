@@ -529,7 +529,7 @@ class TestIntegrationWithScraper:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from tests.scraper.example.bug_court import (
@@ -557,7 +557,7 @@ class TestIntegrationWithScraper:
             content=error_html.encode(),
             text=error_html,
             url=f"{server_url}/cases/BCC-2024-001?error=true",
-            request=NavigatingRequest(
+            request=Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=f"{server_url}/cases/BCC-2024-001?error=true",
@@ -616,8 +616,8 @@ class TestStructuralErrorCallback:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -632,8 +632,8 @@ class TestStructuralErrorCallback:
 
         # Create a custom scraper that immediately encounters a structural error
         class ErrorScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001?error=true",
@@ -689,8 +689,8 @@ class TestStructuralErrorCallback:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -705,8 +705,8 @@ class TestStructuralErrorCallback:
 
         # Create a scraper that yields error page then normal page
         class MixedScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases",
@@ -716,9 +716,9 @@ class TestStructuralErrorCallback:
 
             def parse_list(
                 self, response: Response
-            ) -> Generator[NavigatingRequest, None, None]:
+            ) -> Generator[Request, None, None]:
                 # First yield error page
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001?error=true",
@@ -726,7 +726,7 @@ class TestStructuralErrorCallback:
                     continuation="parse_detail",
                 )
                 # Then yield normal page
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-002",
@@ -781,8 +781,8 @@ class TestStructuralErrorCallback:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -790,8 +790,8 @@ class TestStructuralErrorCallback:
 
         # Create a scraper that encounters structural error
         class ErrorScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001?error=true",
@@ -837,8 +837,8 @@ class TestStructuralErrorCallback:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -849,8 +849,8 @@ class TestStructuralErrorCallback:
 
         # Create a scraper that encounters structural error
         class ErrorScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001?error=true",

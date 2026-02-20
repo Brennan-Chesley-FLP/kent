@@ -251,8 +251,8 @@ class TestComparisonMethods:
         from kent.common.data_models import ScrapedData
         from kent.data_types import (
             BaseScraper,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
 
@@ -262,7 +262,7 @@ class TestComparisonMethods:
 
         class TestScraper(BaseScraper[SampleData]):
             def get_entry(self):
-                yield NavigatingRequest(
+                yield Request(
                     request={"method": "GET", "url": "https://example.com"},
                     continuation="parse_index",
                 )
@@ -345,8 +345,8 @@ class TestComparisonMethods:
         from kent.common.data_models import ScrapedData
         from kent.data_types import (
             BaseScraper,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
 
@@ -356,7 +356,7 @@ class TestComparisonMethods:
 
         class TestScraper(BaseScraper[SampleData]):
             def get_entry(self):
-                yield NavigatingRequest(
+                yield Request(
                     request={"method": "GET", "url": "https://example.com"},
                     continuation="parse_index",
                 )
@@ -448,7 +448,7 @@ class TestComparisonMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
 
@@ -457,7 +457,7 @@ class TestComparisonMethods:
 
         class TestScraper(BaseScraper[SampleData]):
             def get_entry(self):
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url="https://example.com"
                     ),
@@ -466,7 +466,7 @@ class TestComparisonMethods:
 
             def parse_index(self, response: Response):
                 # Yield different child requests than originally stored
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/new_page",
@@ -571,7 +571,7 @@ class TestComparisonMethods:
         from kent.common.data_models import ScrapedData
         from kent.data_types import (
             BaseScraper,
-            NavigatingRequest,
+            Request,
             Response,
         )
 
@@ -580,7 +580,7 @@ class TestComparisonMethods:
 
         class TestScraper(BaseScraper[SampleData]):
             def get_entry(self):
-                yield NavigatingRequest(
+                yield Request(
                     request={"method": "GET", "url": "https://example.com"},
                     continuation="parse_index",
                 )

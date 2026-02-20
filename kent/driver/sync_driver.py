@@ -4,10 +4,10 @@ This module contains the sync driver that processes scraper generators.
 It evolves across the 29 steps of the design documentation.
 
 - Step 1: A simple function that runs a scraper generator and collects results.
-- Step 2: A class-based driver that handles NavigatingRequest, fetches pages,
+- Step 2: A class-based driver that handles Request, fetches pages,
   and calls continuation methods by name.
-- Step 3: Tracks current_location and handles NonNavigatingRequest.
-- Step 4: Handles ArchiveRequest to download and save files locally.
+- Step 3: Tracks current_location and handles non-navigating requests.
+- Step 4: Handles archive requests to download and save files locally.
 - Step 5: No driver changes - accumulated_data flows through requests automatically.
 - Step 6: No driver changes - aux_data flows through requests automatically.
 - Step 7: Adds on_data callback for side effects (persistence, logging) when data yielded.
@@ -36,7 +36,6 @@ from typing_extensions import assert_never
 from kent.common.decorators import (
     SpeculateMetadata,
     _get_speculative_axis,
-    get_entry_metadata,
 )
 from kent.common.deferred_validation import (
     DeferredValidation,
@@ -58,14 +57,12 @@ from kent.common.speculation_types import (
     YearlySpeculation,
 )
 from kent.data_types import (
-    ArchiveRequest,
     ArchiveResponse,
     BaseRequest,
     BaseScraper,
     EstimateData,
-    NavigatingRequest,
-    NonNavigatingRequest,
     ParsedData,
+    Request,
     Response,
     ScraperYield,
     SkipDeduplicationCheck,
@@ -74,8 +71,8 @@ from kent.data_types import (
 # =============================================================================
 # Step 2: Class-based Driver with HTTP Support
 # =============================================================================
-# Step 3: current_location tracking and NonNavigatingRequest support
-# Step 4: ArchiveRequest handling for file downloads
+# Step 3: current_location tracking and non-navigating request support
+# Step 4: Archive request handling for file downloads
 # Step 9: Data validation with on_invalid_data callback
 
 
@@ -192,12 +189,12 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
     """Synchronous driver for running scrapers.
 
     This Step 4 driver:
-    - Maintains a request queue (BaseRequest, not just NavigatingRequest)
+    - Maintains a request queue of Request objects
     - Fetches URLs using httpx
     - Looks up continuation methods by name
     - Each request carries its own current_location and ancestry
     - Uses exhaustive pattern matching for scraper yields
-    - Handles ArchiveRequest to download and save files locally
+    - Handles archive requests (Request with archive=True) to download and save files locally
 
     Example usage:
         from tests.utils import collect_results
@@ -312,7 +309,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         Returns:
             Dictionary mapping state keys to their SpeculationState.
         """
-        from datetime import date as date_cls, timedelta
+        from datetime import date as date_cls
 
         state: dict[str, SpeculationState] = {}
 
@@ -346,7 +343,9 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
                     partitions = [
                         {
                             "year": p.year,
-                            _get_speculative_axis(entry_info.param_types): p.number,
+                            _get_speculative_axis(
+                                entry_info.param_types
+                            ): p.number,
                             "frozen": p.frozen,
                         }
                         for p in spec.backfill
@@ -401,9 +400,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
                 prev_year = current_year - 1
                 prev_key = f"{entry_info.name}:{prev_year}"
                 jan1 = date_cls(current_year, 1, 1)
-                within_trailing = (
-                    today - jan1
-                ) < spec.trailing_period
+                within_trailing = (today - jan1) < spec.trailing_period
                 if within_trailing and prev_key not in state:
                     metadata = SpeculateMetadata(
                         highest_observed=spec.largest_observed_gap,
@@ -487,9 +484,9 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         # Determine plus threshold
         if spec_state.config.plus is not None:
             plus = spec_state.config.plus
-        elif isinstance(spec_state.speculation, SimpleSpeculation):
-            plus = spec_state.speculation.largest_observed_gap
-        elif isinstance(spec_state.speculation, YearlySpeculation):
+        elif isinstance(
+            spec_state.speculation, SimpleSpeculation | YearlySpeculation
+        ):
             plus = spec_state.speculation.largest_observed_gap
         else:
             return
@@ -564,9 +561,10 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
                 # Check if we should stop
                 if spec_state.config.plus is not None:
                     plus = spec_state.config.plus
-                elif isinstance(spec_state.speculation, SimpleSpeculation):
-                    plus = spec_state.speculation.largest_observed_gap
-                elif isinstance(spec_state.speculation, YearlySpeculation):
+                elif isinstance(
+                    spec_state.speculation,
+                    SimpleSpeculation | YearlySpeculation,
+                ):
                     plus = spec_state.speculation.largest_observed_gap
                 else:
                     return
@@ -575,7 +573,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
 
     def _get_entry_requests(
         self,
-    ) -> Generator[NavigatingRequest, None, None]:
+    ) -> Generator[Request, None, None]:
         """Get initial entry requests from the scraper.
 
         Builds default invocations from @entry-decorated methods and
@@ -583,7 +581,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         get_entry() directly for scrapers without @entry decorators.
 
         Yields:
-            NavigatingRequest instances for queue initialization.
+            Request instances for queue initialization.
         """
         entries = self.scraper.list_entries()
         if entries:
@@ -646,17 +644,13 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
 
                 # Use match/case for exhaustive request type handling
                 match request:
-                    case (
-                        NavigatingRequest()
-                        | NonNavigatingRequest()
-                        | ArchiveRequest()
-                    ):
+                    case Request():
                         # Normal request flow
                         # Step 10: Wrap request resolution to catch transient exceptions
                         try:
                             response: Response = (
                                 self.resolve_archive_request(request)
-                                if isinstance(request, ArchiveRequest)
+                                if request.archive
                                 else self.resolve_request(request)
                             )
                         except TransientException as e:
@@ -719,9 +713,9 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
 
         Step 16: Check for duplicates using duplicate_check callback before enqueuing.
 
-        For NavigatingRequest yields: context is the Response
-        For NonNavigatingRequest yields: context is the originating request
-        For ArchiveRequest yields: context is the Response
+        For navigating Request yields: context is the Response
+        For non-navigating Request yields: context is the originating request
+        For archive Request yields: context is the Response
 
         Args:
             new_request: The new request to enqueue.
@@ -768,17 +762,15 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         """
         return self.request_manager.resolve_request(request)
 
-    def resolve_archive_request(
-        self, request: ArchiveRequest
-    ) -> ArchiveResponse:
-        """Fetch an ArchiveRequest, download the file, and return an ArchiveResponse.
+    def resolve_archive_request(self, request: Request) -> ArchiveResponse:
+        """Fetch an archive Request, download the file, and return an ArchiveResponse.
 
         This method fetches the file, calls the on_archive callback to save it
         to local storage, and returns an ArchiveResponse with the file_url field
         populated.
 
         Args:
-            request: The ArchiveRequest to fetch.
+            request: The archive Request to fetch (must have archive=True).
 
         Returns:
             ArchiveResponse containing the HTTP response data and local file path.
@@ -845,9 +837,11 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
                         self.handle_data(item.unwrap())
                     case EstimateData():
                         pass
-                    case NavigatingRequest():
+                    case Request() if (
+                        not item.nonnavigating and not item.archive
+                    ):
                         self.enqueue_request(item, response)
-                    case NonNavigatingRequest() | ArchiveRequest():
+                    case Request():
                         self.enqueue_request(item, parent_request)
                     case None:
                         pass

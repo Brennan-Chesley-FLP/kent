@@ -20,12 +20,12 @@ class TestDeduplication:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
 
         class MockScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -51,7 +51,7 @@ class TestDeduplication:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -62,7 +62,7 @@ class TestDeduplication:
             mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
         ) as driver:
             # Create a fake response to use as context for queueing
-            parent_request = NavigatingRequest(
+            parent_request = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/listing",
@@ -81,7 +81,7 @@ class TestDeduplication:
 
             # Create multiple requests to the same URL - they should have
             # the same deduplication key by default (based on URL + method)
-            request1 = NavigatingRequest(
+            request1 = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/detail/123",
@@ -91,7 +91,7 @@ class TestDeduplication:
             )
 
             # Second request to exact same URL - should be deduplicated
-            request2 = NavigatingRequest(
+            request2 = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/detail/123",
@@ -101,7 +101,7 @@ class TestDeduplication:
             )
 
             # Third request also to same URL - should also be deduplicated
-            request3 = NavigatingRequest(
+            request3 = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/detail/123",
@@ -136,7 +136,7 @@ class TestDeduplication:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -146,7 +146,7 @@ class TestDeduplication:
         async with LocalDevDriver.open(
             mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
         ) as driver:
-            parent_request = NavigatingRequest(
+            parent_request = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/listing",
@@ -171,7 +171,7 @@ class TestDeduplication:
             ]
 
             for url in urls:
-                request = NavigatingRequest(
+                request = Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=url,
@@ -210,7 +210,7 @@ class TestDeduplication:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -224,7 +224,7 @@ class TestDeduplication:
             url_b = "https://example.com/page-b"
 
             # First: Simulate page A being visited and requesting page B
-            request_a = NavigatingRequest(
+            request_a = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=url_a,
@@ -253,7 +253,7 @@ class TestDeduplication:
                 assert result.first()[0] == 1
 
             # Now simulate: parsing page A yields a request to page B
-            request_b = NavigatingRequest(
+            request_b = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=url_b,
@@ -281,7 +281,7 @@ class TestDeduplication:
                 text="<html></html>",
                 url=url_b,
             )
-            request_a_again = NavigatingRequest(
+            request_a_again = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=url_a,  # Same URL as before!
@@ -328,7 +328,7 @@ class TestDeduplication:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -338,7 +338,7 @@ class TestDeduplication:
         async with LocalDevDriver.open(
             mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
         ) as driver:
-            parent_request = NavigatingRequest(
+            parent_request = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/search",
@@ -358,7 +358,7 @@ class TestDeduplication:
             # Two requests with DIFFERENT URLs but SAME custom dedup key
             # This simulates e.g. pagination where page=1 and page=2 should
             # still dedupe based on the item ID, not the page number
-            request1 = NavigatingRequest(
+            request1 = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/item/123?page=1",
@@ -368,7 +368,7 @@ class TestDeduplication:
                 deduplication_key="item-123",  # Custom key based on item ID
             )
 
-            request2 = NavigatingRequest(
+            request2 = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/item/123?page=2",  # Different URL
@@ -406,7 +406,7 @@ class TestDeduplication:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
             SkipDeduplicationCheck,
         )
@@ -417,7 +417,7 @@ class TestDeduplication:
         async with LocalDevDriver.open(
             mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
         ) as driver:
-            parent_request = NavigatingRequest(
+            parent_request = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/poll",
@@ -436,7 +436,7 @@ class TestDeduplication:
 
             # Create requests with SkipDeduplicationCheck - duplicates allowed
             for _ in range(3):
-                request = NavigatingRequest(
+                request = Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/status/check",  # Same URL
@@ -472,7 +472,7 @@ class TestDeduplication:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -482,7 +482,7 @@ class TestDeduplication:
         async with LocalDevDriver.open(
             mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
         ) as driver:
-            parent_request = NavigatingRequest(
+            parent_request = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/form",
@@ -500,7 +500,7 @@ class TestDeduplication:
             )
 
             # POST requests to same URL with different data
-            request1 = NavigatingRequest(
+            request1 = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.POST,
                     url="https://example.com/submit",
@@ -510,7 +510,7 @@ class TestDeduplication:
                 current_location="",
             )
 
-            request2 = NavigatingRequest(
+            request2 = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.POST,
                     url="https://example.com/submit",  # Same URL
@@ -547,7 +547,7 @@ class TestDeduplication:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -557,7 +557,7 @@ class TestDeduplication:
         async with LocalDevDriver.open(
             mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
         ) as driver:
-            parent_request = NavigatingRequest(
+            parent_request = Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url="https://example.com/form",
@@ -576,7 +576,7 @@ class TestDeduplication:
 
             # POST requests to same URL with SAME data (identical requests)
             for _ in range(3):
-                request = NavigatingRequest(
+                request = Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.POST,
                         url="https://example.com/submit",
@@ -618,7 +618,7 @@ class TestRequestLineageTracking:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -632,8 +632,8 @@ class TestRequestLineageTracking:
         class MultiStepScraper(BaseScraper[str]):
             """Scraper that navigates from listing to detail pages."""
 
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/listing",
@@ -644,10 +644,10 @@ class TestRequestLineageTracking:
 
             def parse_listing(
                 self, response: Response
-            ) -> Generator[NavigatingRequest, None, None]:
+            ) -> Generator[Request, None, None]:
                 """Parse listing page and yield detail requests."""
                 for i in range(3):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"https://example.com/detail/{i}",
@@ -718,17 +718,16 @@ class TestRequestLineageTracking:
                 )
 
     async def test_archive_request_tracks_parent(self, db_path: Path) -> None:
-        """Test that ArchiveRequest yields properly track their parent.
+        """Test that archive Request yields properly track their parent.
 
-        This verifies the fix for JURI-gih9 where ArchiveRequests (like PDF downloads)
+        This verifies the fix for JURI-gih9 where archive Requests (like PDF downloads)
         were not having their parent_request_id populated.
         """
         from kent.data_types import (
-            ArchiveRequest,
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -741,10 +740,10 @@ class TestRequestLineageTracking:
         )
 
         class PDFDownloadScraper(BaseScraper[str]):
-            """Scraper that yields ArchiveRequests for PDFs."""
+            """Scraper that yields archive Requests for PDFs."""
 
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/index",
@@ -755,10 +754,11 @@ class TestRequestLineageTracking:
 
             def parse_index(
                 self, response: Response
-            ) -> Generator[ArchiveRequest, None, None]:
+            ) -> Generator[Request, None, None]:
                 """Parse index and yield archive requests for PDFs."""
                 for i in range(3):
-                    yield ArchiveRequest(
+                    yield Request(
+                        archive=True,
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"https://example.com/doc{i}.pdf",

@@ -25,7 +25,6 @@ from typing_extensions import assert_never
 from kent.common.decorators import (
     SpeculateMetadata,
     _get_speculative_axis,
-    get_entry_metadata,
 )
 from kent.common.deferred_validation import (
     DeferredValidation,
@@ -48,14 +47,12 @@ from kent.common.speculation_types import (
     YearlySpeculation,
 )
 from kent.data_types import (
-    ArchiveRequest,
     ArchiveResponse,
     BaseRequest,
     BaseScraper,
     EstimateData,
-    NavigatingRequest,
-    NonNavigatingRequest,
     ParsedData,
+    Request,
     Response,
     ScraperYield,
     SkipDeduplicationCheck,
@@ -347,7 +344,9 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
                 prev_year = current_year - 1
                 prev_key = f"{entry_info.name}:{prev_year}"
                 jan1 = date_cls(current_year, 1, 1)
-                if (today - jan1) < spec.trailing_period and prev_key not in state:
+                if (
+                    today - jan1
+                ) < spec.trailing_period and prev_key not in state:
                     metadata = SpeculateMetadata(
                         highest_observed=spec.largest_observed_gap,
                         largest_observed_gap=spec.largest_observed_gap,
@@ -413,7 +412,9 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
 
         if spec_state.config.plus is not None:
             plus = spec_state.config.plus
-        elif isinstance(spec_state.speculation, (SimpleSpeculation, YearlySpeculation)):
+        elif isinstance(
+            spec_state.speculation, SimpleSpeculation | YearlySpeculation
+        ):
             plus = spec_state.speculation.largest_observed_gap
         else:
             return
@@ -475,7 +476,10 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
                     spec_state.consecutive_failures += 1
                     if spec_state.config.plus is not None:
                         plus = spec_state.config.plus
-                    elif isinstance(spec_state.speculation, (SimpleSpeculation, YearlySpeculation)):
+                    elif isinstance(
+                        spec_state.speculation,
+                        SimpleSpeculation | YearlySpeculation,
+                    ):
                         plus = spec_state.speculation.largest_observed_gap
                     else:
                         return
@@ -484,7 +488,7 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
 
     def _get_entry_requests(
         self,
-    ) -> Generator[NavigatingRequest, None, None]:
+    ) -> Generator[Request, None, None]:
         """Get initial entry requests from the scraper.
 
         Builds default invocations from @entry-decorated methods and
@@ -492,7 +496,7 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         get_entry() directly for scrapers without @entry decorators.
 
         Yields:
-            NavigatingRequest instances for queue initialization.
+            Request instances for queue initialization.
         """
         entries = self.scraper.list_entries()
         if entries:
@@ -625,17 +629,13 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
             try:
                 # Use match/case for exhaustive request type handling
                 match request:
-                    case (
-                        NavigatingRequest()
-                        | NonNavigatingRequest()
-                        | ArchiveRequest()
-                    ):
+                    case Request():
                         # Normal request flow
                         # Wrap request resolution to catch transient exceptions
                         try:
                             response: Response = (
                                 await self.resolve_archive_request(request)
-                                if isinstance(request, ArchiveRequest)
+                                if request.archive
                                 else await self.resolve_request(request)
                             )
                         except TransientException as e:
@@ -694,9 +694,9 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
 
         Check for duplicates using duplicate_check callback before enqueuing.
 
-        For NavigatingRequest yields: context is the Response
-        For NonNavigatingRequest yields: context is the originating request
-        For ArchiveRequest yields: context is the Response
+        For navigating Request yields: context is the Response
+        For non-navigating Request yields: context is the originating request
+        For archive Request yields: context is the Response
 
         Args:
             new_request: The new request to enqueue.
@@ -750,16 +750,16 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         return response
 
     async def resolve_archive_request(
-        self, request: ArchiveRequest
+        self, request: Request
     ) -> ArchiveResponse:
-        """Fetch an ArchiveRequest, download the file, and return an ArchiveResponse.
+        """Fetch an archive Request, download the file, and return an ArchiveResponse.
 
         This method fetches the file, calls the on_archive callback to save it
         to local storage, and returns an ArchiveResponse with the file_url field
         populated.
 
         Args:
-            request: The ArchiveRequest to fetch.
+            request: The archive Request to fetch (must have archive=True).
 
         Returns:
             ArchiveResponse containing the HTTP response data and local file path.
@@ -828,9 +828,11 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
                         await self.handle_data(item.unwrap())
                     case EstimateData():
                         pass
-                    case NavigatingRequest():
+                    case Request() if (
+                        not item.nonnavigating and not item.archive
+                    ):
                         await self.enqueue_request(item, response)
-                    case NonNavigatingRequest() | ArchiveRequest():
+                    case Request():
                         await self.enqueue_request(item, parent_request)
                     case None:
                         pass

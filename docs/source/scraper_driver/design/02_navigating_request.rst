@@ -1,11 +1,11 @@
-Step 2: NavigatingRequest - Multi-Page Scraping
-================================================
+Step 2: Request - Multi-Page Scraping
+======================================
 
 In Step 1, our scraper was a simple function that parsed a single HTML page.
 But real-world scrapers need to navigate between pages - from a list page to
 detail pages, from search results to individual documents.
 
-This step introduces **NavigatingRequest**, which allows scrapers to request
+This step introduces the **Request** type, which allows scrapers to request
 additional pages while the driver handles all the HTTP complexity.
 
 
@@ -15,7 +15,7 @@ Overview
 In this step, we introduce:
 
 1. **ParsedData** - A type wrapper for yielded data (enables pattern matching)
-2. **NavigatingRequest** - A request for the driver to fetch another page
+2. **Request** - A request for the driver to fetch another page
 3. **Response** - The HTTP response object passed to continuation methods
 4. **Scraper as a class** - Multiple methods for different page types
 5. **Continuation as string** - Method names, not function references (serializable)
@@ -54,17 +54,20 @@ The Types
         def unwrap(self) -> T:
             return self.data
 
-**NavigatingRequest** asks the driver to GET a URL (we'll expand this next):
+**Request** asks the driver to GET a URL (we'll expand this next):
 
 .. code-block:: python
 
     @dataclass
-    class NavigatingRequest:
+    class Request:
         url: str              # Can be relative or absolute
         continuation: str     # Method name to call with Response
         method: str = "GET"   # HTTP method
         headers: dict = field(default_factory=dict)
         data: dict | bytes | None = None  # For POST requests
+        nonnavigating: bool = False  # If True, don't update current_location
+        archive: bool = False        # If True, download and archive the file
+        expected_type: str | None = None  # File type hint for archive requests
 
 **Response** mirrors the httpx Response object:
 
@@ -77,7 +80,7 @@ The Types
         content: bytes       # Raw bytes
         text: str            # Decoded text
         url: str             # Final URL after redirects
-        request: NavigatingRequest
+        request: Request
 
 
 Why Continuation as String?
@@ -89,7 +92,7 @@ reference. This makes requests fully serializable without pickling:
 .. code-block:: python
 
     # This can be JSON serialized
-    request = NavigatingRequest(
+    request = Request(
         url="/cases/BCC-2024-001",
         continuation="parse_detail",  # String, not self.parse_detail
     )
@@ -115,7 +118,7 @@ The driver uses Python 3.10's ``match`` statement to handle yields exhaustively:
         match item:
             case ParsedData():
                 self.results.append(item.unwrap())
-            case NavigatingRequest():
+            case Request():
                 self.enqueue_request(request, item)
             case None:
                 pass
@@ -127,9 +130,9 @@ exception if reached, and at type-check time it verifies that all cases are
 handled. If you add a new yield type to ``ScraperYield`` and forget to handle
 it, the type checker will report an error on the ``assert_never`` line.
 
-This pattern ensures we handle every possible yield type. As we add more types
-in later steps (NonNavigatingRequest, ArchiveRequest), the type system helps
-us remember to handle them.
+This pattern ensures we handle every possible yield type. The unified
+``Request`` type handles navigating, non-navigating, and archive requests
+through its ``nonnavigating`` and ``archive`` flags.
 
 
 Data Flow
@@ -145,11 +148,11 @@ Data Flow
         D->>H: GET /cases
         H-->>D: Response (list HTML)
         D->>S: parse_list(response)
-        S-->>D: yield NavigatingRequest(/cases/BCC-2024-001)
-        S-->>D: yield NavigatingRequest(/cases/BCC-2024-002)
-        S-->>D: yield NavigatingRequest(...)
+        S-->>D: yield Request(/cases/BCC-2024-001)
+        S-->>D: yield Request(/cases/BCC-2024-002)
+        S-->>D: yield Request(...)
 
-        loop For each NavigatingRequest
+        loop For each Request
             D->>H: GET /cases/{docket}
             H-->>D: Response (detail HTML)
             D->>S: parse_detail(response)
@@ -162,19 +165,19 @@ Data Flow
 URL Resolution
 --------------
 
-NavigatingRequest can use relative URLs. The driver resolves them against
+A ``Request`` can use relative URLs. The driver resolves them against
 the parent request's URL when enqueueing:
 
 .. code-block:: python
 
     # In parse_list, responding to http://bugcourt.example.com/cases
-    yield NavigatingRequest(
+    yield Request(
         url="/cases/BCC-2024-001",  # Relative URL
         continuation="parse_detail",
     )
     # Driver resolves to: http://bugcourt.example.com/cases/BCC-2024-001
 
-The ``resolve_from`` method on NavigatingRequest creates a new request with
+The ``resolve_from`` method on ``Request`` creates a new request with
 the URL resolved against the parent request. This uses ``urllib.parse.urljoin``
 for standard URL resolution behavior. This glosses over an important case
 that we'll cover in the next step.
@@ -195,7 +198,7 @@ Here's the complete Step 2 scraper:
     the design documentation.
 
     Step 1: A simple function that parses HTML and yields dicts.
-    Step 2: A class with multiple methods, yielding ParsedData and NavigatingRequest.
+    Step 2: A class with multiple methods, yielding ParsedData and Request.
     """
 
     from collections.abc import Generator
@@ -204,7 +207,7 @@ Here's the complete Step 2 scraper:
 
     from kent.data_types import (
         BaseScraper,
-        NavigatingRequest,
+        Request,
         ParsedData,
         Response,
         ScraperYield,
@@ -216,7 +219,7 @@ Here's the complete Step 2 scraper:
 
         This Step 2 implementation demonstrates:
         - A scraper as a class (to bundle multiple methods)
-        - Yielding NavigatingRequest to fetch detail pages
+        - Yielding Request to fetch detail pages
         - Yielding ParsedData with complete case information
         - Continuation methods specified by name (for serializability)
 
@@ -227,9 +230,9 @@ Here's the complete Step 2 scraper:
 
         BASE_URL = "http://bugcourt.example.com"
 
-        def get_entry(self) -> NavigatingRequest:
+        def get_entry(self) -> Request:
             """Create the initial request to start scraping."""
-            return NavigatingRequest(
+            return Request(
                 url=f"{self.BASE_URL}/cases", continuation="parse_list"
             )
 
@@ -244,7 +247,7 @@ Here's the complete Step 2 scraper:
                 docket = _get_text(row, ".//td[@class='docket']")
                 if docket:
                     # The URL is relative - driver will resolve against parent request
-                    yield NavigatingRequest(
+                    yield Request(
                         url=f"/cases/{docket}",
                         continuation="parse_detail",
                     )
@@ -298,7 +301,7 @@ requests from a queue, calling continuation methods and handling their yields:
         self.request_queue = [self.scraper.get_entry()]
 
         while self.request_queue:
-            request: NavigatingRequest = self.request_queue.pop(0)
+            request: Request = self.request_queue.pop(0)
             response: Response = self.resolve_request(request)
             continuation_method: Callable[
                 [Response],
@@ -308,7 +311,7 @@ requests from a queue, calling continuation methods and handling their yields:
                 match item:
                     case ParsedData():
                         self.results.append(item.unwrap())
-                    case NavigatingRequest():
+                    case Request():
                         self.enqueue_request(request, item)
                     case None:
                         pass
@@ -333,7 +336,7 @@ The key points of the run loop:
 4. **Yield handling**: The match statement exhaustively handles all possible
    yield types from the scraper generator.
 
-5. **URL resolution**: When a new NavigatingRequest is yielded, ``enqueue_request()``
+5. **URL resolution**: When a new ``Request`` is yielded, ``enqueue_request()``
    resolves its URL against the parent request before adding it to the queue.
 
 
@@ -360,6 +363,7 @@ Example: Using the Driver
 What's Next
 -----------
 
-In :doc:`03_nonnavigating_request`, we introduce **NonNavigatingRequest** -
-for API calls that fetch supplementary data without changing the current
-location. This is useful for JSON APIs that provide additional metadata.
+In :doc:`03_nonnavigating_request`, we introduce **non-navigating requests**
+(``Request`` with ``nonnavigating=True``) - for API calls that fetch
+supplementary data without changing the current location. This is useful
+for JSON APIs that provide additional metadata.

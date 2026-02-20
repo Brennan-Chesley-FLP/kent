@@ -20,8 +20,8 @@ from kent.data_types import (
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
     SkipDeduplicationCheck,
 )
@@ -37,7 +37,7 @@ class TestDedupKeyGeneration:
     ) -> None:
         """The deduplication_key shall be identical for requests to the same URL."""
 
-        req1 = NavigatingRequest(
+        req1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/test",
@@ -45,7 +45,7 @@ class TestDedupKeyGeneration:
             continuation="parse",
         )
 
-        req2 = NavigatingRequest(
+        req2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/test",
@@ -60,7 +60,7 @@ class TestDedupKeyGeneration:
     ) -> None:
         """The deduplication_key shall differ for requests to different URLs."""
 
-        req1 = NavigatingRequest(
+        req1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/test1",
@@ -68,7 +68,7 @@ class TestDedupKeyGeneration:
             continuation="parse",
         )
 
-        req2 = NavigatingRequest(
+        req2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/test2",
@@ -83,7 +83,7 @@ class TestDedupKeyGeneration:
     ) -> None:
         """The deduplication_key shall differ when query params differ."""
 
-        req1 = NavigatingRequest(
+        req1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/search",
@@ -92,7 +92,7 @@ class TestDedupKeyGeneration:
             continuation="parse",
         )
 
-        req2 = NavigatingRequest(
+        req2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/search",
@@ -108,7 +108,7 @@ class TestDedupKeyGeneration:
     ) -> None:
         """The deduplication_key shall be identical when params are in different order."""
 
-        req1 = NavigatingRequest(
+        req1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/search",
@@ -117,7 +117,7 @@ class TestDedupKeyGeneration:
             continuation="parse",
         )
 
-        req2 = NavigatingRequest(
+        req2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/search",
@@ -133,7 +133,7 @@ class TestDedupKeyGeneration:
     ) -> None:
         """The deduplication_key shall be identical for POST data dicts in different order."""
 
-        req1 = NavigatingRequest(
+        req1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.POST,
                 url=f"{server_url}/submit",
@@ -142,7 +142,7 @@ class TestDedupKeyGeneration:
             continuation="parse",
         )
 
-        req2 = NavigatingRequest(
+        req2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.POST,
                 url=f"{server_url}/submit",
@@ -158,7 +158,7 @@ class TestDedupKeyGeneration:
     ) -> None:
         """The deduplication_key shall sort list data by first element for consistency."""
 
-        req1 = NavigatingRequest(
+        req1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.POST,
                 url=f"{server_url}/submit",
@@ -167,7 +167,7 @@ class TestDedupKeyGeneration:
             continuation="parse",
         )
 
-        req2 = NavigatingRequest(
+        req2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.POST,
                 url=f"{server_url}/submit",
@@ -183,7 +183,7 @@ class TestDedupKeyGeneration:
     ) -> None:
         """The deduplication_key shall be identical for JSON data in different order."""
 
-        req1 = NavigatingRequest(
+        req1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.POST,
                 url=f"{server_url}/api",
@@ -192,7 +192,7 @@ class TestDedupKeyGeneration:
             continuation="parse",
         )
 
-        req2 = NavigatingRequest(
+        req2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.POST,
                 url=f"{server_url}/api",
@@ -212,7 +212,7 @@ class TestCustomDedupKey:
     ) -> None:
         """The scraper shall be able to provide a custom deduplication_key."""
 
-        req1 = NavigatingRequest(
+        req1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/test",
@@ -221,7 +221,7 @@ class TestCustomDedupKey:
             deduplication_key="custom-key-1",
         )
 
-        req2 = NavigatingRequest(
+        req2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/test",
@@ -240,8 +240,8 @@ class TestCustomDedupKey:
         """The custom deduplication_key shall be preserved when request is resolved."""
 
         class CustomKeyScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -251,7 +251,7 @@ class TestCustomDedupKey:
 
             def parse(self, response: Response):
                 # Yield request with custom key
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="/page1",
@@ -287,8 +287,8 @@ class TestDuplicateCheckCallback:
         """The duplicate_check callback shall prevent duplicate requests from being enqueued."""
 
         class DuplicateScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -299,7 +299,7 @@ class TestDuplicateCheckCallback:
             def parse(self, response: Response):
                 # Yield the same request 3 times
                 for _ in range(3):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/duplicate",
@@ -340,8 +340,8 @@ class TestDuplicateCheckCallback:
         """The driver shall enqueue all requests when no duplicate_check is provided."""
 
         class DuplicateScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -352,7 +352,7 @@ class TestDuplicateCheckCallback:
             def parse(self, response: Response):
                 # Yield the same request 3 times
                 for _ in range(3):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/duplicate",
@@ -384,8 +384,8 @@ class TestDuplicateCheckCallback:
         """The duplicate_check callback shall allow requests with different keys."""
 
         class MultiPageScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -396,7 +396,7 @@ class TestDuplicateCheckCallback:
             def parse(self, response: Response):
                 # Yield requests to different pages
                 for i in range(1, 4):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/page{i}",
@@ -436,8 +436,8 @@ class TestDuplicateCheckCallback:
         """The duplicate_check callback shall work with custom deduplication keys."""
 
         class CustomKeyScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -447,7 +447,7 @@ class TestDuplicateCheckCallback:
 
             def parse(self, response: Response):
                 # Yield requests with custom keys
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/page1",
@@ -455,7 +455,7 @@ class TestDuplicateCheckCallback:
                     continuation="parse_page",
                     deduplication_key="custom-1",
                 )
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/page1",  # Same URL
@@ -463,7 +463,7 @@ class TestDuplicateCheckCallback:
                     continuation="parse_page",
                     deduplication_key="custom-1",  # Same key
                 )
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/page1",  # Same URL
@@ -508,8 +508,8 @@ class TestSkipDeduplicationCheck:
         """SkipDeduplicationCheck shall bypass the duplicate_check callback entirely."""
 
         class SkipDedupScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -520,7 +520,7 @@ class TestSkipDeduplicationCheck:
             def parse(self, response: Response):
                 # Yield the same URL 3 times with SkipDeduplicationCheck
                 for _ in range(3):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/duplicate",
@@ -563,8 +563,8 @@ class TestSkipDeduplicationCheck:
         """SkipDeduplicationCheck requests shall not be tracked in seen keys."""
 
         class MixedDedupScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -574,7 +574,7 @@ class TestSkipDeduplicationCheck:
 
             def parse(self, response: Response):
                 # First: skip dedup request
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/page1",
@@ -583,7 +583,7 @@ class TestSkipDeduplicationCheck:
                     deduplication_key=SkipDeduplicationCheck(),
                 )
                 # Second: normal request to same URL (should be processed)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/page1",
@@ -591,7 +591,7 @@ class TestSkipDeduplicationCheck:
                     continuation="parse_page",
                 )
                 # Third: another normal request to same URL (should be skipped)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/page1",

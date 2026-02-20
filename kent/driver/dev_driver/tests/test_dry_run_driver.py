@@ -7,12 +7,11 @@ from typing import TYPE_CHECKING
 
 from kent.common.data_models import ScrapedData
 from kent.data_types import (
-    ArchiveRequest,
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.dev_driver.dry_run_driver import (
@@ -33,9 +32,9 @@ class SampleData(ScrapedData):
 class SampleScraper(BaseScraper[SampleData]):
     """Sample scraper for dry run testing."""
 
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         """Entry point for the scraper."""
-        yield NavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET, url="https://example.com"
             ),
@@ -44,14 +43,14 @@ class SampleScraper(BaseScraper[SampleData]):
 
     def parse_index(
         self, response: Response
-    ) -> Generator[ParsedData[SampleData] | NavigatingRequest, None, None]:
+    ) -> Generator[ParsedData[SampleData] | Request, None, None]:
         """Parse index page and yield data and child requests."""
         # Yield some parsed data
         yield ParsedData(SampleData(title="Item 1", value=100))
         yield ParsedData(SampleData(title="Item 2", value=200))
 
         # Yield a child request
-        yield NavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/detail/1",
@@ -67,9 +66,10 @@ class SampleScraper(BaseScraper[SampleData]):
 
     def parse_with_archive(
         self, response: Response
-    ) -> Generator[ArchiveRequest, None, None]:
+    ) -> Generator[Request, None, None]:
         """Parse and yield archive request."""
-        yield ArchiveRequest(
+        yield Request(
+            archive=True,
             request=HTTPRequestParams(
                 method=HttpMethod.GET, url="/document.pdf"
             ),
@@ -131,7 +131,7 @@ def test_dry_run_captures_data_and_requests():
 
 
 def test_dry_run_captures_archive_request():
-    """Test that DryRunDriver captures ArchiveRequest correctly."""
+    """Test that DryRunDriver captures archive Request correctly."""
     scraper = SampleScraper()
     driver = DryRunDriver(scraper)
 

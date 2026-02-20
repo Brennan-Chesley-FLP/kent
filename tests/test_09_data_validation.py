@@ -267,16 +267,16 @@ class TestIntegrationWithScraper:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
 
         # Create a scraper that yields deferred validation with invalid data
         class InvalidDataScraper(BaseScraper[BugCourtCaseData]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001",
@@ -321,16 +321,16 @@ class TestIntegrationWithScraper:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
 
         # Create a scraper that yields deferred validation with invalid data
         class InvalidDataScraper(BaseScraper[BugCourtCaseData]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001",
@@ -377,8 +377,8 @@ class TestIntegrationWithScraper:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import (
@@ -388,8 +388,8 @@ class TestIntegrationWithScraper:
 
         # Create a scraper that yields deferred validation with invalid data
         class InvalidDataScraper(BaseScraper[BugCourtCaseData]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001",

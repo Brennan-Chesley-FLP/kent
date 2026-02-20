@@ -10,15 +10,14 @@ from kent.common.page_element import (
 from kent.data_types import (
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
-    NonNavigatingRequest,
+    Request,
     Response,
 )
 
 
 def test_via_field_on_base_request():
     """BaseRequest should have a via field that defaults to None."""
-    request = NavigatingRequest(
+    request = Request(
         request=HTTPRequestParams(
             url="https://example.com/page", method=HttpMethod.GET
         ),
@@ -29,10 +28,10 @@ def test_via_field_on_base_request():
 
 
 def test_via_link_on_navigating_request():
-    """NavigatingRequest should accept and store ViaLink."""
+    """Request should accept and store ViaLink."""
     via = ViaLink(selector="//a[@id='link1']", description="Test link")
 
-    request = NavigatingRequest(
+    request = Request(
         request=HTTPRequestParams(
             url="https://example.com/page", method=HttpMethod.GET
         ),
@@ -45,7 +44,7 @@ def test_via_link_on_navigating_request():
 
 
 def test_via_form_submit_on_navigating_request():
-    """NavigatingRequest should accept and store ViaFormSubmit."""
+    """Request should accept and store ViaFormSubmit."""
     via = ViaFormSubmit(
         form_selector="//form[@id='search']",
         submit_selector=".//button[@type='submit']",
@@ -53,7 +52,7 @@ def test_via_form_submit_on_navigating_request():
         description="Search form",
     )
 
-    request = NavigatingRequest(
+    request = Request(
         request=HTTPRequestParams(
             url="https://example.com/search", method=HttpMethod.POST
         ),
@@ -70,7 +69,7 @@ def test_via_propagates_through_resolve_from_response():
     """via should be preserved when resolving from a Response."""
     via = ViaLink(selector="//a[@class='next']", description="Next page")
 
-    original_request = NavigatingRequest(
+    original_request = Request(
         request=HTTPRequestParams(
             url="https://example.com/page1", method=HttpMethod.GET
         ),
@@ -90,7 +89,7 @@ def test_via_propagates_through_resolve_from_response():
     )
 
     # Create a new request that should preserve via
-    new_request = NavigatingRequest(
+    new_request = Request(
         request=HTTPRequestParams(
             url="https://example.com/page2", method=HttpMethod.GET
         ),
@@ -105,7 +104,7 @@ def test_via_propagates_through_resolve_from_response():
 
 
 def test_via_propagates_through_nonnavigating_request():
-    """via should be preserved for NonNavigatingRequest."""
+    """via should be preserved for nonnavigating Request."""
     via = ViaFormSubmit(
         form_selector="//form",
         submit_selector=None,
@@ -113,19 +112,20 @@ def test_via_propagates_through_nonnavigating_request():
         description="API form",
     )
 
-    request = NonNavigatingRequest(
+    request = Request(
         request=HTTPRequestParams(
             url="https://example.com/api", method=HttpMethod.POST
         ),
         continuation="parse_api_response",
         via=via,
+        nonnavigating=True,
     )
 
     assert request.via == via
 
 
 def test_via_propagates_through_nonnavigating_resolve():
-    """via should be preserved when NonNavigatingRequest resolves."""
+    """via should be preserved when nonnavigating Request resolves."""
     via = ViaFormSubmit(
         form_selector="//form[@id='filter']",
         submit_selector=None,
@@ -133,7 +133,7 @@ def test_via_propagates_through_nonnavigating_resolve():
         description="Filter form",
     )
 
-    parent_request = NavigatingRequest(
+    parent_request = Request(
         request=HTTPRequestParams(
             url="https://example.com/page", method=HttpMethod.GET
         ),
@@ -150,10 +150,11 @@ def test_via_propagates_through_nonnavigating_resolve():
         request=parent_request,
     )
 
-    non_nav_request = NonNavigatingRequest(
+    non_nav_request = Request(
         request=HTTPRequestParams(url="/api/filter", method=HttpMethod.POST),
         continuation="parse_filter_response",
         via=via,
+        nonnavigating=True,
     )
 
     resolved = non_nav_request.resolve_from(response)
@@ -164,7 +165,7 @@ def test_via_propagates_through_nonnavigating_resolve():
 
 def test_via_none_preserved():
     """When via is None, it should remain None through resolve."""
-    request = NavigatingRequest(
+    request = Request(
         request=HTTPRequestParams(
             url="https://example.com/page", method=HttpMethod.GET
         ),
@@ -182,7 +183,7 @@ def test_via_none_preserved():
         request=request,
     )
 
-    new_request = NavigatingRequest(
+    new_request = Request(
         request=HTTPRequestParams(
             url="https://example.com/page2", method=HttpMethod.GET
         ),
@@ -200,7 +201,7 @@ def test_via_different_for_different_requests():
     via1 = ViaLink(selector="//a[@id='link1']", description="Link 1")
     via2 = ViaLink(selector="//a[@id='link2']", description="Link 2")
 
-    request1 = NavigatingRequest(
+    request1 = Request(
         request=HTTPRequestParams(
             url="https://example.com/page1", method=HttpMethod.GET
         ),
@@ -208,7 +209,7 @@ def test_via_different_for_different_requests():
         via=via1,
     )
 
-    request2 = NavigatingRequest(
+    request2 = Request(
         request=HTTPRequestParams(
             url="https://example.com/page2", method=HttpMethod.GET
         ),
@@ -225,7 +226,7 @@ def test_via_preserved_in_speculative_request():
     """via should be preserved when creating speculative requests."""
     via = ViaLink(selector="//a[@class='detail']", description="Detail link")
 
-    request = NavigatingRequest(
+    request = Request(
         request=HTTPRequestParams(
             url="https://example.com/detail/123", method=HttpMethod.GET
         ),

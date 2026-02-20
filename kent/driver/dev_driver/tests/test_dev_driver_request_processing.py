@@ -22,7 +22,7 @@ class TestRequestStatusMarking:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -34,8 +34,8 @@ class TestRequestStatusMarking:
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/page",
@@ -88,7 +88,7 @@ class TestRequestStatusMarking:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -100,8 +100,8 @@ class TestRequestStatusMarking:
         )
 
         class FailingScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/fail",
@@ -164,8 +164,8 @@ class TestDataStorage:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -178,8 +178,8 @@ class TestDataStorage:
 
         # Use dicts instead of dataclasses since they're directly JSON serializable
         class DataScraper(BaseScraper[dict[str, Any]]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/case",
@@ -256,7 +256,7 @@ class TestHeadersOnlyResponse:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -268,8 +268,8 @@ class TestHeadersOnlyResponse:
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.HEAD,
                         url="https://example.com/resource",
@@ -369,8 +369,8 @@ class TestDeferredValidationHandling:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -393,8 +393,8 @@ class TestDeferredValidationHandling:
         received_data: list[CaseData] = []
 
         class ValidDataScraper(BaseScraper[CaseData]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/case",
@@ -466,8 +466,8 @@ class TestDeferredValidationHandling:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -498,8 +498,8 @@ class TestDeferredValidationHandling:
         invalid_data_received: list[Any] = []
 
         class InvalidDataScraper(BaseScraper[StrictCaseData]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/case",
@@ -566,20 +566,19 @@ class TestDeferredValidationHandling:
             assert data["case_name"] == "Smith v. Jones"
 
 
-class TestNonNavigatingRequestHandling:
-    """Tests for NonNavigatingRequest handling by DevDriver."""
+class TestNonNavigatingHandling:
+    """Tests for non-navigating Request handling by DevDriver."""
 
     async def test_non_navigating_request_processed(
         self, db_path: Path
     ) -> None:
-        """Test that NonNavigatingRequests are processed without updating location."""
+        """Test that non-navigating Requests are processed without updating location."""
         from kent.data_types import (
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
-            NonNavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -593,8 +592,8 @@ class TestNonNavigatingRequestHandling:
         collected_data: list[dict] = []
 
         class NonNavScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/main",
@@ -604,8 +603,9 @@ class TestNonNavigatingRequestHandling:
                 )
 
             def parse_main(self, response: Response):
-                # Yield a NonNavigatingRequest for auxiliary data
-                yield NonNavigatingRequest(
+                # Yield a non-navigating Request for auxiliary data
+                yield Request(
+                    nonnavigating=True,
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/api/metadata",
@@ -677,14 +677,13 @@ class TestNonNavigatingRequestHandling:
     async def test_non_navigating_request_preserves_accumulated_data(
         self, db_path: Path
     ) -> None:
-        """Test that NonNavigatingRequest preserves accumulated_data from parent."""
+        """Test that non-navigating Request preserves accumulated_data from parent."""
         from kent.data_types import (
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
-            NonNavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -696,8 +695,8 @@ class TestNonNavigatingRequestHandling:
         )
 
         class AccumulatingScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/listing",
@@ -712,7 +711,8 @@ class TestNonNavigatingRequestHandling:
                 accumulated = response.request.accumulated_data
                 accumulated["items"].append("item1")
 
-                yield NonNavigatingRequest(
+                yield Request(
+                    nonnavigating=True,
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/detail/1",

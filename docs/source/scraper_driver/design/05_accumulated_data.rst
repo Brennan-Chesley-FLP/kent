@@ -1,7 +1,7 @@
 Step 5: Accumulated Data - Data Flow Across Requests
 =====================================================
 
-In Step 4, our scraper downloaded and archived files using ArchiveRequest.
+In Step 4, our scraper downloaded and archived files using archive requests.
 But what if we need to collect information from multiple pages and combine
 it into a single result? This is where **accumulated_data** comes in.
 
@@ -14,7 +14,7 @@ Overview
 
 In this step, we introduce:
 
-1. **accumulated_data** - Field on BaseRequest for flowing data across pages
+1. **accumulated_data** - Field on Request for flowing data across pages
 2. **Deep copy semantics** - Prevent unintended sharing between sibling requests
 3. **Request chain propagation** - Data flows automatically through resolve_from
 4. **Multi-court data flow** - Example: appeals court → trial court aggregation
@@ -41,7 +41,7 @@ Without accumulated_data, you'd have to:
 
     def parse_appeals_detail(self, response: Response):
         case_data["appeals_judge"] = extract_judge(response)  # Mutation!
-        yield NavigatingRequest(url=trial_url, continuation="parse_trial")
+        yield Request(url=trial_url, continuation="parse_trial")
 
     def parse_trial(self, response: Response):
         # How do we know which case_data this belongs to?
@@ -55,7 +55,7 @@ With accumulated_data, each request carries its own data:
 
     def parse_appeals_list(self, response: Response):
         # Start with case_name from list page
-        yield NavigatingRequest(
+        yield Request(
             url=appeals_url,
             continuation="parse_appeals_detail",
             accumulated_data={"case_name": case_name}
@@ -66,7 +66,7 @@ With accumulated_data, each request carries its own data:
         data = response.request.accumulated_data.copy()
         data["appeals_judge"] = extract_judge(response)
 
-        yield NavigatingRequest(
+        yield Request(
             url=trial_url,
             continuation="parse_trial",
             accumulated_data=data
@@ -84,13 +84,13 @@ With accumulated_data, each request carries its own data:
 The accumulated_data Field
 ---------------------------
 
-BaseRequest gets a new field:
+Request gets a new field:
 
 .. code-block:: python
 
     @dataclass(frozen=True)
-    class BaseRequest:
-        """Base class for all request types.
+    class Request:
+        """Unified request type.
 
         Attributes:
             request: The HTTP request parameters.
@@ -102,7 +102,7 @@ BaseRequest gets a new field:
         request: HTTPRequestParams
         continuation: str
         current_location: str = ""
-        previous_requests: list[BaseRequest] = field(default_factory=list)
+        previous_requests: list[Request] = field(default_factory=list)
         accumulated_data: dict[str, Any] = field(default_factory=dict)
 
         def __post_init__(self) -> None:
@@ -130,13 +130,13 @@ Deep Copy Semantics - Don't step on toes
     # WITHOUT deep copy (buggy!):
     shared_data = {"metadata": {"court": "trial"}}
 
-    request1 = NavigatingRequest(
+    request1 = Request(
         url="/case1",
         continuation="parse",
         accumulated_data=shared_data
     )
 
-    request2 = NavigatingRequest(
+    request2 = Request(
         url="/case2",
         continuation="parse",
         accumulated_data=shared_data
@@ -155,14 +155,14 @@ Deep Copy Semantics - Don't step on toes
     # WITH deep copy (correct!):
     shared_data = {"metadata": {"court": "trial"}}
 
-    request1 = NavigatingRequest(
+    request1 = Request(
         url="/case1",
         continuation="parse",
         accumulated_data=shared_data
     )
     # __post_init__ deep copies shared_data
 
-    request2 = NavigatingRequest(
+    request2 = Request(
         url="/case2",
         continuation="parse",
         accumulated_data=shared_data
@@ -203,7 +203,7 @@ Data Flow Diagram
         H-->>D: Response (appeals list HTML)
         D->>S: parse_appeals_list(response)
         Note over S: Extract case_name from HTML
-        S-->>D: yield NavigatingRequest(<br/>url=/appeals/BCA-2024-001,<br/>accumulated_data={case_name: "Butterfly v. Caterpillar"})
+        S-->>D: yield Request(<br/>url=/appeals/BCA-2024-001,<br/>accumulated_data={case_name: "Butterfly v. Caterpillar"})
 
         Note over D: resolve_from propagates accumulated_data
 
@@ -211,7 +211,7 @@ Data Flow Diagram
         H-->>D: Response (appeals detail HTML)
         D->>S: parse_appeals_detail(response)
         Note over S: Get accumulated_data from response.request<br/>Add appeals_judge, trial_docket
-        S-->>D: yield NavigatingRequest(<br/>url=/cases/BCC-2024-002,<br/>accumulated_data={<br/>  case_name: "Butterfly v. Caterpillar",<br/>  appeals_judge: "Judge Honeybee",<br/>  appeals_docket: "BCA-2024-001"<br/>})
+        S-->>D: yield Request(<br/>url=/cases/BCC-2024-002,<br/>accumulated_data={<br/>  case_name: "Butterfly v. Caterpillar",<br/>  appeals_judge: "Judge Honeybee",<br/>  appeals_docket: "BCA-2024-001"<br/>})
 
         Note over D: resolve_from propagates accumulated_data
 
@@ -242,7 +242,7 @@ Here's a complete scraper demonstrating accumulated_data across three pages:
         BaseScraper,
         HttpMethod,
         HTTPRequestParams,
-        NavigatingRequest,
+        Request,
         ParsedData,
         Response,
         ScraperYield,
@@ -263,9 +263,9 @@ Here's a complete scraper demonstrating accumulated_data across three pages:
 
         BASE_URL = "http://bugcourt.example.com"
 
-        def get_entry(self) -> NavigatingRequest:
+        def get_entry(self) -> Request:
             """Create the initial request to start scraping."""
-            return NavigatingRequest(
+            return Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=f"{self.BASE_URL}/appeals",
@@ -290,7 +290,7 @@ Here's a complete scraper demonstrating accumulated_data across three pages:
 
                 if docket:
                     # Start accumulated_data with case_name from list page
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"/appeals/{docket}",
@@ -325,7 +325,7 @@ Here's a complete scraper demonstrating accumulated_data across three pages:
                 trial_court_docket = trial_court_docket.split(":")[-1].strip()
 
             # Navigate to trial court with accumulated data
-            yield NavigatingRequest(
+            yield Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=f"/cases/{trial_court_docket}",

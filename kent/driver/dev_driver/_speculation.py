@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 from kent.common.decorators import (
     SpeculateMetadata,
     _get_speculative_axis,
-    get_entry_metadata,
 )
 from kent.common.searchable import (
     SpeculateFunctionConfig,
@@ -154,7 +153,9 @@ class SpeculationMixin:
                 prev_year = current_year - 1
                 prev_key = f"{entry_info.name}:{prev_year}"
                 jan1 = date_cls(current_year, 1, 1)
-                if (today - jan1) < spec.trailing_period and prev_key not in state:
+                if (
+                    today - jan1
+                ) < spec.trailing_period and prev_key not in state:
                     metadata = SpeculateMetadata(
                         highest_observed=spec.largest_observed_gap,
                         largest_observed_gap=spec.largest_observed_gap,
@@ -274,7 +275,9 @@ class SpeculationMixin:
         # Determine plus threshold
         if spec_state.config.plus is not None:
             plus = spec_state.config.plus
-        elif isinstance(spec_state.speculation, (SimpleSpeculation, YearlySpeculation)):
+        elif isinstance(
+            spec_state.speculation, SimpleSpeculation | YearlySpeculation
+        ):
             plus = spec_state.speculation.largest_observed_gap
         else:
             return
@@ -357,7 +360,10 @@ class SpeculationMixin:
                     spec_state.consecutive_failures += 1
                     if spec_state.config.plus is not None:
                         plus = spec_state.config.plus
-                    elif isinstance(spec_state.speculation, (SimpleSpeculation, YearlySpeculation)):
+                    elif isinstance(
+                        spec_state.speculation,
+                        SimpleSpeculation | YearlySpeculation,
+                    ):
                         plus = spec_state.speculation.largest_observed_gap
                     else:
                         return
@@ -497,7 +503,7 @@ class SpeculationMixin:
                     )
 
             # Re-invoke the entry point to restart the speculative flow
-            # This will call get_entry() which should yield the NavigatingRequest
+            # This will call get_entry() which should yield the Request
             # that triggers the speculative step
             await self._emit_progress(
                 "speculative_recovery_initiated",

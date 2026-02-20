@@ -19,8 +19,8 @@ from kent.data_types import (
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import SyncDriver
@@ -36,8 +36,8 @@ class TestPermanentHeaders:
         """The permanent headers shall persist across the request chain."""
 
         class HeaderPersistenceScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -47,7 +47,7 @@ class TestPermanentHeaders:
 
             def parse_entry(self, response: Response):
                 # Set permanent header
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/protected",
@@ -82,8 +82,8 @@ class TestPermanentHeaders:
         """The permanent headers shall be inherited by child requests."""
 
         class HeaderInheritanceScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -93,7 +93,7 @@ class TestPermanentHeaders:
 
             def parse_entry(self, response: Response):
                 # Set permanent header on parent
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/step1",
@@ -105,7 +105,7 @@ class TestPermanentHeaders:
             def parse_step1(self, response: Response):
                 # Permanent header should be inherited
                 # Yield child request without setting permanent
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/step2",
@@ -136,8 +136,8 @@ class TestPermanentHeaders:
         """The permanent headers shall be merged with child headers."""
 
         class HeaderMergeScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -147,7 +147,7 @@ class TestPermanentHeaders:
 
             def parse_entry(self, response: Response):
                 # Set permanent header
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/step1",
@@ -158,7 +158,7 @@ class TestPermanentHeaders:
 
             def parse_step1(self, response: Response):
                 # Add another permanent header (should merge)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/step2",
@@ -194,8 +194,8 @@ class TestPermanentCookies:
         """The permanent cookies shall persist across the request chain."""
 
         class CookiePersistenceScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -205,7 +205,7 @@ class TestPermanentCookies:
 
             def parse_entry(self, response: Response):
                 # Set permanent cookie (simulating login)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/protected",
@@ -237,8 +237,8 @@ class TestPermanentCookies:
         """The permanent cookies shall be inherited by child requests."""
 
         class CookieInheritanceScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -248,7 +248,7 @@ class TestPermanentCookies:
 
             def parse_entry(self, response: Response):
                 # Set permanent cookie
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/step1",
@@ -259,7 +259,7 @@ class TestPermanentCookies:
 
             def parse_step1(self, response: Response):
                 # Cookie should be inherited
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/step2",
@@ -294,8 +294,8 @@ class TestPermanentMerging:
         """The child permanent data shall override parent for same key."""
 
         class OverrideScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -305,7 +305,7 @@ class TestPermanentMerging:
 
             def parse_entry(self, response: Response):
                 # Set permanent header
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/step1",
@@ -316,7 +316,7 @@ class TestPermanentMerging:
 
             def parse_step1(self, response: Response):
                 # Override with new token
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/step2",
@@ -348,8 +348,8 @@ class TestPermanentMerging:
         """The permanent dict shall support both headers and cookies simultaneously."""
 
         class MultiKeyScrap(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -359,7 +359,7 @@ class TestPermanentMerging:
 
             def parse_entry(self, response: Response):
                 # Set both headers and cookies
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/protected",
@@ -398,8 +398,8 @@ class TestPermanentIsolation:
         """The permanent dict shall be deep copied to prevent sharing between branches."""
 
         class IsolationScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -412,7 +412,7 @@ class TestPermanentIsolation:
                 permanent_data = {"headers": {"X-Branch": "initial"}}
 
                 # Yield multiple requests with same permanent
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/branch1",
@@ -422,7 +422,7 @@ class TestPermanentIsolation:
                     accumulated_data={"branch": "1"},
                 )
 
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/branch2",
@@ -463,8 +463,8 @@ class TestPermanentAuthFlow:
         """The permanent data shall support authentication token workflow."""
 
         class AuthFlowScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/login",
@@ -477,7 +477,7 @@ class TestPermanentAuthFlow:
                 token = "auth-token-from-login"
 
                 # Navigate to protected resource with token
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/api/data",
@@ -490,7 +490,7 @@ class TestPermanentAuthFlow:
 
             def parse_api(self, response: Response):
                 # Fetch more data (token still in permanent)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/api/more",

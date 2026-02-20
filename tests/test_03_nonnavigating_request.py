@@ -1,11 +1,11 @@
-"""Step 3: NonNavigatingRequest - API Calls.
+"""Step 3: Non-Navigating Request - API Calls.
 
 This test module verifies the API call capabilities introduced in Step 3
 of the scraper-driver architecture:
 
-1. Scrapers can yield NonNavigatingRequest for API calls
-2. The driver handles NonNavigatingRequest without updating current_location
-3. NavigatingRequest updates current_location, NonNavigatingRequest does not
+1. Scrapers can yield Request(nonnavigating=True) for API calls
+2. The driver handles non-navigating requests without updating current_location
+3. Navigating requests update current_location, non-navigating requests do not
 4. BaseRequest provides shared URL resolution logic
 5. Both request types can be used together in the same scraper
 
@@ -18,9 +18,8 @@ from kent.data_types import (
     BaseRequest,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
-    NonNavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import SyncDriver
@@ -115,36 +114,38 @@ class TestBaseRequest:
         assert resolved == "http://bugcourt.example.com/api/cases/BCC-2024-001"
 
 
-class TestNonNavigatingRequest:
-    """Tests for the NonNavigatingRequest data type."""
+class TestNonNavigating:
+    """Tests for the non-navigating Request data type."""
 
     def test_non_navigating_request_inherits_from_base(self):
-        """NonNavigatingRequest shall inherit from BaseRequest."""
-        request = NonNavigatingRequest(
+        """Non-navigating Request shall inherit from BaseRequest."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/api/cases",
             ),
             continuation="parse_api",
+            nonnavigating=True,
         )
 
         assert isinstance(request, BaseRequest)
 
     def test_non_navigating_request_stores_url(self):
-        """NonNavigatingRequest shall store the URL to fetch."""
-        request = NonNavigatingRequest(
+        """Non-navigating Request shall store the URL to fetch."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/api/cases/BCC-2024-001",
             ),
             continuation="parse_api",
+            nonnavigating=True,
         )
 
         assert request.request.url == "/api/cases/BCC-2024-001"
 
     def test_non_navigating_request_resolve_from_response(self):
-        """NonNavigatingRequest shall resolve URL from Response."""
-        base_request = NavigatingRequest(
+        """Non-navigating Request shall resolve URL from Response."""
+        base_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://bugcourt.example.com/cases/BCC-2024-001",
@@ -159,17 +160,18 @@ class TestNonNavigatingRequest:
             url="http://bugcourt.example.com/cases/BCC-2024-001",
             request=base_request,
         )
-        api_request = NonNavigatingRequest(
+        api_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/api/cases/BCC-2024-001",
             ),
             continuation="parse_api",
+            nonnavigating=True,
         )
 
         resolved = api_request.resolve_from(response)
 
-        assert isinstance(resolved, NonNavigatingRequest)
+        assert isinstance(resolved, Request) and resolved.nonnavigating
         assert (
             resolved.request.url
             == "http://bugcourt.example.com/api/cases/BCC-2024-001"
@@ -181,12 +183,12 @@ class TestNonNavigatingRequest:
         )
 
 
-class TestNavigatingRequestInheritance:
-    """Tests for NavigatingRequest inheriting from BaseRequest."""
+class TestRequestInheritance:
+    """Tests for Request inheriting from BaseRequest."""
 
     def test_navigating_request_inherits_from_base(self):
-        """NavigatingRequest shall inherit from BaseRequest."""
-        request = NavigatingRequest(
+        """Request shall inherit from BaseRequest."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases",
@@ -197,8 +199,8 @@ class TestNavigatingRequestInheritance:
         assert isinstance(request, BaseRequest)
 
     def test_navigating_request_resolve_from_response(self):
-        """NavigatingRequest shall resolve URL from Response."""
-        base_request = NavigatingRequest(
+        """Request shall resolve URL from Response."""
+        base_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://bugcourt.example.com/cases",
@@ -213,7 +215,7 @@ class TestNavigatingRequestInheritance:
             url="http://bugcourt.example.com/cases",
             request=base_request,
         )
-        detail_request = NavigatingRequest(
+        detail_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases/BCC-2024-001",
@@ -223,7 +225,7 @@ class TestNavigatingRequestInheritance:
 
         resolved = detail_request.resolve_from(response)
 
-        assert isinstance(resolved, NavigatingRequest)
+        assert isinstance(resolved, Request)
         assert (
             resolved.request.url
             == "http://bugcourt.example.com/cases/BCC-2024-001"
@@ -258,9 +260,9 @@ class TestRequestCurrentLocation:
     def test_navigating_request_updates_current_location(
         self, server_url: str
     ):
-        """NavigatingRequest shall update current_location to the response URL."""
+        """Request shall update current_location to the response URL."""
         # Create a navigating request
-        entry_request = NavigatingRequest(
+        entry_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/cases",
@@ -279,7 +281,7 @@ class TestRequestCurrentLocation:
         )
 
         # Create a new navigating request resolved from the response
-        detail_request = NavigatingRequest(
+        detail_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases/BCC-2024-001",
@@ -296,9 +298,9 @@ class TestRequestCurrentLocation:
     def test_non_navigating_request_preserves_current_location(
         self, server_url: str
     ):
-        """NonNavigatingRequest shall preserve current_location."""
+        """Non-navigating Request shall preserve current_location."""
         # Create a navigating request and response
-        detail_request = NavigatingRequest(
+        detail_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/cases/BCC-2024-001",
@@ -316,23 +318,24 @@ class TestRequestCurrentLocation:
             request=detail_request,
         )
 
-        # Create a NonNavigatingRequest for the API
-        api_request = NonNavigatingRequest(
+        # Create a non-navigating Request for the API
+        api_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/api/cases/BCC-2024-001",
             ),
             continuation="parse_api",
+            nonnavigating=True,
         )
 
         resolved = api_request.resolve_from(response)
 
-        # current_location should be the response URL (from NavigatingRequest)
+        # current_location should be the response URL (from navigating Request)
         assert resolved.current_location == f"{server_url}/cases/BCC-2024-001"
         assert resolved.request.url == f"{server_url}/api/cases/BCC-2024-001"
 
     def test_driver_handles_both_request_types(self, driver: SyncDriver[dict]):
-        """The driver shall handle both NavigatingRequest and NonNavigatingRequest."""
+        """The driver shall handle both navigating and non-navigating requests."""
         callback, results = collect_results()
         driver.on_data = callback
         driver.run()
@@ -358,7 +361,7 @@ class TestBugCourtScraperWithAPI:
     @pytest.fixture
     def list_response(self, cases_html: str, server_url: str) -> Response:
         """Create a Response for the case list page."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/cases",
@@ -377,21 +380,21 @@ class TestBugCourtScraperWithAPI:
     def test_parse_list_yields_navigating_requests(
         self, scraper: BugCourtScraperWithAPI, list_response: Response
     ):
-        """The scraper shall yield NavigatingRequest for each case."""
+        """The scraper shall yield Request for each case."""
         results = list(scraper.parse_list(list_response))
 
         assert len(results) == len(CASES)
-        assert all(isinstance(r, NavigatingRequest) for r in results)
+        assert all(isinstance(r, Request) for r in results)
 
     def test_parse_detail_yields_non_navigating_request(
         self, scraper: BugCourtScraperWithAPI, server_url: str
     ):
-        """The scraper shall yield NonNavigatingRequest for API call."""
+        """The scraper shall yield non-navigating Request for API call."""
         from tests.mock_server import generate_case_detail_html
 
         case = CASES[0]
         html = generate_case_detail_html(case)
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/cases/{case.docket}",
@@ -410,7 +413,7 @@ class TestBugCourtScraperWithAPI:
         results = list(scraper.parse_detail(response))
 
         assert len(results) == 1
-        assert isinstance(results[0], NonNavigatingRequest)
+        assert isinstance(results[0], Request) and results[0].nonnavigating
         assert "/api/cases/" in results[0].request.url
 
     def test_parse_api_yields_parsed_data(
@@ -438,12 +441,13 @@ class TestBugCourtScraperWithAPI:
         }
         json_text = json.dumps(api_data)
 
-        request = NonNavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/api/cases/{case.docket}",
             ),
             continuation="parse_api",
+            nonnavigating=True,
         )
         response = Response(
             status_code=200,

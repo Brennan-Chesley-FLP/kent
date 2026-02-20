@@ -60,7 +60,7 @@ Implementation
             # ... same setup as SyncDriver ...
 
             # Async-specific: PriorityQueue and locks
-            self.request_queue: asyncio.PriorityQueue[tuple[int, int, BaseRequest]]
+            self.request_queue: asyncio.PriorityQueue[tuple[int, int, Request]]
             self._queue_lock = asyncio.Lock()
 
             # Shared async client for connection pooling
@@ -134,7 +134,7 @@ Each worker processes requests from the shared queue:
                     match item:
                         case ParsedData():
                             await self.handle_data(item.unwrap())
-                        case NavigatingRequest():
+                        case Request():
                             await self.enqueue_request(item, response)
                         # ... other cases ...
             finally:

@@ -22,13 +22,12 @@ from lxml import html
 
 from kent.common.decorators import entry
 from kent.data_types import (
-    ArchiveRequest,
     ArchiveResponse,
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
     ScraperYield,
 )
@@ -98,9 +97,9 @@ class BugCourtScraperWithAuxData(BaseScraper[dict]):
     BASE_URL = "http://127.0.0.1"
 
     @entry(dict)
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         """Create the initial request to start scraping."""
-        yield NavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{self.BASE_URL}/cases",
@@ -121,7 +120,7 @@ class BugCourtScraperWithAuxData(BaseScraper[dict]):
             response: The Response from fetching the list page.
 
         Yields:
-            NavigatingRequest for each case with both aux_data and accumulated_data.
+            Request for each case with both aux_data and accumulated_data.
         """
         tree = html.fromstring(response.text)
 
@@ -140,7 +139,7 @@ class BugCourtScraperWithAuxData(BaseScraper[dict]):
                 # Navigate to detail page with both types of data:
                 # - aux_data: session token (needed for PDF download later)
                 # - accumulated_data: case data (docket, case_name)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"/cases/{docket}",
@@ -165,7 +164,7 @@ class BugCourtScraperWithAuxData(BaseScraper[dict]):
             response: The Response from fetching the detail page.
 
         Yields:
-            ArchiveRequest for PDF with session token in headers.
+            Request(archive=True) for PDF with session token in headers.
         """
         tree = html.fromstring(response.text)
 
@@ -187,13 +186,14 @@ class BugCourtScraperWithAuxData(BaseScraper[dict]):
 
             # Download and archive the PDF
             # Pass both accumulated_data (case info) and aux_data (session token)
-            yield ArchiveRequest(
+            yield Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=opinion_links[0],
                     headers=headers,  # Token from aux_data!
                 ),
                 continuation="archive_opinion",
+                archive=True,
                 expected_type="pdf",
                 accumulated_data=data,  # Case data flows through
                 aux_data=aux,  # Token flows through (though not needed after this)

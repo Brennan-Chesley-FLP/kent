@@ -27,15 +27,15 @@ from kent.common.decorators import (
 )
 from kent.common.speculation_types import (
     SimpleSpeculation,
-    YearPartition,
     YearlySpeculation,
+    YearPartition,
 )
 from kent.data_types import (
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
     ScraperYield,
 )
@@ -49,8 +49,8 @@ class TestSpeculateDecorator:
         """Test that @speculate decorator attaches metadata."""
 
         @speculate
-        def fetch_case(self, case_id: int) -> NavigatingRequest:
-            return NavigatingRequest(
+        def fetch_case(self, case_id: int) -> Request:
+            return Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET, url=f"/case/{case_id}"
                 ),
@@ -74,8 +74,8 @@ class TestSpeculateDecorator:
             largest_observed_gap=20,
             observation_date=obs_date,
         )
-        def fetch_case(self, case_id: int) -> NavigatingRequest:
-            return NavigatingRequest(
+        def fetch_case(self, case_id: int) -> Request:
+            return Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET, url=f"/case/{case_id}"
                 ),
@@ -93,8 +93,8 @@ class TestSpeculateDecorator:
 
         class DummyScraper:
             @speculate
-            def fetch_case(self, case_id: int) -> NavigatingRequest:
-                return NavigatingRequest(
+            def fetch_case(self, case_id: int) -> Request:
+                return Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url=f"/case/{case_id}"
                     ),
@@ -104,30 +104,30 @@ class TestSpeculateDecorator:
         scraper = DummyScraper()
         request = scraper.fetch_case(123)
 
-        assert isinstance(request, NavigatingRequest)
+        assert isinstance(request, Request)
         assert request.is_speculative is True
         assert request.request.url == "/case/123"
 
     def test_speculate_validates_return_type(self):
-        """Test that @speculate raises TypeError if function doesn't return BaseRequest."""
+        """Test that @speculate raises TypeError if function doesn't return a Request."""
 
         @speculate
         def bad_function(self, case_id: int) -> str:
-            return f"/case/{case_id}"  # Returns string, not BaseRequest
+            return f"/case/{case_id}"  # Returns string, not Request
 
         class DummyScraper:
             fetch_case = bad_function
 
         scraper = DummyScraper()
-        with pytest.raises(TypeError, match="must return a BaseRequest"):
+        with pytest.raises(TypeError, match="must return a Request"):
             scraper.fetch_case(123)
 
     def test_is_speculate_helper(self):
         """Test is_speculate() helper function."""
 
         @speculate
-        def fetch_case(self, case_id: int) -> NavigatingRequest:
-            return NavigatingRequest(
+        def fetch_case(self, case_id: int) -> Request:
+            return Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET, url=f"/case/{case_id}"
                 ),
@@ -154,8 +154,8 @@ class TestEntrySpeculative:
                 largest_observed_gap=15,
             ),
         )
-        def fetch_case(self, case_id: int) -> NavigatingRequest:
-            return NavigatingRequest(
+        def fetch_case(self, case_id: int) -> Request:
+            return Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET, url=f"/case/{case_id}"
                 ),
@@ -174,8 +174,8 @@ class TestEntrySpeculative:
         """Test @entry(speculative=SimpleSpeculation()) with default values."""
 
         @entry(dict, speculative=SimpleSpeculation())
-        def fetch_item(self, item_id: int) -> NavigatingRequest:
-            return NavigatingRequest(
+        def fetch_item(self, item_id: int) -> Request:
+            return Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET, url=f"/item/{item_id}"
                 ),
@@ -198,7 +198,7 @@ class TestListSpeculativeEntries:
         class EmptyScraper(BaseScraper[dict]):
             @entry(dict)
             def get_entry(self):
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url="/start"
                     ),
@@ -219,8 +219,8 @@ class TestListSpeculativeEntries:
                     largest_observed_gap=15,
                 ),
             )
-            def fetch_case(self, case_id: int) -> NavigatingRequest:
-                return NavigatingRequest(
+            def fetch_case(self, case_id: int) -> Request:
+                return Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url=f"/case/{case_id}"
                     ),
@@ -229,7 +229,7 @@ class TestListSpeculativeEntries:
 
             @entry(dict)
             def get_entry(self):
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url="/start"
                     ),
@@ -259,8 +259,8 @@ class TestListSpeculativeEntries:
                     observation_date=obs_date_1,
                 ),
             )
-            def fetch_case(self, case_id: int) -> NavigatingRequest:
-                return NavigatingRequest(
+            def fetch_case(self, case_id: int) -> Request:
+                return Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url=f"/case/{case_id}"
                     ),
@@ -274,8 +274,8 @@ class TestListSpeculativeEntries:
                     largest_observed_gap=50,
                 ),
             )
-            def fetch_docket(self, docket_id: int) -> NavigatingRequest:
-                return NavigatingRequest(
+            def fetch_docket(self, docket_id: int) -> Request:
+                return Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url=f"/docket/{docket_id}"
                     ),
@@ -284,7 +284,7 @@ class TestListSpeculativeEntries:
 
             @entry(dict)
             def get_entry(self):
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url="/start"
                     ),
@@ -305,8 +305,8 @@ class TestListSpeculativeEntries:
 
         class DefaultsScraper(BaseScraper[dict]):
             @entry(dict, speculative=SimpleSpeculation())
-            def fetch_item(self, item_id: int) -> NavigatingRequest:
-                return NavigatingRequest(
+            def fetch_item(self, item_id: int) -> Request:
+                return Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url=f"/item/{item_id}"
                     ),
@@ -315,7 +315,7 @@ class TestListSpeculativeEntries:
 
             @entry(dict)
             def get_entry(self):
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url="/start"
                     ),
@@ -358,8 +358,8 @@ class TestIsSpeculativeField:
     """Test the is_speculative field on BaseRequest."""
 
     def test_is_speculative_defaults_to_false(self):
-        """Test that is_speculative defaults to False on NavigatingRequest."""
-        req = NavigatingRequest(
+        """Test that is_speculative defaults to False on Request."""
+        req = Request(
             request=HTTPRequestParams(method=HttpMethod.GET, url="/test"),
             continuation="parse",
         )
@@ -367,7 +367,7 @@ class TestIsSpeculativeField:
 
     def test_is_speculative_can_be_set_true(self):
         """Test that is_speculative can be explicitly set to True."""
-        req = NavigatingRequest(
+        req = Request(
             request=HTTPRequestParams(method=HttpMethod.GET, url="/test"),
             continuation="parse",
             is_speculative=True,
@@ -379,9 +379,9 @@ class TestIsSpeculativeField:
 
         class TestScraper:
             @speculate
-            def fetch_record(self, record_id: int) -> NavigatingRequest:
+            def fetch_record(self, record_id: int) -> Request:
                 # Create request without is_speculative
-                return NavigatingRequest(
+                return Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET, url=f"/record/{record_id}"
                     ),
@@ -413,9 +413,9 @@ class SpeculationTestScraper(BaseScraper[dict]):
             largest_observed_gap=2,
         ),
     )
-    def fetch_case(self, case_id: int) -> NavigatingRequest:
+    def fetch_case(self, case_id: int) -> Request:
         """Speculative request factory."""
-        return NavigatingRequest(
+        return Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"https://example.com/case/{case_id}",
@@ -434,7 +434,7 @@ class SpeculationTestScraper(BaseScraper[dict]):
         yield ParsedData({"case_id": case_id})
 
     @entry(dict)
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         # No entry requests - speculation seeds the queue
         return
         yield  # Make this a generator
@@ -613,9 +613,9 @@ class YearlySpeculationTestScraper(BaseScraper[dict]):
             largest_observed_gap=2,
         ),
     )
-    def fetch_docket(self, year: int, number: int) -> NavigatingRequest:
+    def fetch_docket(self, year: int, number: int) -> Request:
         """Speculative request factory for year-partitioned dockets."""
-        return NavigatingRequest(
+        return Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"https://example.com/docket/{year}/{number}",
@@ -635,7 +635,7 @@ class YearlySpeculationTestScraper(BaseScraper[dict]):
         yield ParsedData({"year": year, "number": number})
 
     @entry(dict)
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         return
         yield
 
@@ -685,7 +685,10 @@ class TestYearlySpeculationDiscovery:
             s_current = state[current_key]
             assert s_current.year == current_year
             assert s_current.frozen is False
-            assert s_current.config.definite_range == (1, 2)  # (1, largest_observed_gap)
+            assert s_current.config.definite_range == (
+                1,
+                2,
+            )  # (1, largest_observed_gap)
 
 
 class TestYearlySpeculationSeeding:
@@ -891,19 +894,13 @@ class TestYearlySpeculationValidateParams:
 
     def test_validates_yearly_params(self):
         """Test that validate_params handles YearlySpeculation range format."""
-        meta = get_entry_metadata(
-            YearlySpeculationTestScraper.fetch_docket
-        )
-        result = meta.validate_params(
-            {"year": 2025, "number": [1, 100]}
-        )
+        meta = get_entry_metadata(YearlySpeculationTestScraper.fetch_docket)
+        result = meta.validate_params({"year": 2025, "number": [1, 100]})
         assert result == {"year": 2025, "number": (1, 100), "frozen": False}
 
     def test_validates_yearly_params_with_frozen(self):
         """Test that validate_params handles frozen flag."""
-        meta = get_entry_metadata(
-            YearlySpeculationTestScraper.fetch_docket
-        )
+        meta = get_entry_metadata(YearlySpeculationTestScraper.fetch_docket)
         result = meta.validate_params(
             {"year": 2023, "number": [1, 50], "frozen": True}
         )
@@ -911,10 +908,10 @@ class TestYearlySpeculationValidateParams:
 
     def test_validates_yearly_params_missing_year_raises(self):
         """Test that missing year raises."""
-        meta = get_entry_metadata(
-            YearlySpeculationTestScraper.fetch_docket
-        )
-        with pytest.raises(ValueError, match="Missing required parameter.*year"):
+        meta = get_entry_metadata(YearlySpeculationTestScraper.fetch_docket)
+        with pytest.raises(
+            ValueError, match="Missing required parameter.*year"
+        ):
             meta.validate_params({"number": [1, 50]})
 
 
@@ -964,9 +961,9 @@ class EndToEndSpeculationScraper(BaseScraper[dict]):
             largest_observed_gap=3,
         ),
     )
-    def fetch_case(self, case_id: int) -> NavigatingRequest:
+    def fetch_case(self, case_id: int) -> Request:
         """Speculative request for case IDs."""
-        return NavigatingRequest(
+        return Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"https://example.com/case/{case_id}",
@@ -987,7 +984,7 @@ class EndToEndSpeculationScraper(BaseScraper[dict]):
             yield ParsedData({"case_id": case_id})
 
     @entry(dict)
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         # No entry requests - speculation seeds the queue
         return
         yield  # Make this a generator

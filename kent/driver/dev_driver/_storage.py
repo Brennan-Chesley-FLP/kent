@@ -122,8 +122,8 @@ class StorageMixin:
         import uuid
 
         from kent.data_types import (
-            ArchiveRequest,
             ArchiveResponse,
+            Request,
         )
         from kent.driver.dev_driver.compression import (
             compress_response,
@@ -180,9 +180,12 @@ class StorageMixin:
 
         # For ArchiveResponse, also store file metadata in archived_files
         if isinstance(response, ArchiveResponse) and response.file_url:
-            # Get expected_type from the request if it's an ArchiveRequest
+            # Get expected_type from the request if it's an archive request
             expected_type: str | None = None
-            if isinstance(response.request, ArchiveRequest):
+            if (
+                isinstance(response.request, Request)
+                and response.request.archive
+            ):
                 expected_type = response.request.expected_type
 
             await self._store_archived_file(

@@ -20,12 +20,12 @@ class TestGracefulShutdownAndResume:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
 
         class MockScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -446,7 +446,7 @@ class TestGracefulShutdownAndResume:
 
             assert result is not None
             request_id, deserialized = result
-            # NavigatingRequest returns BaseRequest directly
+            # Request returns BaseRequest directly
             request = (
                 deserialized
                 if not isinstance(deserialized, tuple)
@@ -543,7 +543,7 @@ class TestGracefulShutdownSigterm:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -558,8 +558,8 @@ class TestGracefulShutdownSigterm:
         processed_count = 0
 
         class MultiPageScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/page1",
@@ -574,7 +574,7 @@ class TestGracefulShutdownSigterm:
 
                 # Yield more requests to keep driver busy
                 for i in range(2, 20):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"https://example.com/page{i}",
@@ -660,7 +660,7 @@ class TestGracefulShutdownSigterm:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
@@ -671,8 +671,8 @@ class TestGracefulShutdownSigterm:
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -728,7 +728,7 @@ class TestGracefulShutdownSigterm:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -742,8 +742,8 @@ class TestGracefulShutdownSigterm:
         completed_urls: list[str] = []
 
         class MultiStepScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/start",
@@ -756,7 +756,7 @@ class TestGracefulShutdownSigterm:
                 completed_urls.append(response.url)
                 # Queue up several child requests
                 for i in range(5):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"https://example.com/item{i}",

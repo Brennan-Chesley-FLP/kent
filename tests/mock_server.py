@@ -435,7 +435,7 @@ async def handle_case_api(request: web.Request) -> web.Response:
     """Handle GET /api/cases/{docket} - return case JSON data.
 
     This endpoint provides supplementary case metadata as JSON, useful
-    for demonstrating NonNavigatingRequest (fetching data without navigation).
+    for demonstrating Request(nonnavigating=True) (fetching data without navigation).
     """
     docket = request.match_info["docket"]
     case = get_case_by_docket(docket)
@@ -480,7 +480,7 @@ async def handle_opinion_pdf(request: web.Request) -> web.Response:
     """Handle GET /opinions/{docket}.pdf - return PDF file.
 
     This endpoint provides downloadable opinion PDFs for cases that have
-    opinions available, useful for demonstrating ArchiveRequest.
+    opinions available, useful for demonstrating Request(archive=True).
 
     Step 6: Requires X-Session-Token header for authentication, demonstrating
     the use of aux_data to carry navigation metadata through request chains.
@@ -539,7 +539,7 @@ async def handle_oral_argument_mp3(request: web.Request) -> web.Response:
     """Handle GET /oral-arguments/{docket}.mp3 - return MP3 file.
 
     This endpoint provides downloadable oral argument audio files for cases
-    that have oral arguments available, useful for demonstrating ArchiveRequest.
+    that have oral arguments available, useful for demonstrating Request(archive=True).
     """
     docket = request.match_info["docket"].replace(".mp3", "")
     case = get_case_by_docket(docket)

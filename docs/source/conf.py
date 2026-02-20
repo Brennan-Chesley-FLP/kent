@@ -29,7 +29,7 @@ exclude_patterns: list[str] = []
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "sphinx_immaterial"
-html_static_path = []
+html_static_path: list[str] = []
 
 # sphinx-immaterial theme options
 html_theme_options = {

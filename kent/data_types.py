@@ -8,9 +8,9 @@ scrapers and drivers. These types are designed to be:
 3. Immutable - Dataclasses with frozen=True where appropriate
 
 Step 1 introduces ParsedData.
-Step 2 adds NavigatingRequest and Response.
-Step 3 introduces BaseRequest, NonNavigatingRequest, and current_location tracking.
-Step 4 adds ArchiveRequest and ArchiveResponse for file downloads.
+Step 2 adds Request and Response.
+Step 3 introduces BaseRequest and current_location tracking.
+Step 4 adds archive support and ArchiveResponse for file downloads.
 Step 5 adds accumulated_data to BaseRequest with deep copy semantics.
 Step 6 adds aux_data to BaseRequest for navigation metadata (tokens, session data).
 """
@@ -42,7 +42,6 @@ from kent.common.speculation_types import (
     SpeculationType,
     YearlySpeculation,
 )
-
 
 _INT_RANGE_SCHEMA: dict[str, Any] = {
     "type": "array",
@@ -79,6 +78,7 @@ def _speculative_param_schema(
         properties["frozen"] = {"type": "boolean", "default": False}
 
     return properties, required
+
 
 if TYPE_CHECKING:
     pass
@@ -222,14 +222,14 @@ class BaseScraper(Generic[ScraperReturnType]):
         """Return the params instance for this scraper."""
         return self._params
 
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         """Create the initial request(s) to start scraping.
 
         Subclasses should override this method (or use @entry decorators)
         to yield their entry point(s) and initial continuation method(s).
 
         Yields:
-            NavigatingRequest for each entry point.
+            Request for each entry point.
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement get_entry() "
@@ -425,14 +425,14 @@ class BaseScraper(Generic[ScraperReturnType]):
 
     def initial_seed(
         self, params: list[dict[str, dict[str, Any]]]
-    ) -> Generator[NavigatingRequest, None, None]:
+    ) -> Generator[Request, None, None]:
         """Dispatch parameter list to entry functions and yield combined requests.
 
         Takes a JSON-serializable list of parameter invocations and dispatches
         them to the appropriate @entry functions.
 
         For non-speculative entries, params are direct function arguments and
-        the method yields NavigatingRequests.
+        the method yields Requests.
 
         For speculative entries, params are range configs (validated by
         EntryMetadata._validate_speculative_params) and are stored on
@@ -445,7 +445,7 @@ class BaseScraper(Generic[ScraperReturnType]):
                 Speculative: [{"docket_stabber": {"year": 2026, "number": [1, 10]}}]
 
         Yields:
-            NavigatingRequest instances from non-speculative entry functions.
+            Request instances from non-speculative entry functions.
 
         Raises:
             ValueError: If params is empty/None or references unknown entry names.
@@ -506,9 +506,7 @@ class BaseScraper(Generic[ScraperReturnType]):
 
             if entry_info.speculative:
                 # Speculative entries: emit range schema
-                properties, required = _speculative_param_schema(
-                    entry_info
-                )
+                properties, required = _speculative_param_schema(entry_info)
             else:
                 # Non-speculative: emit direct param schema
                 for param_name, param_type in entry_info.param_types.items():
@@ -621,7 +619,7 @@ class ParsedData(Generic[T]):
     This is a simple wrapper around a bit of returned data to enable exhaustive pattern
     matching in the driver. When a scraper yields data, it should wrap
     it in ParsedData so the driver can distinguish it from other yield
-    types (like NavigatingRequest).
+    types (like Request).
 
     Example:
         yield ParsedData({"docket": "BCC-2024-001", "case_name": "..."})
@@ -656,7 +654,7 @@ class EstimateData:
             yield EstimateData((CaseData,), min_count=total, max_count=total)
 
             for link in result_links:
-                yield NavigatingRequest(...)
+                yield Request(...)
     """
 
     expected_types: tuple[type, ...]
@@ -665,10 +663,10 @@ class EstimateData:
 
 
 # =============================================================================
-# Step 2: NavigatingRequest and Response
+# Step 2: Request and Response
 # =============================================================================
-# Step 3: BaseRequest, NonNavigatingRequest, and current_location tracking
-# Step 4: ArchiveRequest and ArchiveResponse for file downloads
+# Step 3: BaseRequest, Request, and current_location tracking
+# Step 4: ArchiveResponse for file downloads
 # Step 5: accumulated_data with deep copy semantics
 
 
@@ -880,8 +878,8 @@ class BaseRequest:
 
             shared_data = {"case_name": "Ant v. Bee"}
             shared_aux = {"session_token": "abc123"}
-            yield NavigatingRequest(url="/detail/1", accumulated_data=shared_data, aux_data=shared_aux)
-            yield NavigatingRequest(url="/detail/2", accumulated_data=shared_data, aux_data=shared_aux)
+            yield Request(url="/detail/1", accumulated_data=shared_data, aux_data=shared_aux)
+            yield Request(url="/detail/2", accumulated_data=shared_data, aux_data=shared_aux)
             # If detail/1 mutates the dicts, detail/2 sees the mutation - BUG!
 
         The deep copy ensures each request gets its own independent copy of the data.
@@ -988,16 +986,13 @@ class BaseRequest:
         )
         return urljoin(current_location, reencoded_url)
 
-    def resolve_from(
-        self, context: Response | NonNavigatingRequest
-    ) -> BaseRequest:
-        """Create a new request with URL resolved from a Response or NonNavigatingRequest.
+    def resolve_from(self, context: Response | Request) -> BaseRequest:
+        """Create a new request with URL resolved from a Response or Request.
 
-        This method is overridden in NavigatingRequest and NonNavigatingRequest
-        to provide specific behavior for each request type.
+        Implemented by the Request subclass.
 
         Args:
-            context: Response from a previous request or the originating NonNavigatingRequest.
+            context: Response from a previous request or the originating Request.
 
         Returns:
             A new request with resolved URL and updated context.
@@ -1012,11 +1007,11 @@ class BaseRequest:
     def resolve_request_from(self, context: Response | BaseRequest):
         match context:
             case Response():
-                # Response from a NavigatingRequest - use its URL
+                # Response from a Request - use its URL
                 resolved_location = context.url
                 parent_request = context.request
             case BaseRequest():
-                # NonNavigatingRequest - use its current_location
+                # Request - use its current_location
                 resolved_location = context.current_location
                 parent_request = context
 
@@ -1031,64 +1026,53 @@ class BaseRequest:
             parent_request,
         ]
 
-    def speculative(self, func_name: str, spec_id: int) -> BaseRequest:
-        """Create a speculative copy of this request.
-
-        Only NavigatingRequest supports speculative requests. This method
-        raises NotImplementedError for other request types.
-
-        Args:
-            func_name: Name of the @speculate function generating this request.
-            spec_id: The integer ID passed to the @speculate function.
-
-        Returns:
-            A copy of the request with is_speculative=True and speculation_id set.
-
-        Raises:
-            NotImplementedError: Only NavigatingRequest can be speculative.
-        """
-        raise NotImplementedError(
-            f"Only NavigatingRequest can be speculative. "
-            f"{type(self).__name__} does not support speculation."
-        )
-
 
 @dataclass(frozen=True)
-class NavigatingRequest(BaseRequest):
-    """A request to navigate to a new page.
+class Request(BaseRequest):
+    """Unified request type for all scraper navigation patterns.
 
-    When a scraper yields a NavigatingRequest, the driver will:
-    1. Fetch the URL (resolving relative URLs against current_location)
-    2. Update current_location to the new URL
-    3. Call the continuation method with the Response
+    Controls behavior via boolean flags:
+    - Default (nonnavigating=False, archive=False): Navigating request.
+      Updates current_location when resolved. Supports speculation.
+    - nonnavigating=True: Fetches data without changing current_location.
+      Useful for API calls that provide supplementary data.
+    - archive=True: Downloads and archives files. Preserves current_location.
+      The driver returns an ArchiveResponse with a file_url field.
 
-    The continuation is specified as a string (method name) rather than
-    a function reference, making requests fully serializable for persistence.
-
-    This differs from NonNavigatingRequest which fetches data without
-    updating current_location (useful for API calls).
+    Attributes:
+        nonnavigating: If True, does not update current_location.
+        archive: If True, downloads and archives the file.
+        expected_type: Optional file type hint for archive requests ("pdf", "audio", etc.).
     """
 
-    def resolve_from(
-        self, context: Response | NonNavigatingRequest
-    ) -> NavigatingRequest:
-        """Create a new request with URL resolved from a Response or NonNavigatingRequest.
+    nonnavigating: bool = False
+    archive: bool = False
+    expected_type: str | None = None
 
-        For NavigatingRequest:
+    def __post_init__(self) -> None:
+        # If archive=True and priority was left at the BaseRequest default (9),
+        # override to 1 to match the higher default priority for file downloads.
+        if self.archive and self.priority == 9:
+            object.__setattr__(self, "priority", 1)
+        super().__post_init__()
+
+    def resolve_from(self, context: Response | Request) -> Request:
+        """Create a new request with URL resolved from a Response or Request.
+
         - If context is a Response, use the response's URL as current_location
-        - If context is a NonNavigatingRequest, use its current_location
+        - If context is a Request, use its current_location
         - accumulated_data and aux_data are carried forward from the new request (self)
 
         Args:
-            context: Response from a NavigatingRequest or the originating NonNavigatingRequest.
+            context: Response from a previous request or the originating Request.
 
         Returns:
-            A new NavigatingRequest with resolved URL and updated context.
+            A new Request with resolved URL and updated context.
         """
         request, location, parent = self.resolve_request_from(context)
         # Step 18: Merge permanent data - parent's permanent + this request's permanent
         merged_permanent = {**parent.permanent, **self.permanent}
-        return NavigatingRequest(
+        return Request(
             request=request,
             continuation=self.continuation,
             current_location=location,
@@ -1101,12 +1085,15 @@ class NavigatingRequest(BaseRequest):
             is_speculative=self.is_speculative,
             speculation_id=self.speculation_id,
             via=self.via,
+            nonnavigating=self.nonnavigating,
+            archive=self.archive,
+            expected_type=self.expected_type,
         )
 
-    def speculative(self, func_name: str, spec_id: int) -> NavigatingRequest:
+    def speculative(self, func_name: str, spec_id: int) -> Request:
         """Create a speculative copy of this request.
 
-        Returns a new NavigatingRequest with is_speculative=True and
+        Returns a new Request with is_speculative=True and
         speculation_id set to (func_name, spec_id).
 
         Args:
@@ -1114,9 +1101,9 @@ class NavigatingRequest(BaseRequest):
             spec_id: The integer ID passed to the @speculate function.
 
         Returns:
-            A new NavigatingRequest with speculation fields set.
+            A new Request with speculation fields set.
         """
-        return NavigatingRequest(
+        return Request(
             request=self.request,
             continuation=self.continuation,
             current_location=self.current_location,
@@ -1129,115 +1116,9 @@ class NavigatingRequest(BaseRequest):
             is_speculative=True,
             speculation_id=(func_name, spec_id),
             via=self.via,
-        )
-
-
-@dataclass(frozen=True)
-class NonNavigatingRequest(BaseRequest):
-    """A request that fetches data without changing the current location.
-
-    When a scraper yields a NonNavigatingRequest, the driver will:
-    1. Fetch the URL (resolving relative URLs against current_location)
-    2. Keep current_location unchanged
-    3. Call the continuation method with the Response
-
-    This is useful for API calls that provide supplementary data without
-    navigating away from the current page. For example, fetching JSON
-    metadata from an API while staying on an HTML detail page.
-
-    The continuation is specified as a string (method name) for serializability.
-    """
-
-    def resolve_from(
-        self, context: Response | NonNavigatingRequest
-    ) -> NonNavigatingRequest:
-        """Create a new request with URL resolved from a Response or NonNavigatingRequest.
-
-        For NonNavigatingRequest:
-        - If context is a Response, use the response's URL as current_location
-        - If context is a NonNavigatingRequest, use its current_location
-        - current_location stays unchanged (inherited from parent)
-        - accumulated_data and aux_data are carried forward from the new request (self)
-
-        Args:
-            context: Response from a NavigatingRequest or the originating NonNavigatingRequest.
-
-        Returns:
-            A new NonNavigatingRequest with resolved URL and preserved current_location.
-        """
-        request, location, parent = self.resolve_request_from(context)
-        # Step 18: Merge permanent data - parent's permanent + this request's permanent
-        merged_permanent = {**parent.permanent, **self.permanent}
-        return NonNavigatingRequest(
-            request=request,
-            continuation=self.continuation,
-            current_location=location,
-            previous_requests=parent.previous_requests + [parent],
-            accumulated_data=self.accumulated_data,
-            aux_data=self.aux_data,
-            priority=self.priority,
-            deduplication_key=self.deduplication_key,
-            permanent=merged_permanent,
-            via=self.via,
-        )
-
-
-@dataclass(frozen=True)
-class ArchiveRequest(NonNavigatingRequest):
-    """A request to download and archive a file.
-
-    When a scraper yields an ArchiveRequest, the driver will:
-    1. Fetch the URL (resolving relative URLs against current_location)
-    2. Download the file content
-    3. Save it to local storage
-    4. Call the continuation method with an ArchiveResponse
-
-    This is useful for downloading binary files like PDFs, MP3s, images, etc.
-    The ArchiveResponse includes a file_url field with the local storage path.
-
-    Like NonNavigatingRequest, ArchiveRequest preserves current_location -
-    downloading a file doesn't change where you are in the scraper's navigation.
-
-    Attributes:
-        expected_type: Optional hint about the file type ("pdf", "audio", etc.).
-        priority: Priority for request queue ordering (default 1, higher priority than regular requests).
-    """
-
-    expected_type: str | None = None
-    priority: int = 1
-
-    def resolve_from(
-        self, context: Response | NonNavigatingRequest
-    ) -> ArchiveRequest:
-        """Create a new request with URL resolved from a Response or NonNavigatingRequest.
-
-        For ArchiveRequest (like NonNavigatingRequest):
-        - If context is a Response, use the response's URL as current_location
-        - If context is a NonNavigatingRequest, use its current_location
-        - current_location stays unchanged (inherited from parent)
-        - accumulated_data and aux_data are carried forward from the new request (self)
-
-        Args:
-            context: Response from a NavigatingRequest or the originating NonNavigatingRequest.
-
-        Returns:
-            A new ArchiveRequest with resolved URL and preserved current_location.
-        """
-        request, location, parent = self.resolve_request_from(context)
-        # Step 18: Merge permanent data - parent's permanent + this request's permanent
-        merged_permanent = {**parent.permanent, **self.permanent}
-        return ArchiveRequest(
-            request=request,
-            continuation=self.continuation,
-            current_location=location,
-            previous_requests=parent.previous_requests + [parent],
+            nonnavigating=self.nonnavigating,
+            archive=self.archive,
             expected_type=self.expected_type,
-            accumulated_data=self.accumulated_data,
-            aux_data=self.aux_data,
-            priority=self.priority,
-            deduplication_key=self.deduplication_key,
-            permanent=merged_permanent,
-            via=self.via,
         )
 
 
@@ -1285,17 +1166,9 @@ class ArchiveResponse(Response):
 # Type Alias for Scraper Yields
 # =============================================================================
 
-# A scraper can yield ParsedData, EstimateData, NavigatingRequest,
-# NonNavigatingRequest, ArchiveRequest, or None.
+# A scraper can yield ParsedData, EstimateData, Request, or None.
 # This type alias enables exhaustive pattern matching in the driver.
-ScraperYield = (
-    ParsedData[T]
-    | EstimateData
-    | NavigatingRequest
-    | NonNavigatingRequest
-    | ArchiveRequest
-    | None
-)
+ScraperYield = ParsedData[T] | EstimateData | Request | None
 
 # Type alias for scraper generator - what continuation methods return
 # The second type parameter (bool | None) is the SendType - values sent back

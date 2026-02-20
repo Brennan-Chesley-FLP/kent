@@ -435,7 +435,7 @@ class TestCompressionRoundTrip:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -450,8 +450,8 @@ class TestCompressionRoundTrip:
         large_html = "<html><body>" + ("Content " * 1000) + "</body></html>"
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/large",
@@ -684,7 +684,7 @@ class TestRateLimiterIntegration:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.atb_rate_limiter import (
             ATBAsyncRequestManager,
@@ -694,8 +694,8 @@ class TestRateLimiterIntegration:
         )
 
         class MinimalScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",

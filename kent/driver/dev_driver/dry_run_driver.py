@@ -6,9 +6,9 @@ by the debugger's compare functionality to test how code changes affect
 scraper output.
 
 The DryRunDriver captures:
-- NavigatingRequest yields (without executing HTTP requests)
-- NonNavigatingRequest yields (without executing HTTP requests)
-- ArchiveRequest yields (without downloading files)
+- Navigating request yields (without executing HTTP requests)
+- Non-navigating request yields (without executing HTTP requests)
+- Archive request yields (without downloading files)
 - ParsedData yields
 - Errors raised during continuation execution
 
@@ -23,13 +23,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from kent.data_types import (
-    ArchiveRequest,
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
-    NonNavigatingRequest,
     ParsedData,
+    Request,
     Response,
     ScraperYield,
 )
@@ -57,7 +55,7 @@ class CapturedRequest:
         deduplication_key: Key for deduplication.
         is_speculative: Whether this is a speculative request.
         speculation_id: (function_name, integer_id) for speculative requests.
-        expected_type: For ArchiveRequest, the expected file type.
+        expected_type: For archive requests, the expected file type.
     """
 
     request_type: str  # "navigating", "non_navigating", "archive"
@@ -72,7 +70,7 @@ class CapturedRequest:
     deduplication_key: str | None
     is_speculative: bool
     speculation_id: tuple[str, int] | None
-    expected_type: str | None = None  # Only for ArchiveRequest
+    expected_type: str | None = None  # Only for archive requests
 
 
 @dataclass
@@ -186,7 +184,7 @@ class DryRunDriver(Generic[T]):
         current_location = request_data.get("current_location", "")
 
         # Reconstruct the base request
-        base_request = NavigatingRequest(
+        base_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod(request_data.get("method", "GET")),
                 url=request_data.get("url", ""),
@@ -263,35 +261,33 @@ class DryRunDriver(Generic[T]):
             result: The DryRunResult to append to.
         """
         match item:
-            case NavigatingRequest():
-                result.requests.append(self._capture_navigating_request(item))
-            case ArchiveRequest():
-                # Must check ArchiveRequest before NonNavigatingRequest
-                # since ArchiveRequest is a subclass of NonNavigatingRequest
-                result.requests.append(self._capture_archive_request(item))
-            case NonNavigatingRequest():
-                result.requests.append(
-                    self._capture_non_navigating_request(item)
-                )
+            case Request():
+                result.requests.append(self._capture_request(item))
             case ParsedData():
                 result.data.append(self._capture_parsed_data(item))
             case None:
                 # None yields are valid but not captured
                 pass
 
-    def _capture_navigating_request(
-        self, request: NavigatingRequest
-    ) -> CapturedRequest:
-        """Capture a NavigatingRequest yield.
+    def _capture_request(self, request: Request) -> CapturedRequest:
+        """Capture a Request yield.
 
         Args:
-            request: The NavigatingRequest to capture.
+            request: The Request to capture.
 
         Returns:
             CapturedRequest representation.
         """
+        # Derive request_type from flags
+        if request.archive:
+            request_type = "archive"
+        elif request.nonnavigating:
+            request_type = "non_navigating"
+        else:
+            request_type = "navigating"
+
         return CapturedRequest(
-            request_type="navigating",
+            request_type=request_type,
             url=request.request.url,
             method=request.request.method.value,
             continuation=(
@@ -311,75 +307,7 @@ class DryRunDriver(Generic[T]):
             ),
             is_speculative=request.is_speculative,
             speculation_id=request.speculation_id,
-        )
-
-    def _capture_non_navigating_request(
-        self, request: NonNavigatingRequest
-    ) -> CapturedRequest:
-        """Capture a NonNavigatingRequest yield.
-
-        Args:
-            request: The NonNavigatingRequest to capture.
-
-        Returns:
-            CapturedRequest representation.
-        """
-        return CapturedRequest(
-            request_type="non_navigating",
-            url=request.request.url,
-            method=request.request.method.value,
-            continuation=(
-                request.continuation
-                if isinstance(request.continuation, str)
-                else request.continuation.__name__
-            ),
-            accumulated_data=request.accumulated_data,
-            aux_data=request.aux_data,
-            permanent=request.permanent,
-            current_location=request.current_location,
-            priority=request.priority,
-            deduplication_key=(
-                request.deduplication_key
-                if isinstance(request.deduplication_key, str)
-                else None
-            ),
-            is_speculative=False,  # NonNavigatingRequest can't be speculative
-            speculation_id=None,
-        )
-
-    def _capture_archive_request(
-        self, request: ArchiveRequest
-    ) -> CapturedRequest:
-        """Capture an ArchiveRequest yield.
-
-        Args:
-            request: The ArchiveRequest to capture.
-
-        Returns:
-            CapturedRequest representation.
-        """
-        return CapturedRequest(
-            request_type="archive",
-            url=request.request.url,
-            method=request.request.method.value,
-            continuation=(
-                request.continuation
-                if isinstance(request.continuation, str)
-                else request.continuation.__name__
-            ),
-            accumulated_data=request.accumulated_data,
-            aux_data=request.aux_data,
-            permanent=request.permanent,
-            current_location=request.current_location,
-            priority=request.priority,
-            deduplication_key=(
-                request.deduplication_key
-                if isinstance(request.deduplication_key, str)
-                else None
-            ),
-            is_speculative=False,  # ArchiveRequest can't be speculative
-            speculation_id=None,
-            expected_type=request.expected_type,
+            expected_type=request.expected_type if request.archive else None,
         )
 
     def _capture_parsed_data(self, data: ParsedData[T]) -> CapturedData:

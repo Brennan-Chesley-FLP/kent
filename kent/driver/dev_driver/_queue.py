@@ -6,12 +6,10 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from kent.data_types import (
-    ArchiveRequest,
     BaseRequest,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
-    NonNavigatingRequest,
+    Request,
     Response,
 )
 from kent.driver.dev_driver.sql_manager import SQLManager
@@ -51,7 +49,7 @@ class QueueMixin:
             parent_request_id: Optional parent request ID for tracking request relationships.
         """
         # Resolve the request from context
-        resolved_request = new_request.resolve_from(context)  # type: ignore
+        resolved_request: Request = new_request.resolve_from(context)  # type: ignore[arg-type, assignment]
 
         # Check for duplicates before inserting
         dedup_key = resolved_request.deduplication_key
@@ -111,9 +109,9 @@ class QueueMixin:
 
     def _serialize_request(
         self,
-        request: BaseRequest,
+        request: Request,
     ) -> dict[str, Any]:
-        """Serialize a BaseRequest to dictionary for DB storage.
+        """Serialize a Request to dictionary for DB storage.
 
         Args:
             request: The request to serialize.
@@ -129,10 +127,10 @@ class QueueMixin:
             continuation = continuation.__name__
 
         # Determine request type and expected_type
-        if isinstance(request, ArchiveRequest):
+        if request.archive:
             request_type = "archive"
             expected_type = request.expected_type
-        elif isinstance(request, NonNavigatingRequest):
+        elif request.nonnavigating:
             request_type = "non_navigating"
             expected_type = None
         else:
@@ -213,8 +211,8 @@ class QueueMixin:
             row: Database row tuple from requests table.
 
         Returns:
-            Reconstructed BaseRequest (NavigatingRequest, NonNavigatingRequest,
-            or ArchiveRequest depending on request_type).
+            Reconstructed Request with appropriate flags set based on
+            request_type (navigating, non_navigating, or archive).
         """
         (
             _id,
@@ -275,7 +273,7 @@ class QueueMixin:
 
         # Create the appropriate request type
         if request_type == "archive":
-            return ArchiveRequest(
+            return Request(
                 request=http_params,
                 continuation=continuation,
                 current_location=current_location,
@@ -283,10 +281,11 @@ class QueueMixin:
                 aux_data=aux_data,
                 permanent=permanent,
                 priority=priority,
+                archive=True,
                 expected_type=expected_type,
             )
         elif request_type == "non_navigating":
-            return NonNavigatingRequest(
+            return Request(
                 request=http_params,
                 continuation=continuation,
                 current_location=current_location,
@@ -294,9 +293,10 @@ class QueueMixin:
                 aux_data=aux_data,
                 permanent=permanent,
                 priority=priority,
+                nonnavigating=True,
             )
         else:  # navigating (default)
-            return NavigatingRequest(
+            return Request(
                 request=http_params,
                 continuation=continuation,
                 current_location=current_location,

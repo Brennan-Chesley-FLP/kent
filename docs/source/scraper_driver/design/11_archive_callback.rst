@@ -1,7 +1,7 @@
 Step 13: Archive Event Hook
 =============================
 
-In Step 4, we introduced the ``ArchiveRequest`` pattern for downloading and saving
+In Step 4, we introduced the archive request pattern (``Request`` with ``archive=True``) for downloading and saving
 files locally. The driver included a ``save_file`` method that handled the file
 archival logic. In Step 7, we introduced the ``on_data`` callback pattern to allow
 customization of data handling.
@@ -88,9 +88,9 @@ The archive callback is called in ``resolve_archive_request``:
 .. code-block:: python
 
     def resolve_archive_request(
-        self, request: ArchiveRequest
+        self, request: Request
     ) -> ArchiveResponse:
-        """Fetch an ArchiveRequest and save the file using on_archive callback."""
+        """Fetch an archive request and save the file using on_archive callback."""
         http_response = self.resolve_request(request)
 
         # Step 13: Use on_archive callback to save the file

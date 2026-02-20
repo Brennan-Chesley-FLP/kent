@@ -22,13 +22,13 @@ The driver calls these functions with incrementing IDs, tracking successes and f
 
     class MyScraper(BaseScraper[CaseData]):
         @speculate(highest_observed=500, largest_observed_gap=20)
-        def fetch_case(self, case_id: int) -> NavigatingRequest:
+        def fetch_case(self, case_id: int) -> Request:
             """Probe for a case by ID.
 
             The driver calls this with sequential IDs, tracking successes
             and failures to determine when to stop probing.
             """
-            return NavigatingRequest(
+            return Request(
                 request=HTTPRequestParams(url=f"/case/{case_id}"),
                 continuation=self.parse_case,
             )
@@ -71,8 +71,8 @@ Marks a function as generating speculative requests from sequential IDs:
         largest_observed_gap=20,     # Max consecutive failures before stopping
         observation_date=date(2025, 1, 15)  # When values were last verified (optional)
     )
-    def fetch_case(self, case_id: int) -> NavigatingRequest:
-        return NavigatingRequest(
+    def fetch_case(self, case_id: int) -> Request:
+        return Request(
             request=HTTPRequestParams(url=f"/case/{case_id}"),
             continuation=self.parse_case,
         )
@@ -86,7 +86,7 @@ Marks a function as generating speculative requests from sequential IDs:
 **Function signature:**
 
 - Must accept exactly one parameter (the ID) in addition to ``self``
-- Must return a ``NavigatingRequest`` or ``NonNavigatingRequest``
+- Must return a ``Request``
 - The decorator automatically sets ``is_speculative=True`` on returned requests
 
 
@@ -198,7 +198,7 @@ The ``@speculate`` decorator automatically marks requests as speculative:
 .. code-block:: python
 
     @wraps(fn)
-    def wrapper(scraper_self: Any, id_value: int) -> BaseRequest:
+    def wrapper(scraper_self: Any, id_value: int) -> Request:
         request = fn(scraper_self, id_value)
         # Set is_speculative=True on the request
         object.__setattr__(request, "is_speculative", True)
@@ -234,9 +234,9 @@ Basic Sequential ID Probing
 
     class CaseScraper(BaseScraper[CaseData]):
         @speculate(highest_observed=50000, largest_observed_gap=100)
-        def fetch_case(self, case_id: int) -> NavigatingRequest:
+        def fetch_case(self, case_id: int) -> Request:
             """Probe for a case by ID."""
-            return NavigatingRequest(
+            return Request(
                 request=HTTPRequestParams(url=f"/case/{case_id}"),
                 continuation=self.parse_case,
             )
@@ -255,15 +255,15 @@ A scraper can have multiple ``@speculate`` functions for different ID sequences:
 
     class MultiCourtScraper(BaseScraper[CaseData]):
         @speculate(highest_observed=275000, largest_observed_gap=20)
-        def fetch_supreme_court_case(self, case_id: int) -> NavigatingRequest:
-            return NavigatingRequest(
+        def fetch_supreme_court_case(self, case_id: int) -> Request:
+            return Request(
                 request=HTTPRequestParams(url=f"/supreme/{case_id}"),
                 continuation=self.parse_case,
             )
 
         @speculate(highest_observed=170000, largest_observed_gap=20)
-        def fetch_appeals_case(self, case_id: int) -> NavigatingRequest:
-            return NavigatingRequest(
+        def fetch_appeals_case(self, case_id: int) -> Request:
+            return Request(
                 request=HTTPRequestParams(url=f"/appeals/{case_id}"),
                 continuation=self.parse_case,
             )

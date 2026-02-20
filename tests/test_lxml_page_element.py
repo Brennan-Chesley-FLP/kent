@@ -299,7 +299,7 @@ def test_links_returns_all_links(links_page):
 
 
 def test_link_follow_creates_navigating_request(links_page):
-    """Link.follow() should create a NavigatingRequest with ViaLink."""
+    """Link.follow() should create a Request with ViaLink."""
     links = links_page.find_links("//a[@class='nav-link']", "nav links")
     link = links[0]
 

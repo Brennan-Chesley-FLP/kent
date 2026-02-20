@@ -8,12 +8,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from kent.data_types import (
-    ArchiveRequest,
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
-    NonNavigatingRequest,
+    Request,
     Response,
 )
 from kent.driver.dev_driver.sql_manager import (
@@ -340,8 +338,8 @@ class APIMixin:
             method=HttpMethod(method),
             url=request_url,
         )
-        # Create a NavigatingRequest to serve as the request context
-        reconstructed_request = NavigatingRequest(
+        # Create a Request to serve as the request context
+        reconstructed_request = Request(
             request=http_params,
             continuation=continuation_name,
             current_location=request_url,
@@ -408,28 +406,29 @@ class APIMixin:
                     data_str[:200] + "..." if len(data_str) > 200 else data_str
                 ),
             }
-        elif isinstance(item, NavigatingRequest):
-            return {
-                "type": "NavigatingRequest",
-                "url": item.request.url,
-                "method": item.request.method.value,
-                "continuation": (
-                    item.continuation
-                    if isinstance(item.continuation, str)
-                    else item.continuation.__name__
-                ),
-            }
-        elif isinstance(item, NonNavigatingRequest):
-            return {
-                "type": "NonNavigatingRequest",
-                "url": item.request.url,
-            }
-        elif isinstance(item, ArchiveRequest):
-            return {
-                "type": "ArchiveRequest",
-                "url": item.request.url,
-                "expected_type": item.expected_type,
-            }
+        elif isinstance(item, Request):
+            if item.archive:
+                return {
+                    "type": "ArchiveRequest",
+                    "url": item.request.url,
+                    "expected_type": item.expected_type,
+                }
+            elif item.nonnavigating:
+                return {
+                    "type": "NonNavigatingRequest",
+                    "url": item.request.url,
+                }
+            else:
+                return {
+                    "type": "NavigatingRequest",
+                    "url": item.request.url,
+                    "method": item.request.method.value,
+                    "continuation": (
+                        item.continuation
+                        if isinstance(item.continuation, str)
+                        else item.continuation.__name__
+                    ),
+                }
         elif item is None:
             return {"type": "None"}
         else:

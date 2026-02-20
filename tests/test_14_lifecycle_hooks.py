@@ -22,8 +22,8 @@ from kent.data_types import (
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import SyncDriver
@@ -39,8 +39,8 @@ class TestRunStartHook:
         """The on_run_start hook shall be called at the beginning of run()."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -80,8 +80,8 @@ class TestRunStartHook:
         """The on_run_start hook shall receive the scraper class name."""
 
         class MyCustomScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -123,8 +123,8 @@ class TestRunCompleteHook:
         """The on_run_complete hook shall be called at the end of run()."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -172,8 +172,8 @@ class TestRunCompleteHook:
         """The on_run_complete hook shall receive status='completed' on successful run."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -214,8 +214,8 @@ class TestRunCompleteHook:
         """The on_run_complete hook shall receive status='error' when exception occurs."""
 
         class FailingScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -276,8 +276,8 @@ class TestRunCompleteHook:
         """The on_run_complete hook shall fire even when exceptions occur."""
 
         class FailingScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -333,8 +333,8 @@ class TestBothHooksTogether:
         """The on_run_start hook shall fire before on_run_complete."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",

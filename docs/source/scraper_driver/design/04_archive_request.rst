@@ -1,11 +1,12 @@
-Step 4: ArchiveRequest - File Downloads
-========================================
+Step 4: Archive Requests - File Downloads
+==========================================
 
 In Step 3, our scraper fetched JSON API data without navigating using
-NonNavigatingRequest. We may also want to download and save files
-like PDFs, MP3s, or images? This is where **ArchiveRequest** comes in.
+a non-navigating request (``Request`` with ``nonnavigating=True``). We may also
+want to download and save files like PDFs, MP3s, or images? This is where an
+archive request (``Request`` with ``archive=True``) comes in.
 
-This step introduces ArchiveRequest and ArchiveResponse for downloading
+This step introduces archive requests and ArchiveResponse for downloading
 and archiving files to local storage.
 
 
@@ -14,7 +15,7 @@ Overview
 
 In this step, we introduce:
 
-1. **ArchiveRequest** - Request to download and save a file
+1. **Request with archive=True** - Request to download and save a file
 2. **ArchiveResponse** - Response with file_url field for local storage path
 3. **File storage** - Driver manages local storage directory
 4. **Filename extraction** - Extract filename from URL or generate based on type
@@ -31,7 +32,7 @@ PDF downloads. You want to:
 2. Save it to local storage
 3. Include the local file path in your scraped data
 
-Without ArchiveRequest, you'd have to:
+Without an archive request, you'd have to:
 
 .. code-block:: python
 
@@ -45,17 +46,18 @@ Without ArchiveRequest, you'd have to:
     # Track the file path yourself
     yield ParsedData({"opinion_file": f"/tmp/{docket}.pdf"})
 
-With ArchiveRequest, the driver handles all of this:
+With an archive request (``Request`` with ``archive=True``), the driver handles all of this:
 
 .. code-block:: python
 
     # Just yield the request
-    yield ArchiveRequest(
+    yield Request(
         request=HTTPRequestParams(
             method=HttpMethod.GET,
             url=f"/opinions/{docket}.pdf",
         ),
         continuation="archive_opinion",
+        archive=True,
         expected_type="pdf",
     )
 
@@ -68,45 +70,56 @@ With ArchiveRequest, the driver handles all of this:
 The Types
 ---------
 
-**ArchiveRequest** inherits from NonNavigatingRequest and requests a file download:
+An **archive request** is simply a ``Request`` with ``archive=True`` and an optional ``expected_type``:
 
 .. code-block:: python
 
     @dataclass(frozen=True)
-    class ArchiveRequest(NonNavigatingRequest):
-        """A request to download and archive a file.
+    class Request:
+        """Unified request type for all scraper requests.
 
-        When a scraper yields an ArchiveRequest, the driver will:
+        When a scraper yields a Request with archive=True, the driver will:
         1. Fetch the URL (resolving relative URLs against current_location)
         2. Download the file content
         3. Save it to local storage
         4. Call the continuation method with an ArchiveResponse
 
-        Like NonNavigatingRequest, ArchiveRequest preserves current_location -
-        downloading a file doesn't change where you are in the scraper's navigation.
+        Like a non-navigating request, an archive request preserves
+        current_location - downloading a file doesn't change where you are
+        in the scraper's navigation.
 
         Attributes:
+            nonnavigating: If True, don't update current_location.
+            archive: If True, download and archive the file.
             expected_type: Optional hint about the file type ("pdf", "audio", etc.).
         """
 
+        request: HTTPRequestParams
+        continuation: str
+        current_location: str = ""
+        previous_requests: list[Request] = field(default_factory=list)
+        nonnavigating: bool = False
+        archive: bool = False
         expected_type: str | None = None
 
         def resolve_from(
-            self, context: Response | NonNavigatingRequest
-        ) -> ArchiveRequest:
-            """Create a new request with URL resolved from a Response or NonNavigatingRequest.
+            self, context: Response | Request
+        ) -> Request:
+            """Create a new request with URL resolved from a Response or Request.
 
-            For ArchiveRequest (like NonNavigatingRequest):
+            For archive requests (like non-navigating requests):
             - If context is a Response, use the response's URL as current_location
-            - If context is a NonNavigatingRequest, use its current_location
+            - If context is a Request, use its current_location
             - current_location stays unchanged (inherited from parent)
             """
             request, location, parent = self.resolve_request_from(context)
-            return ArchiveRequest(
+            return Request(
                 request=request,
                 continuation=self.continuation,
                 current_location=location,
                 previous_requests=parent.previous_requests + [parent],
+                nonnavigating=self.nonnavigating,
+                archive=self.archive,
                 expected_type=self.expected_type,
             )
 
@@ -151,7 +164,7 @@ For now, the driver manages file storage through a ``storage_dir`` parameter:
             """
             self.scraper = scraper
             self.results: list[ScraperReturnDatatype] = []
-            self.request_queue: list[BaseRequest] = []
+            self.request_queue: list[Request] = []
             self.storage_dir = storage_dir or Path(gettempdir()) / "juriscraper_files"
             self.storage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -224,11 +237,11 @@ The driver's ``run()`` method dispatches to the appropriate resolution method:
         self.request_queue = [entry_request]
 
         while self.request_queue:
-            request: BaseRequest = self.request_queue.pop(0)
-            # Dispatch to resolve_archive_request for ArchiveRequest
+            request: Request = self.request_queue.pop(0)
+            # Dispatch to resolve_archive_request for archive requests
             response: Response = (
                 self.resolve_archive_request(request)
-                if isinstance(request, ArchiveRequest)
+                if request.archive
                 else self.resolve_request(request)
             )
 
@@ -237,12 +250,10 @@ The driver's ``run()`` method dispatches to the appropriate resolution method:
                 match item:
                     case ParsedData():
                         self.results.append(item.unwrap())
-                    case NavigatingRequest():
-                        self.enqueue_request(item, response)
-                    case NonNavigatingRequest():
+                    case Request(nonnavigating=True) | Request(archive=True):
                         self.enqueue_request(item, request)
-                    case ArchiveRequest():
-                        self.enqueue_request(item, response)  # New case!
+                    case Request():
+                        self.enqueue_request(item, response)
                     case None:
                         pass
                     case _:
@@ -254,8 +265,8 @@ The ``resolve_request()`` method handles standard HTTP requests:
 
 .. code-block:: python
 
-    def resolve_request(self, request: BaseRequest) -> Response:
-        """Fetch a BaseRequest and return the Response."""
+    def resolve_request(self, request: Request) -> Response:
+        """Fetch a Request and return the Response."""
         http_params = request.request
         with httpx.Client() as client:
             http_response = client.request(
@@ -283,8 +294,8 @@ The ``resolve_archive_request()`` method reuses ``resolve_request()`` and adds f
 
 .. code-block:: python
 
-    def resolve_archive_request(self, request: ArchiveRequest) -> ArchiveResponse:
-        """Fetch an ArchiveRequest, download the file, and return an ArchiveResponse.
+    def resolve_archive_request(self, request: Request) -> ArchiveResponse:
+        """Fetch an archive request, download the file, and return an ArchiveResponse.
 
         This method reuses resolve_request() to fetch the file, then saves it
         to local storage and returns an ArchiveResponse with the file_url.
@@ -324,12 +335,12 @@ Data Flow
         D->>H: GET /cases
         H-->>D: Response (list HTML)
         D->>S: parse_list(response)
-        S-->>D: yield NavigatingRequest(/cases/BCC-2024-002)
+        S-->>D: yield Request(/cases/BCC-2024-002)
 
         D->>H: GET /cases/BCC-2024-002
         H-->>D: Response (detail HTML)
         D->>S: parse_detail(response)
-        S-->>D: yield ArchiveRequest(/opinions/BCC-2024-002.pdf)
+        S-->>D: yield Request(/opinions/BCC-2024-002.pdf, archive=True)
 
         D->>H: GET /opinions/BCC-2024-002.pdf
         H-->>D: Response (PDF binary)
@@ -356,12 +367,11 @@ Here's the complete Step 4 scraper:
     from lxml import html
 
     from kent.data_types import (
-        ArchiveRequest,
         ArchiveResponse,
         BaseScraper,
         HttpMethod,
         HTTPRequestParams,
-        NavigatingRequest,
+        Request,
         ParsedData,
         Response,
         ScraperYield,
@@ -372,16 +382,16 @@ Here's the complete Step 4 scraper:
         """Scraper for the Bug Civil Court with file archiving.
 
         This demonstrates:
-        - Using ArchiveRequest to download PDF opinions
-        - Using ArchiveRequest to download MP3 oral arguments
+        - Using Request with archive=True to download PDF opinions
+        - Using Request with archive=True to download MP3 oral arguments
         - ArchiveResponse provides file_url for local storage path
         - Combining archived file paths with case metadata
         """
 
         BASE_URL = "http://bugcourt.example.com"
 
-        def get_entry(self) -> NavigatingRequest:
-            return NavigatingRequest(
+        def get_entry(self) -> Request:
+            return Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=f"{self.BASE_URL}/cases",
@@ -399,7 +409,7 @@ Here's the complete Step 4 scraper:
             for row in case_rows:
                 docket = _get_text(row, ".//td[@class='docket']")
                 if docket:
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"/cases/{docket}",
@@ -420,12 +430,13 @@ Here's the complete Step 4 scraper:
             opinion_links = tree.xpath('//a[contains(@href, "/opinions/")]/@href')
             if opinion_links:
                 # Download and archive the PDF
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=opinion_links[0],
                     ),
                     continuation="archive_opinion",
+                    archive=True,
                     expected_type="pdf",
                 )
 
@@ -435,12 +446,13 @@ Here's the complete Step 4 scraper:
             )
             if oral_arg_links:
                 # Download and archive the MP3
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=oral_arg_links[0],
                     ),
                     continuation="archive_oral_argument",
+                    archive=True,
                     expected_type="audio",
                 )
 
@@ -535,7 +547,7 @@ Example: Using the Driver
 Key Points
 ----------
 
-1. **ArchiveRequest** - Inherits from BaseRequest, adds expected_type field
+1. **Request with archive=True** - Uses the unified Request type with archive flag and optional expected_type
 2. **ArchiveResponse** - Inherits from Response, adds file_url field
 3. **Automatic file saving** - Driver handles all file I/O
 4. **Filename extraction** - From URL path or generated from hash

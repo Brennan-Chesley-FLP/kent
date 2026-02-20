@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from kent.data_types import NavigatingRequest
+    from kent.data_types import Request
 
 
 @dataclass(frozen=True)
@@ -107,7 +107,7 @@ class Form:
         self,
         data: dict[str, str] | None = None,
         submit_selector: str | None = None,
-    ) -> NavigatingRequest:
+    ) -> Request:
         """Submit the form as a request.
 
         Args:
@@ -115,13 +115,13 @@ class Form:
             submit_selector: Optional selector for submit element (relative to form).
 
         Returns:
-            NavigatingRequest with the form's action as URL, method as HTTP method,
+            Request with the form's action as URL, method as HTTP method,
             and via set to ViaFormSubmit for Playwright replay.
         """
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
 
         # Merge field defaults with overrides
@@ -149,7 +149,7 @@ class Form:
                 data=field_data,  # type: ignore[arg-type]
             )
 
-        return NavigatingRequest(
+        return Request(
             request=http_params,
             continuation="",  # Will be set by caller
             via=ViaFormSubmit(
@@ -177,20 +177,20 @@ class Link:
     text: str
     selector: str
 
-    def follow(self) -> NavigatingRequest:
+    def follow(self) -> Request:
         """Follow the link as a request.
 
         Returns:
-            NavigatingRequest with the link's URL and via set to ViaLink
+            Request with the link's URL and via set to ViaLink
             for Playwright replay.
         """
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
 
-        return NavigatingRequest(
+        return Request(
             request=HTTPRequestParams(url=self.url, method=HttpMethod.GET),
             continuation="",  # Will be set by caller
             via=ViaLink(

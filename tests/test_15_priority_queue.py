@@ -5,7 +5,7 @@ consumption by processing high-priority requests first.
 
 Key behaviors tested:
 - Requests are processed in priority order (lower number = higher priority)
-- ArchiveRequests (priority 1) are processed before regular requests (priority 9)
+- Archive requests (priority 1) are processed before regular requests (priority 9)
 - FIFO ordering is maintained within the same priority level
 - Custom priorities can be set on requests
 - Priority is preserved through request resolution
@@ -15,13 +15,12 @@ from collections.abc import Generator
 from pathlib import Path
 
 from kent.data_types import (
-    ArchiveRequest,
     ArchiveResponse,
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import SyncDriver
@@ -37,8 +36,8 @@ class TestPriorityOrdering:
         """The driver shall process requests with lower priority numbers first."""
 
         class PriorityScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -49,7 +48,7 @@ class TestPriorityOrdering:
             def parse_entry(self, response: Response):
                 # Yield requests with different priorities
                 # Priority 9 (default)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/low",
@@ -58,7 +57,7 @@ class TestPriorityOrdering:
                     priority=9,
                 )
                 # Priority 1 (high)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/high",
@@ -67,7 +66,7 @@ class TestPriorityOrdering:
                     priority=1,
                 )
                 # Priority 5 (medium)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/medium",
@@ -105,11 +104,11 @@ class TestPriorityOrdering:
     def test_archive_requests_have_priority_1(
         self, server_url: str, tmp_path: Path
     ) -> None:
-        """The ArchiveRequest shall have default priority of 1."""
+        """The archive Request shall have default priority of 1."""
 
         class ArchivePriorityScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -119,20 +118,21 @@ class TestPriorityOrdering:
 
             def parse_entry(self, response: Response):
                 # Yield regular request (priority 9) and archive request (priority 1)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/regular",
                     ),
                     continuation="parse_regular",
                 )
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
                     ),
                     continuation="parse_archive",
                     expected_type="pdf",
+                    archive=True,
                 )
 
             def parse_archive(self, response: ArchiveResponse):
@@ -163,8 +163,8 @@ class TestPriorityOrdering:
         """The driver shall maintain FIFO ordering for requests with the same priority."""
 
         class FIFOScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -175,7 +175,7 @@ class TestPriorityOrdering:
             def parse_entry(self, response: Response):
                 # Yield multiple requests with same priority
                 for i in range(1, 6):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/page{i}",
@@ -216,8 +216,8 @@ class TestPriorityOrdering:
         """The priority shall be preserved when requests are resolved."""
 
         class ResolutionScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -227,7 +227,7 @@ class TestPriorityOrdering:
 
             def parse_entry(self, response: Response):
                 # Yield request with custom priority
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/custom",
@@ -236,7 +236,7 @@ class TestPriorityOrdering:
                     priority=3,
                 )
                 # Yield default priority request
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/default",
@@ -276,8 +276,8 @@ class TestMemoryOptimization:
         """The driver shall process high-priority terminal requests to reduce queue size."""
 
         class OptimizationScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -288,17 +288,18 @@ class TestMemoryOptimization:
             def parse_entry(self, response: Response):
                 # Yield archive requests (priority 1) that are terminal
                 for i in range(1, 4):
-                    yield ArchiveRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/files/file{i}.pdf",
                         ),
                         continuation="parse_archive",
                         expected_type="pdf",
+                        archive=True,
                         accumulated_data={"file_id": i},
                     )
                 # Yield navigating request (priority 9) that creates more requests
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/more",
@@ -348,8 +349,8 @@ class TestDefaultPriorities:
         """The BaseRequest shall have a default priority of 9."""
 
         class DefaultPriorityScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                request = NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                request = Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -379,11 +380,11 @@ class TestDefaultPriorities:
     def test_archive_request_default_priority_is_1(
         self, server_url: str, tmp_path: Path
     ) -> None:
-        """The ArchiveRequest shall have a default priority of 1."""
+        """The archive Request shall have a default priority of 1."""
 
         class ArchiveDefaultScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -392,13 +393,14 @@ class TestDefaultPriorities:
                 )
 
             def parse(self, response: Response):
-                archive_request = ArchiveRequest(
+                archive_request = Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
                     ),
                     continuation="parse_archive",
                     expected_type="pdf",
+                    archive=True,
                 )
                 # Verify default priority
                 assert archive_request.priority == 1

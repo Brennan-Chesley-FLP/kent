@@ -188,5 +188,5 @@ And the driver:
 What's Next
 -----------
 
-In :doc:`02_navigating_request`, we introduce **NavigatingRequest** - the
+In :doc:`02_navigating_request`, we introduce the **Request** type - the
 ability for scrapers to request additional pages.

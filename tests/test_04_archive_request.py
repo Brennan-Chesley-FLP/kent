@@ -1,9 +1,9 @@
-"""Step 4: ArchiveRequest - File Downloads.
+"""Step 4: Archive Request - File Downloads.
 
 This test module verifies the file download and archiving capabilities introduced
 in Step 4 of the scraper-driver architecture:
 
-1. Scrapers can yield ArchiveRequest to download files
+1. Scrapers can yield Request(archive=True) to download files
 2. The driver downloads files and saves them to local storage
 3. ArchiveResponse includes file_url with the local storage path
 4. Files are saved with proper filenames extracted from URL or generated
@@ -17,12 +17,11 @@ from pathlib import Path
 import pytest
 
 from kent.data_types import (
-    ArchiveRequest,
     ArchiveResponse,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import SyncDriver
@@ -33,61 +32,65 @@ from tests.scraper.example.bug_court import (
 from tests.utils import collect_results
 
 
-class TestArchiveRequest:
-    """Tests for the ArchiveRequest data type."""
+class TestArchive:
+    """Tests for the archive Request data type."""
 
     def test_archive_request_stores_url(self):
-        """ArchiveRequest shall store the URL to fetch."""
-        request = ArchiveRequest(
+        """Archive Request shall store the URL to fetch."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/opinions/BCC-2024-001.pdf",
             ),
             continuation="archive_opinion",
+            archive=True,
         )
 
         assert request.request.url == "/opinions/BCC-2024-001.pdf"
 
     def test_archive_request_stores_continuation(self):
-        """ArchiveRequest shall store the continuation method name."""
-        request = ArchiveRequest(
+        """Archive Request shall store the continuation method name."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/opinions/BCC-2024-001.pdf",
             ),
             continuation="archive_opinion",
+            archive=True,
         )
 
         assert request.continuation == "archive_opinion"
 
     def test_archive_request_stores_expected_type(self):
-        """ArchiveRequest shall store the expected file type."""
-        request = ArchiveRequest(
+        """Archive Request shall store the expected file type."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/opinions/BCC-2024-001.pdf",
             ),
             continuation="archive_opinion",
+            archive=True,
             expected_type="pdf",
         )
 
         assert request.expected_type == "pdf"
 
     def test_archive_request_expected_type_optional(self):
-        """ArchiveRequest shall allow expected_type to be None."""
-        request = ArchiveRequest(
+        """Archive Request shall allow expected_type to be None."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/opinions/BCC-2024-001.pdf",
             ),
             continuation="archive_opinion",
+            archive=True,
         )
 
         assert request.expected_type is None
 
     def test_archive_request_resolve_from_response(self):
-        """ArchiveRequest shall resolve URL from Response."""
-        base_request = NavigatingRequest(
+        """Archive Request shall resolve URL from Response."""
+        base_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://bugcourt.example.com/cases/BCC-2024-001",
@@ -102,18 +105,19 @@ class TestArchiveRequest:
             url="http://bugcourt.example.com/cases/BCC-2024-001",
             request=base_request,
         )
-        archive_request = ArchiveRequest(
+        archive_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/opinions/BCC-2024-001.pdf",
             ),
             continuation="archive_opinion",
+            archive=True,
             expected_type="pdf",
         )
 
         resolved = archive_request.resolve_from(response)
 
-        assert isinstance(resolved, ArchiveRequest)
+        assert isinstance(resolved, Request) and resolved.archive
         assert (
             resolved.request.url
             == "http://bugcourt.example.com/opinions/BCC-2024-001.pdf"
@@ -131,12 +135,13 @@ class TestArchiveResponse:
 
     def test_archive_response_inherits_from_response(self):
         """ArchiveResponse shall inherit from Response."""
-        request = ArchiveRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/opinions/BCC-2024-001.pdf",
             ),
             continuation="archive_opinion",
+            archive=True,
         )
         response = ArchiveResponse(
             status_code=200,
@@ -152,12 +157,13 @@ class TestArchiveResponse:
 
     def test_archive_response_stores_file_url(self):
         """ArchiveResponse shall store the local file_url."""
-        request = ArchiveRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/opinions/BCC-2024-001.pdf",
             ),
             continuation="archive_opinion",
+            archive=True,
         )
         response = ArchiveResponse(
             status_code=200,
@@ -173,12 +179,13 @@ class TestArchiveResponse:
 
     def test_archive_response_has_all_response_fields(self):
         """ArchiveResponse shall include all Response fields."""
-        request = ArchiveRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/opinions/BCC-2024-001.pdf",
             ),
             continuation="archive_opinion",
+            archive=True,
         )
         response = ArchiveResponse(
             status_code=200,
@@ -380,13 +387,13 @@ class TestBugCourtScraperWithArchive:
     def test_parse_detail_yields_archive_requests_for_opinions(
         self, scraper: BugCourtScraperWithArchive, server_url: str
     ):
-        """The scraper shall yield ArchiveRequest for PDF opinions."""
+        """The scraper shall yield archive Request for PDF opinions."""
         from tests.mock_server import generate_case_detail_html
 
         # Use a case with opinion
         case = [c for c in CASES if c.has_opinion][0]
         html = generate_case_detail_html(case)
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/cases/{case.docket}",
@@ -404,9 +411,9 @@ class TestBugCourtScraperWithArchive:
 
         results = list(scraper.parse_detail(response))
 
-        # Should yield ArchiveRequest for opinion
+        # Should yield archive Request for opinion
         archive_requests = [
-            r for r in results if isinstance(r, ArchiveRequest)
+            r for r in results if isinstance(r, Request) and r.archive
         ]
         assert len(archive_requests) > 0
 
@@ -414,20 +421,20 @@ class TestBugCourtScraperWithArchive:
         opinion_request = [
             r for r in archive_requests if "opinions" in r.request.url
         ][0]
-        assert isinstance(opinion_request, ArchiveRequest)
+        assert isinstance(opinion_request, Request) and opinion_request.archive
         assert opinion_request.continuation == "archive_opinion"
         assert opinion_request.expected_type == "pdf"
 
     def test_parse_detail_yields_archive_requests_for_oral_arguments(
         self, scraper: BugCourtScraperWithArchive, server_url: str
     ):
-        """The scraper shall yield ArchiveRequest for MP3 oral arguments."""
+        """The scraper shall yield archive Request for MP3 oral arguments."""
         from tests.mock_server import generate_case_detail_html
 
         # Use a case with oral argument
         case = [c for c in CASES if c.has_oral_argument][0]
         html = generate_case_detail_html(case)
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/cases/{case.docket}",
@@ -445,9 +452,9 @@ class TestBugCourtScraperWithArchive:
 
         results = list(scraper.parse_detail(response))
 
-        # Should yield ArchiveRequest for oral argument
+        # Should yield archive Request for oral argument
         archive_requests = [
-            r for r in results if isinstance(r, ArchiveRequest)
+            r for r in results if isinstance(r, Request) and r.archive
         ]
         assert len(archive_requests) > 0
 
@@ -455,7 +462,9 @@ class TestBugCourtScraperWithArchive:
         oral_arg_request = [
             r for r in archive_requests if "oral-arguments" in r.request.url
         ][0]
-        assert isinstance(oral_arg_request, ArchiveRequest)
+        assert (
+            isinstance(oral_arg_request, Request) and oral_arg_request.archive
+        )
         assert oral_arg_request.continuation == "archive_oral_argument"
         assert oral_arg_request.expected_type == "audio"
 
@@ -470,7 +479,7 @@ class TestBugCourtScraperWithArchive:
             c for c in CASES if not c.has_opinion and not c.has_oral_argument
         ][0]
         html = generate_case_detail_html(case)
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{server_url}/cases/{case.docket}",
@@ -498,12 +507,13 @@ class TestBugCourtScraperWithArchive:
         self, scraper: BugCourtScraperWithArchive
     ):
         """The archive_opinion method shall yield ParsedData with file_url."""
-        request = ArchiveRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://bugcourt.example.com/opinions/BCC-2024-001.pdf",
             ),
             continuation="archive_opinion",
+            archive=True,
             current_location="http://bugcourt.example.com/cases/BCC-2024-001",
         )
         response = ArchiveResponse(
@@ -567,7 +577,7 @@ class TestIntegration:
     def test_archive_request_ancestry_preserved(
         self, server_url: str, tmp_path: Path
     ):
-        """ArchiveRequest ancestry shall be preserved through the request chain."""
+        """Archive request ancestry shall be preserved through the request chain."""
         scraper = BugCourtScraperWithArchive()
         scraper.BASE_URL = server_url
         storage_dir = tmp_path / "archive_storage"

@@ -29,7 +29,7 @@ from kent.data_types import (
     EntryInfo,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
+    Request,
 )
 
 # ── Test fixtures ──────────────────────────────────────────────────
@@ -46,10 +46,8 @@ class OpinionFilters(BaseModel):
 
 class SimpleScraper(BaseScraper[FakeData]):
     @entry(FakeData)
-    def search_by_name(
-        self, name: str
-    ) -> Generator[NavigatingRequest, None, None]:
-        yield NavigatingRequest(
+    def search_by_name(self, name: str) -> Generator[Request, None, None]:
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET, url=f"/search?name={name}"
             ),
@@ -59,8 +57,8 @@ class SimpleScraper(BaseScraper[FakeData]):
     @entry(FakeData)
     def search_by_date(
         self, date_range: DateRange
-    ) -> Generator[NavigatingRequest, None, None]:
-        yield NavigatingRequest(
+    ) -> Generator[Request, None, None]:
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"/search?start={date_range.start}&end={date_range.end}",
@@ -75,10 +73,8 @@ class SimpleScraper(BaseScraper[FakeData]):
             largest_observed_gap=20,
         ),
     )
-    def fetch_by_id(
-        self, record_id: int
-    ) -> Generator[NavigatingRequest, None, None]:
-        yield NavigatingRequest(
+    def fetch_by_id(self, record_id: int) -> Generator[Request, None, None]:
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET, url=f"/record/{record_id}"
             ),
@@ -90,8 +86,8 @@ class MultiTypeScraper(BaseScraper[FakeData]):
     @entry(FakeData)
     def search_opinions(
         self, filters: OpinionFilters
-    ) -> Generator[NavigatingRequest, None, None]:
-        yield NavigatingRequest(
+    ) -> Generator[Request, None, None]:
+        yield Request(
             request=HTTPRequestParams(method=HttpMethod.GET, url="/opinions"),
             continuation="parse_opinions",
         )
@@ -99,17 +95,15 @@ class MultiTypeScraper(BaseScraper[FakeData]):
     @entry(FakeData)
     def search_by_filing_date(
         self, filing_date: date
-    ) -> Generator[NavigatingRequest, None, None]:
-        yield NavigatingRequest(
+    ) -> Generator[Request, None, None]:
+        yield Request(
             request=HTTPRequestParams(method=HttpMethod.GET, url="/filings"),
             continuation="parse_filings",
         )
 
     @entry(FakeData)
-    def search_by_count(
-        self, count: int
-    ) -> Generator[NavigatingRequest, None, None]:
-        yield NavigatingRequest(
+    def search_by_count(self, count: int) -> Generator[Request, None, None]:
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET, url=f"/search?count={count}"
             ),
@@ -286,9 +280,7 @@ class TestInitialSeed:
     def test_speculative_initial_seed_stores_overrides(self):
         scraper = SimpleScraper()
         requests = list(
-            scraper.initial_seed(
-                [{"fetch_by_id": {"record_id": [1, 99]}}]
-            )
+            scraper.initial_seed([{"fetch_by_id": {"record_id": [1, 99]}}])
         )
         # Speculative entries don't yield requests
         assert len(requests) == 0
@@ -410,8 +402,8 @@ class TestEntryDecoratorErrors:
                 @entry(FakeData)
                 def bad_entry(
                     self, pair: tuple
-                ) -> Generator[NavigatingRequest, None, None]:
-                    yield NavigatingRequest(
+                ) -> Generator[Request, None, None]:
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET, url="/"
                         ),
@@ -429,5 +421,5 @@ class TestEntryDecoratorErrors:
         with pytest.raises(TypeError, match="unsupported type"):
 
             @entry(FakeData)
-            def bad(self, x: list) -> Generator[NavigatingRequest, None, None]:  # type: ignore[empty-body]
+            def bad(self, x: list) -> Generator[Request, None, None]:  # type: ignore[empty-body]
                 ...

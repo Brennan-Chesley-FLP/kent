@@ -328,11 +328,12 @@ async def get_speculative_steps(
         for entry_info in entries:
             if not entry_info.speculative:
                 continue
+            assert entry_info.speculation is not None
             items.append(
                 SpeculativeStepInfo(
                     name=entry_info.name,
                     default_starting_id=1,
-                    largest_observed_gap=entry_info.largest_observed_gap,
+                    largest_observed_gap=entry_info.speculation.largest_observed_gap,
                     last_successful_id=progress.get(entry_info.name),
                 )
             )

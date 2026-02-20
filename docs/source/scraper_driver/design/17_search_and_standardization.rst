@@ -126,7 +126,7 @@ Each ``@entry`` method declares:
         BaseScraper,
         HttpMethod,
         HTTPRequestParams,
-        NavigatingRequest,
+        Request,
     )
 
 
@@ -135,8 +135,8 @@ Each ``@entry`` method declares:
         @entry(CaseDocket)
         def search_by_name(
             self, name: str
-        ) -> Generator[NavigatingRequest, None, None]:
-            yield NavigatingRequest(
+        ) -> Generator[Request, None, None]:
+            yield Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=f"/search?name={name}",
@@ -147,8 +147,8 @@ Each ``@entry`` method declares:
         @entry(CaseDocket)
         def search_by_date(
             self, date_range: DateRange
-        ) -> Generator[NavigatingRequest, None, None]:
-            yield NavigatingRequest(
+        ) -> Generator[Request, None, None]:
+            yield Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=f"/search?start={date_range.start}&end={date_range.end}",
@@ -159,8 +159,8 @@ Each ``@entry`` method declares:
         @entry(CaseDocket)
         def fetch_by_number(
             self, docket_number: str
-        ) -> Generator[NavigatingRequest, None, None]:
-            yield NavigatingRequest(
+        ) -> Generator[Request, None, None]:
+            yield Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=f"/docket/{docket_number}",
@@ -213,13 +213,13 @@ Use these when a parameter has multiple fields or needs validation:
     @entry(Opinion)
     def search_opinions(
         self, filters: OpinionFilters
-    ) -> Generator[NavigatingRequest, None, None]:
+    ) -> Generator[Request, None, None]:
         ...
 
     @entry(CaseDocket)
     def search_by_date(
         self, date_range: DateRange
-    ) -> Generator[NavigatingRequest, None, None]:
+    ) -> Generator[Request, None, None]:
         ...
 
 The ``kent.common.param_models`` module provides shared parameter models.
@@ -406,8 +406,8 @@ For scrapers that probe sequential IDs, ``@entry`` supports speculative mode:
     )
     def fetch_docket(
         self, crn: int
-    ) -> Generator[NavigatingRequest, None, None]:
-        yield NavigatingRequest(
+    ) -> Generator[Request, None, None]:
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"/docket/{crn}",

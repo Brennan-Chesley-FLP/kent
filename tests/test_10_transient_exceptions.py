@@ -215,8 +215,8 @@ class TestSyncDriverRaisesHTTPResponseException:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -224,8 +224,8 @@ class TestSyncDriverRaisesHTTPResponseException:
 
         # Create a scraper that requests the error endpoint
         class ErrorEndpointScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001?server_error=true",
@@ -287,8 +287,8 @@ class TestSyncDriverRaisesHTTPResponseException:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -296,8 +296,8 @@ class TestSyncDriverRaisesHTTPResponseException:
 
         # Create a scraper
         class TestScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001",
@@ -341,16 +341,16 @@ class TestSyncDriverRaisesHTTPResponseException:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
         from tests.utils import collect_results
 
         class ErrorScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001?server_error=true",
@@ -388,8 +388,8 @@ class TestTransientExceptionCallback:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -404,8 +404,8 @@ class TestTransientExceptionCallback:
 
         # Create a scraper that encounters transient error
         class TransientErrorScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001?server_error=true",
@@ -447,8 +447,8 @@ class TestTransientExceptionCallback:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -463,8 +463,8 @@ class TestTransientExceptionCallback:
 
         # Create a scraper that yields error request then normal request
         class MixedScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases",
@@ -474,9 +474,9 @@ class TestTransientExceptionCallback:
 
             def parse_list(
                 self, response: Response
-            ) -> Generator[NavigatingRequest, None, None]:
+            ) -> Generator[Request, None, None]:
                 # First yield error request
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001?server_error=true",
@@ -484,7 +484,7 @@ class TestTransientExceptionCallback:
                     continuation="parse_detail",
                 )
                 # Then yield normal request
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-002",
@@ -528,8 +528,8 @@ class TestTransientExceptionCallback:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -537,8 +537,8 @@ class TestTransientExceptionCallback:
 
         # Create a scraper that encounters transient error
         class ErrorScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001?server_error=true",
@@ -570,8 +570,8 @@ class TestTransientExceptionCallback:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.sync_driver import SyncDriver
@@ -586,8 +586,8 @@ class TestTransientExceptionCallback:
 
         # Create a scraper
         class TestScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/cases/BCC-2024-001",

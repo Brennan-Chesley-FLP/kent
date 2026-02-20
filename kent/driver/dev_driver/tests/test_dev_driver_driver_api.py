@@ -20,8 +20,8 @@ class TestDevDriverVsOtherDrivers:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.async_driver import AsyncDriver
@@ -38,8 +38,8 @@ class TestDevDriverVsOtherDrivers:
         dev_driver_results: list[dict] = []
 
         class TestScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/cases",
@@ -51,7 +51,7 @@ class TestDevDriverVsOtherDrivers:
             def parse_listing(self, response: Response):
                 # Yield requests for detail pages
                 for i in range(3):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"https://example.com/case/{i}",
@@ -139,8 +139,8 @@ class TestDevDriverVsOtherDrivers:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
             ParsedData,
+            Request,
             Response,
         )
         from kent.driver.dev_driver.dev_driver import (
@@ -152,8 +152,8 @@ class TestDevDriverVsOtherDrivers:
         )
 
         class ResultProducingScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com/data",
@@ -234,7 +234,7 @@ class TestGetterMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.compression import (
             compress,
@@ -244,8 +244,8 @@ class TestGetterMethods:
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -306,15 +306,15 @@ class TestGetterMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -339,15 +339,15 @@ class TestGetterMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -390,15 +390,15 @@ class TestGetterMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -427,15 +427,15 @@ class TestCancellationMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -484,15 +484,15 @@ class TestCancellationMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -540,15 +540,15 @@ class TestCancellationMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -594,15 +594,15 @@ class TestCancellationMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -629,15 +629,15 @@ class TestCancellationMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -712,15 +712,15 @@ class TestCancellationMethods:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         class SimpleScraper(BaseScraper[str]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",

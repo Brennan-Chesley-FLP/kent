@@ -12,11 +12,9 @@ from kent.common.exceptions import (
     TransientException,
 )
 from kent.data_types import (
-    ArchiveRequest,
     BaseRequest,
     BaseScraper,
-    NavigatingRequest,
-    NonNavigatingRequest,
+    Request,
     Response,
     ScraperYield,
 )
@@ -112,7 +110,7 @@ class WorkerMixin:
         async def resolve_request(self, request: BaseRequest) -> Response: ...
 
         async def resolve_archive_request(
-            self, request: ArchiveRequest
+            self, request: Request
         ) -> ArchiveResponse: ...
 
         async def handle_data(self, data: Any) -> None: ...
@@ -233,7 +231,7 @@ class WorkerMixin:
     async def _db_worker(self, worker_id: int) -> None:
         """Worker that processes requests from the database queue.
 
-        Handles regular requests (NavigatingRequest, NonNavigatingRequest, ArchiveRequest).
+        Handles regular requests (navigating, non-navigating, and archive).
         Speculative requests are handled via the new @speculate decorator pattern.
 
         Args:
@@ -360,7 +358,9 @@ class WorkerMixin:
                 # Process the request
                 req_start = time_module.time()
                 await self._process_regular_request(
-                    request_id, request, continuation_name
+                    request_id,
+                    request,  # type: ignore[arg-type]
+                    continuation_name,
                 )
                 req_time = time_module.time() - req_start
                 loop_time = time_module.time() - loop_start
@@ -472,7 +472,7 @@ class WorkerMixin:
     async def _process_regular_request(
         self,
         request_id: int,
-        request: BaseRequest,
+        request: Request,
         continuation_name: str,
     ) -> None:
         """Process a regular (non-speculative, non-resume) request.
@@ -483,14 +483,14 @@ class WorkerMixin:
             continuation_name: Name of the continuation method.
         """
         # Process the request using parent class methods
-        # For ArchiveRequest, resolve_archive_request returns ArchiveResponse
+        # For archive requests, resolve_archive_request returns ArchiveResponse
         # which is a subclass of Response with a file_url field
         from kent.data_types import ArchiveResponse
 
         logger.info(f"Request {request_id}: starting HTTP fetch")
         response: Response = (
             await self.resolve_archive_request(request)
-            if isinstance(request, ArchiveRequest)
+            if request.archive
             else await self.resolve_request(request)
         )
         logger.info(
@@ -501,12 +501,10 @@ class WorkerMixin:
         if request.is_speculative and self._speculation_state:
             await self._track_speculation_outcome(request, response)
 
-        # Verify ArchiveResponse for ArchiveRequest
-        if isinstance(request, ArchiveRequest) and not isinstance(
-            response, ArchiveResponse
-        ):
+        # Verify ArchiveResponse for archive request
+        if request.archive and not isinstance(response, ArchiveResponse):
             logger.error(
-                f"Expected ArchiveResponse for ArchiveRequest, got {type(response)}"
+                f"Expected ArchiveResponse for archive request, got {type(response)}"
             )
 
         # Store the response in the database
@@ -598,10 +596,12 @@ class WorkerMixin:
                             max_count=item.max_count,
                         )
 
-                    case NavigatingRequest():
+                    case Request() if (
+                        not item.nonnavigating and not item.archive
+                    ):
                         await self.enqueue_request(item, response, request_id)
 
-                    case NonNavigatingRequest() | ArchiveRequest():
+                    case Request():
                         await self.enqueue_request(
                             item, parent_request, request_id
                         )

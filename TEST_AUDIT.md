@@ -36,9 +36,9 @@ Cross-reference of features against existing test coverage.
 | Feature | Tested? | Test Location |
 |---------|---------|---------------|
 | Handles `ParsedData` yield | Tested | `test_02`, `test_07` |
-| Handles `NavigatingRequest` yield | Tested | `test_02_navigating_request.py` |
-| Handles `NonNavigatingRequest` yield | Tested | `test_03_nonnavigating_request.py` |
-| Handles `ArchiveRequest` yield | Tested | `test_04_archive_request.py` |
+| Handles `Request` yield (navigating) | Tested | `test_02_navigating_request.py` |
+| Handles `Request` yield (nonnavigating) | Tested | `test_03_nonnavigating_request.py` |
+| Handles `Request` yield (archive) | Tested | `test_04_archive_request.py` |
 | Catches `ScraperAssumptionException` | Tested | `test_08_structural_errors.py` |
 | Calls `on_structural_error` callback | Tested | `test_08_structural_errors.py` |
 | Continue/halt based on callback return | Tested | `test_08_structural_errors.py` |
@@ -196,28 +196,16 @@ Cross-reference of features against existing test coverage.
 | Custom `deduplication_key` | Tested | `test_16_deduplication.py` |
 | `_merge_permanent_into_request()` | Tested | `test_18_permanent_data.py` |
 
-### NavigatingRequest
+### Request
 
 | Feature | Tested? | Test Location |
 |---------|---------|---------------|
-| Updates `current_location` on resolve | Tested | `test_03_nonnavigating_request.py` |
-| `resolve_from()` | Tested | `test_02`, `test_03` |
+| Updates `current_location` on resolve (navigating) | Tested | `test_03_nonnavigating_request.py` |
+| Preserves `current_location` (nonnavigating) | Tested | `test_03_nonnavigating_request.py` |
+| `resolve_from()` | Tested | `test_02`, `test_03`, `test_04` |
 | `speculative()` creates speculative copy | Partial | `test_speculate_decorator.py` |
-
-### NonNavigatingRequest
-
-| Feature | Tested? | Test Location |
-|---------|---------|---------------|
-| Preserves `current_location` | Tested | `test_03_nonnavigating_request.py` |
-| `resolve_from()` | Tested | `test_03_nonnavigating_request.py` |
-
-### ArchiveRequest
-
-| Feature | Tested? | Test Location |
-|---------|---------|---------------|
-| `expected_type` field | Tested | `test_04_archive_request.py` |
-| Default priority=1 | Tested | `test_15_priority_queue.py` |
-| `resolve_from()` | Tested | `test_04_archive_request.py` |
+| `expected_type` field (archive) | Tested | `test_04_archive_request.py` |
+| Default priority=1 for archive | Tested | `test_15_priority_queue.py` |
 
 ### Response / ArchiveResponse
 

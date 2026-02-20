@@ -301,7 +301,7 @@ class TestIntegration:
     def test_callback_with_archive_requests(
         self, server_url: str, tmp_path: Path
     ):
-        """The callback shall work with ArchiveRequest scrapers."""
+        """The callback shall work with archive request scrapers."""
         from tests.scraper.example.bug_court import (
             BugCourtScraperWithArchive,
         )

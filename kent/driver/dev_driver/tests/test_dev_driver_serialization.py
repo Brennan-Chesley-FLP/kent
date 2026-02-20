@@ -9,18 +9,18 @@ class TestRequestTypeRoundTrip:
     """Tests for request type serialization and deserialization round-trips."""
 
     async def test_navigating_request_round_trip(self, initialized_db) -> None:
-        """Test that NavigatingRequest is correctly serialized and deserialized."""
+        """Test that a navigating Request is correctly serialized and deserialized."""
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
-        # Create a NavigatingRequest with all fields populated
-        original = NavigatingRequest(
+        # Create a navigating Request with all fields populated
+        original = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="https://example.com/page",
@@ -104,7 +104,9 @@ class TestRequestTypeRoundTrip:
         deserialized = driver._deserialize_request(row)
 
         # Verify it's the correct type
-        assert isinstance(deserialized, NavigatingRequest)
+        assert isinstance(deserialized, Request)
+        assert not deserialized.nonnavigating
+        assert not deserialized.archive
 
         # Verify all fields match
         assert deserialized.request.method == original.request.method
@@ -121,20 +123,21 @@ class TestRequestTypeRoundTrip:
     async def test_non_navigating_request_round_trip(
         self, initialized_db
     ) -> None:
-        """Test that NonNavigatingRequest is correctly serialized and deserialized."""
+        """Test that a non-navigating Request is correctly serialized and deserialized."""
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NonNavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
-        # Create a NonNavigatingRequest with all fields populated
+        # Create a non-navigating Request with all fields populated
         # Note: Use non-JSON bytes to test raw binary preservation.
         # JSON-like bytes get decoded to dicts by design (for form data).
-        original = NonNavigatingRequest(
+        original = Request(
+            nonnavigating=True,
             request=HTTPRequestParams(
                 method=HttpMethod.POST,
                 url="https://api.example.com/data",
@@ -214,7 +217,8 @@ class TestRequestTypeRoundTrip:
         deserialized = driver._deserialize_request(row)
 
         # Verify it's the correct type
-        assert isinstance(deserialized, NonNavigatingRequest)
+        assert isinstance(deserialized, Request)
+        assert deserialized.nonnavigating
 
         # Verify all fields match
         assert deserialized.request.method == original.request.method
@@ -229,18 +233,19 @@ class TestRequestTypeRoundTrip:
         assert deserialized.priority == original.priority
 
     async def test_archive_request_round_trip(self, initialized_db) -> None:
-        """Test that ArchiveRequest is correctly serialized and deserialized."""
+        """Test that an archive Request is correctly serialized and deserialized."""
         from kent.data_types import (
-            ArchiveRequest,
             HttpMethod,
             HTTPRequestParams,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
-        # Create an ArchiveRequest with all fields populated
-        original = ArchiveRequest(
+        # Create an archive Request with all fields populated
+        original = Request(
+            archive=True,
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="https://example.com/files/document.pdf",
@@ -252,7 +257,7 @@ class TestRequestTypeRoundTrip:
             accumulated_data={"document_id": "12345"},
             aux_data={"filename": "document.pdf"},
             permanent={},
-            priority=1,  # Default for ArchiveRequest
+            priority=1,  # Default for archive Request
         )
 
         # Serialize
@@ -320,7 +325,8 @@ class TestRequestTypeRoundTrip:
         deserialized = driver._deserialize_request(row)
 
         # Verify it's the correct type
-        assert isinstance(deserialized, ArchiveRequest)
+        assert isinstance(deserialized, Request)
+        assert deserialized.archive
 
         # Verify all fields match
         assert deserialized.request.method == original.request.method
@@ -337,18 +343,19 @@ class TestRequestTypeRoundTrip:
     async def test_archive_request_without_expected_type(
         self, initialized_db
     ) -> None:
-        """Test ArchiveRequest round-trip when expected_type is None."""
+        """Test archive Request round-trip when expected_type is None."""
         from kent.data_types import (
-            ArchiveRequest,
             HttpMethod,
             HTTPRequestParams,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
-        # Create an ArchiveRequest without expected_type
-        original = ArchiveRequest(
+        # Create an archive Request without expected_type
+        original = Request(
+            archive=True,
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="https://example.com/files/unknown",
@@ -418,7 +425,8 @@ class TestRequestTypeRoundTrip:
             row = result.first()
         deserialized = driver._deserialize_request(row)
 
-        assert isinstance(deserialized, ArchiveRequest)
+        assert isinstance(deserialized, Request)
+        assert deserialized.archive
         assert deserialized.expected_type is None
 
     async def test_request_with_binary_body(self, initialized_db) -> None:
@@ -426,7 +434,7 @@ class TestRequestTypeRoundTrip:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NonNavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
@@ -434,7 +442,8 @@ class TestRequestTypeRoundTrip:
 
         binary_body = b"\x00\x01\x02\xff\xfe\xfd"
 
-        original = NonNavigatingRequest(
+        original = Request(
+            nonnavigating=True,
             request=HTTPRequestParams(
                 method=HttpMethod.POST,
                 url="https://example.com/upload",
@@ -499,7 +508,7 @@ class TestRequestTypeRoundTrip:
             )
             row = result.first()
         result = driver._deserialize_request(row)
-        # NavigatingRequest returns BaseRequest directly
+        # Request returns BaseRequest directly
         deserialized = result if not isinstance(result, tuple) else result[0]
 
         assert deserialized.request.data == binary_body
@@ -511,14 +520,14 @@ class TestRequestTypeRoundTrip:
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
         from kent.driver.dev_driver.dev_driver import (
             LocalDevDriver,
         )
 
         # Minimal request with empty optional fields
-        original = NavigatingRequest(
+        original = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="https://example.com",
@@ -590,7 +599,7 @@ class TestRequestTypeRoundTrip:
             )
             row = result.first()
         result = driver._deserialize_request(row)
-        # NavigatingRequest returns BaseRequest directly
+        # Request returns BaseRequest directly
         deserialized = result if not isinstance(result, tuple) else result[0]
 
         # Verify deserialized correctly with empty defaults

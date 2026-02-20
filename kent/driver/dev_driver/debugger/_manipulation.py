@@ -339,10 +339,6 @@ class ManipulationMixin:
         from kent.common.decorators import (
             get_entry_metadata,
         )
-        from kent.data_types import (
-            ArchiveRequest,
-            NonNavigatingRequest,
-        )
 
         self._require_write_mode()
 
@@ -419,10 +415,10 @@ class ManipulationMixin:
             if callable(continuation) and not isinstance(continuation, str):
                 continuation = continuation.__name__
 
-            if isinstance(request, ArchiveRequest):
+            if request.archive:
                 request_type = "archive"
                 expected_type = request.expected_type
-            elif isinstance(request, NonNavigatingRequest):
+            elif request.nonnavigating:
                 request_type = "non_navigating"
                 expected_type = None
             else:

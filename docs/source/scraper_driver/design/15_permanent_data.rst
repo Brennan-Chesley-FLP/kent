@@ -13,7 +13,7 @@ Overview
 
 In this step, we introduce:
 
-1. **permanent dict** - Added to BaseRequest
+1. **permanent dict** - Added to Request
 2. **Automatic inheritance** - Child requests inherit parent's permanent data
 3. **Merge semantics** - Child can override or extend parent's permanent data
 4. **Driver integration** - Permanent data applied to HTTP requests
@@ -29,8 +29,8 @@ Bearer Token Authentication
 .. code-block:: python
 
     class APIScrap(BaseScraper):
-        def get_entry(self) -> NavigatingRequest:
-            return NavigatingRequest(
+        def get_entry(self) -> Request:
+            return Request(
                 url="https://api.example.com/login",
                 continuation="parse_login",
             )
@@ -41,7 +41,7 @@ Bearer Token Authentication
             token = data["access_token"]
 
             # Set permanent header - flows to all descendants
-            yield NavigatingRequest(
+            yield Request(
                 url="/api/users",
                 permanent={"headers": {"Authorization": f"Bearer {token}"}},
                 continuation="parse_users",
@@ -51,7 +51,7 @@ Bearer Token Authentication
             # Token automatically included in request!
             users = json.loads(response.text)
             for user in users:
-                yield NavigatingRequest(
+                yield Request(
                     url=f"/api/users/{user['id']}",
                     continuation="parse_user_detail",
                 )
@@ -67,8 +67,8 @@ Session Cookie Authentication
 .. code-block:: python
 
     class SessionScraper(BaseScraper):
-        def get_entry(self) -> NavigatingRequest:
-            return NavigatingRequest(
+        def get_entry(self) -> Request:
+            return Request(
                 url="https://example.com/login",
                 continuation="parse_login",
             )
@@ -78,7 +78,7 @@ Session Cookie Authentication
             session_id = extract_cookie(response, "sessionid")
 
             # Set permanent cookie
-            yield NavigatingRequest(
+            yield Request(
                 url="/dashboard",
                 permanent={"cookies": {"sessionid": session_id}},
                 continuation="parse_dashboard",
@@ -87,7 +87,7 @@ Session Cookie Authentication
         def parse_dashboard(self, response: Response):
             # Cookie automatically included!
             for link in extract_links(response):
-                yield NavigatingRequest(
+                yield Request(
                     url=link,
                     continuation="parse_page",
                 )

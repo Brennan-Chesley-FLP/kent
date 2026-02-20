@@ -8,7 +8,7 @@ Key behaviors tested:
 - Custom on_archive callback can be provided
 - Callback receives correct parameters (content, url, expected_type, storage_dir)
 - Callback return value is used as file_url
-- Integration with ArchiveRequest/ArchiveResponse flow
+- Integration with archive Request/ArchiveResponse flow
 """
 
 from collections.abc import Generator
@@ -16,13 +16,12 @@ from pathlib import Path
 from typing import Any
 
 from kent.data_types import (
-    ArchiveRequest,
     ArchiveResponse,
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import (
@@ -100,8 +99,8 @@ class TestCustomArchiveCallback:
         """The on_archive callback shall receive file content."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
@@ -110,13 +109,14 @@ class TestCustomArchiveCallback:
                 )
 
             def archive_file(self, response: Response):
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=response.url,
                     ),
                     continuation="parse_archive",
                     expected_type="pdf",
+                    archive=True,
                 )
 
             def parse_archive(self, response: ArchiveResponse):
@@ -165,8 +165,8 @@ class TestCustomArchiveCallback:
         """The on_archive callback return value shall be used as file_url in ArchiveResponse."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
@@ -175,13 +175,14 @@ class TestCustomArchiveCallback:
                 )
 
             def archive_file(self, response: Response):
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=response.url,
                     ),
                     continuation="parse_archive",
                     expected_type="pdf",
+                    archive=True,
                 )
 
             def parse_archive(self, response: ArchiveResponse):
@@ -218,8 +219,8 @@ class TestCustomArchiveCallback:
         """The on_archive callback shall allow saving files to custom locations."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
@@ -228,13 +229,14 @@ class TestCustomArchiveCallback:
                 )
 
             def archive_file(self, response: Response):
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=response.url,
                     ),
                     continuation="parse_archive",
                     expected_type="pdf",
+                    archive=True,
                 )
 
             def parse_archive(self, response: ArchiveResponse):
@@ -283,8 +285,8 @@ class TestArchiveCallbackIntegration:
         """The driver shall use default_archive_callback when on_archive is None."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
@@ -293,13 +295,14 @@ class TestArchiveCallbackIntegration:
                 )
 
             def archive_file(self, response: Response):
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=response.url,
                     ),
                     continuation="parse_archive",
                     expected_type="pdf",
+                    archive=True,
                 )
 
             def parse_archive(self, response: ArchiveResponse):
@@ -326,11 +329,11 @@ class TestArchiveCallbackIntegration:
     def test_callback_called_for_each_archive_request(
         self, server_url: str, tmp_path: Path
     ) -> None:
-        """The on_archive callback shall be called for each ArchiveRequest."""
+        """The on_archive callback shall be called for each archive Request."""
 
         class MultiFileScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
@@ -339,23 +342,25 @@ class TestArchiveCallbackIntegration:
                 )
 
             def archive_first(self, response: Response):
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
                     ),
                     continuation="archive_second",
                     expected_type="pdf",
+                    archive=True,
                 )
 
             def archive_second(self, response: ArchiveResponse):
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
                     ),
                     continuation="parse_archive",
                     expected_type="pdf",
+                    archive=True,
                 )
 
             def parse_archive(self, response: ArchiveResponse):
@@ -387,5 +392,5 @@ class TestArchiveCallbackIntegration:
 
         driver.run()
 
-        # Verify callback was called twice (once for each ArchiveRequest)
+        # Verify callback was called twice (once for each archive Request)
         assert callback_count["count"] == 2

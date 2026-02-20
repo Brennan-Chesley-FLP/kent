@@ -5,9 +5,9 @@ court where insects file civil lawsuits. It evolves across the 29 steps of
 the design documentation.
 
 Step 1: A simple function that parses HTML and yields dicts.
-Step 2: A class with multiple methods, yielding ParsedData and NavigatingRequest.
-Step 3: Uses NonNavigatingRequest to fetch JSON API data without navigating.
-Step 4: Uses ArchiveRequest to download and archive PDF and MP3 files.
+Step 2: A class with multiple methods, yielding ParsedData and Request.
+Step 3: Uses Request(nonnavigating=True) to fetch JSON API data without navigating.
+Step 4: Uses Request(archive=True) to download and archive PDF and MP3 files.
 Step 5: Uses accumulated_data to flow case data from appeals to trial court.
 Step 6: Uses aux_data to flow session tokens for authenticated file downloads.
 Step 8: Uses CheckedHtmlElement to validate HTML structure assumptions.
@@ -25,14 +25,12 @@ from kent.common.checked_html import CheckedHtmlElement
 from kent.common.data_models import ScrapedData
 from kent.common.decorators import entry, step
 from kent.data_types import (
-    ArchiveRequest,
     ArchiveResponse,
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
-    NonNavigatingRequest,
     ParsedData,
+    Request,
     Response,
     ScraperYield,
 )
@@ -47,7 +45,7 @@ class BugCourtScraper(BaseScraper[dict]):
 
     This Step 2 implementation demonstrates:
     - A scraper as a class (to bundle multiple methods)
-    - Yielding NavigatingRequest to fetch detail pages
+    - Yielding Request to fetch detail pages
     - Yielding ParsedData with complete case information
     - Continuation methods specified by name (for serializability)
 
@@ -59,9 +57,9 @@ class BugCourtScraper(BaseScraper[dict]):
     BASE_URL = "http://127.0.0.1"
 
     @entry(dict)
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         """Create the initial request to start scraping."""
-        yield NavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{self.BASE_URL}/cases",
@@ -75,13 +73,13 @@ class BugCourtScraper(BaseScraper[dict]):
         """Parse the case list page and yield requests for detail pages.
 
         This method extracts basic case information from the list page,
-        then yields NavigatingRequests to fetch each case's detail page.
+        then yields Requests to fetch each case's detail page.
 
         Args:
             response: The Response from fetching the list page.
 
         Yields:
-            NavigatingRequest for each case detail page.
+            Request for each case detail page.
         """
         tree = html.fromstring(response.text)
 
@@ -95,7 +93,7 @@ class BugCourtScraper(BaseScraper[dict]):
             if docket:
                 # Yield a request to fetch the detail page
                 # The URL is relative - driver will resolve against parent request
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"/cases/{docket}",
@@ -149,7 +147,7 @@ class BugCourtScraper(BaseScraper[dict]):
 
 
 # =============================================================================
-# Step 3: Scraper with NonNavigatingRequest
+# Step 3: Scraper with Request(nonnavigating=True)
 # =============================================================================
 
 
@@ -157,7 +155,7 @@ class BugCourtScraperWithAPI(BaseScraper[dict]):
     """Scraper for the Bug Civil Court with API metadata.
 
     This Step 3 implementation demonstrates:
-    - Using NonNavigatingRequest to fetch API data
+    - Using Request(nonnavigating=True) to fetch API data
     - Staying at the same current_location while fetching JSON
     - Combining HTML parsing with JSON API data
 
@@ -170,9 +168,9 @@ class BugCourtScraperWithAPI(BaseScraper[dict]):
     BASE_URL = "http://127.0.0.1"
 
     @entry(dict)
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         """Create the initial request to start scraping."""
-        yield NavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{self.BASE_URL}/cases",
@@ -189,7 +187,7 @@ class BugCourtScraperWithAPI(BaseScraper[dict]):
             response: The Response from fetching the list page.
 
         Yields:
-            NavigatingRequest for each case detail page.
+            Request for each case detail page.
         """
         tree = html.fromstring(response.text)
         case_rows = tree.xpath("//tr[@class='case-row']")
@@ -198,7 +196,7 @@ class BugCourtScraperWithAPI(BaseScraper[dict]):
             docket = _get_text(row, ".//td[@class='docket']")
             if docket:
                 # Navigate to the detail page
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"/cases/{docket}",
@@ -212,26 +210,27 @@ class BugCourtScraperWithAPI(BaseScraper[dict]):
         """Parse detail page and fetch API metadata without navigating.
 
         This method demonstrates the key difference:
-        - NavigatingRequest updates current_location
-        - NonNavigatingRequest keeps current_location unchanged
+        - Request (default) updates current_location
+        - Request(nonnavigating=True) keeps current_location unchanged
 
         Args:
             response: The Response from fetching the detail page.
 
         Yields:
-            NonNavigatingRequest to fetch JSON API data.
+            Request(nonnavigating=True) to fetch JSON API data.
         """
         tree = html.fromstring(response.text)
         docket = _get_text_by_id(tree, "docket")
 
         # Fetch API metadata without navigating away from the detail page
         # current_location remains at /cases/{docket}
-        yield NonNavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"/api/cases/{docket}",
             ),
             continuation="parse_api",
+            nonnavigating=True,
         )
 
     def parse_api(
@@ -317,7 +316,7 @@ def _parse_date(date_str: str):
 
 
 # =============================================================================
-# Step 4: Scraper with ArchiveRequest
+# Step 4: Scraper with Request(archive=True)
 # =============================================================================
 
 
@@ -325,8 +324,8 @@ class BugCourtScraperWithArchive(BaseScraper[dict]):
     """Scraper for the Bug Civil Court with file archiving.
 
     This Step 4 implementation demonstrates:
-    - Using ArchiveRequest to download PDF opinions
-    - Using ArchiveRequest to download MP3 oral arguments
+    - Using Request(archive=True) to download PDF opinions
+    - Using Request(archive=True) to download MP3 oral arguments
     - ArchiveResponse provides file_url for local storage path
     - Combining archived file paths with case metadata
 
@@ -339,9 +338,9 @@ class BugCourtScraperWithArchive(BaseScraper[dict]):
     BASE_URL = "http://127.0.0.1"
 
     @entry(dict)
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         """Create the initial request to start scraping."""
-        yield NavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{self.BASE_URL}/cases",
@@ -358,7 +357,7 @@ class BugCourtScraperWithArchive(BaseScraper[dict]):
             response: The Response from fetching the list page.
 
         Yields:
-            NavigatingRequest for each case detail page.
+            Request for each case detail page.
         """
         tree = html.fromstring(response.text)
         case_rows = tree.xpath("//tr[@class='case-row']")
@@ -367,7 +366,7 @@ class BugCourtScraperWithArchive(BaseScraper[dict]):
             docket = _get_text(row, ".//td[@class='docket']")
             if docket:
                 # Navigate to the detail page
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"/cases/{docket}",
@@ -380,14 +379,14 @@ class BugCourtScraperWithArchive(BaseScraper[dict]):
     ) -> Generator[ScraperYield[dict], None, None]:
         """Parse detail page and check for downloadable files.
 
-        This method extracts case data and yields ArchiveRequests for
+        This method extracts case data and yields archive Requests for
         any available PDF opinions or MP3 oral arguments.
 
         Args:
             response: The Response from fetching the detail page.
 
         Yields:
-            ArchiveRequest for PDF opinions and MP3 oral arguments.
+            Request(archive=True) for PDF opinions and MP3 oral arguments.
         """
         tree = html.fromstring(response.text)
 
@@ -399,12 +398,13 @@ class BugCourtScraperWithArchive(BaseScraper[dict]):
         opinion_links = tree.xpath('//a[contains(@href, "/opinions/")]/@href')
         if opinion_links:
             # Download and archive the PDF
-            yield ArchiveRequest(
+            yield Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=opinion_links[0],
                 ),
                 continuation="archive_opinion",
+                archive=True,
                 expected_type="pdf",
             )
 
@@ -414,12 +414,13 @@ class BugCourtScraperWithArchive(BaseScraper[dict]):
         )
         if oral_arg_links:
             # Download and archive the MP3
-            yield ArchiveRequest(
+            yield Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=oral_arg_links[0],
                 ),
                 continuation="archive_oral_argument",
+                archive=True,
                 expected_type="audio",
             )
 
@@ -533,9 +534,9 @@ class BugCourtScraperWithValidation(BaseScraper[BugCourtCaseData]):
     BASE_URL = "http://127.0.0.1"
 
     @entry(BugCourtCaseData)
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         """Get the entry request for the scraper."""
-        yield NavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{self.BASE_URL}/cases",
@@ -571,7 +572,7 @@ class BugCourtScraperWithValidation(BaseScraper[BugCourtCaseData]):
                     else None
                 )
 
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"/cases/{docket}",

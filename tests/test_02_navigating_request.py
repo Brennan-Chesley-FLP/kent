@@ -1,9 +1,9 @@
-"""Step 2: NavigatingRequest - Multi-Page Scraping.
+"""Step 2: Request - Multi-Page Scraping.
 
 This test module verifies the multi-page scraping capabilities introduced
 in Step 2 of the scraper-driver architecture:
 
-1. Scrapers can yield NavigatingRequest to request additional pages
+1. Scrapers can yield Request to request additional pages
 2. The driver fetches URLs and calls continuation methods by name
 3. current_location is tracked and updated for relative URL resolution
 4. Pattern matching is used for exhaustive handling of yield types
@@ -16,8 +16,8 @@ import pytest
 from kent.data_types import (
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import SyncDriver
@@ -28,12 +28,12 @@ from tests.scraper.example.bug_court import (
 from tests.utils import collect_results
 
 
-class TestNavigatingRequest:
-    """Tests for the NavigatingRequest data type."""
+class TestRequest:
+    """Tests for the Request data type."""
 
     def test_navigating_request_stores_url(self):
-        """NavigatingRequest shall store the URL to fetch."""
-        request = NavigatingRequest(
+        """Request shall store the URL to fetch."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases/BCC-2024-001",
@@ -44,8 +44,8 @@ class TestNavigatingRequest:
         assert request.request.url == "/cases/BCC-2024-001"
 
     def test_navigating_request_stores_continuation(self):
-        """NavigatingRequest shall store the continuation method name."""
-        request = NavigatingRequest(
+        """Request shall store the continuation method name."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases",
@@ -56,8 +56,8 @@ class TestNavigatingRequest:
         assert request.continuation == "parse_list"
 
     def test_navigating_request_defaults_to_get(self):
-        """NavigatingRequest shall default to GET method."""
-        request = NavigatingRequest(
+        """Request shall default to GET method."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases",
@@ -68,8 +68,8 @@ class TestNavigatingRequest:
         assert request.request.method == HttpMethod.GET
 
     def test_navigating_request_supports_post(self):
-        """NavigatingRequest shall support POST method."""
-        request = NavigatingRequest(
+        """Request shall support POST method."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.POST,
                 url="/search",
@@ -82,8 +82,8 @@ class TestNavigatingRequest:
         assert request.request.data == {"query": "beetle"}
 
     def test_resolve_url_with_absolute_url(self):
-        """NavigatingRequest shall return absolute URLs unchanged."""
-        request = NavigatingRequest(
+        """Request shall return absolute URLs unchanged."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://other.example.com/cases",
@@ -96,8 +96,8 @@ class TestNavigatingRequest:
         assert resolved == "http://other.example.com/cases"
 
     def test_resolve_url_with_relative_url(self):
-        """NavigatingRequest shall resolve relative URLs against current_location."""
-        request = NavigatingRequest(
+        """Request shall resolve relative URLs against current_location."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases/BCC-2024-001",
@@ -110,8 +110,8 @@ class TestNavigatingRequest:
         assert resolved == "http://bugcourt.example.com/cases/BCC-2024-001"
 
     def test_resolve_url_with_relative_path(self):
-        """NavigatingRequest shall resolve relative paths correctly."""
-        request = NavigatingRequest(
+        """Request shall resolve relative paths correctly."""
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="BCC-2024-001",
@@ -129,7 +129,7 @@ class TestResponse:
 
     def test_response_stores_status_code(self):
         """Response shall store the HTTP status code."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases",
@@ -149,7 +149,7 @@ class TestResponse:
 
     def test_response_stores_headers(self):
         """Response shall store the response headers."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases",
@@ -170,7 +170,7 @@ class TestResponse:
 
     def test_response_stores_content_and_text(self):
         """Response shall store both raw bytes and decoded text."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases",
@@ -192,7 +192,7 @@ class TestResponse:
 
     def test_response_stores_final_url(self):
         """Response shall store the final URL after redirects."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/old-cases",
@@ -212,7 +212,7 @@ class TestResponse:
 
     def test_response_stores_original_request(self):
         """Response shall store the original request."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases",
@@ -268,7 +268,7 @@ class TestBugCourtScraper:
     @pytest.fixture
     def list_response(self, cases_html: str) -> Response:
         """Create a Response for the case list page."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases",
@@ -287,11 +287,11 @@ class TestBugCourtScraper:
     def test_parse_list_yields_navigating_requests(
         self, scraper: BugCourtScraper, list_response: Response
     ):
-        """The scraper shall yield NavigatingRequest for each case."""
+        """The scraper shall yield Request for each case."""
         results = list(scraper.parse_list(list_response))
 
         assert len(results) == len(CASES)
-        assert all(isinstance(r, NavigatingRequest) for r in results)
+        assert all(isinstance(r, Request) for r in results)
 
     def test_parse_list_requests_have_correct_urls(
         self, scraper: BugCourtScraper, list_response: Response
@@ -301,7 +301,7 @@ class TestBugCourtScraper:
 
         expected_urls = {f"/cases/{case.docket}" for case in CASES}
         actual_urls = {
-            r.request.url for r in results if isinstance(r, NavigatingRequest)
+            r.request.url for r in results if isinstance(r, Request)
         }
 
         assert actual_urls == expected_urls
@@ -315,7 +315,7 @@ class TestBugCourtScraper:
         assert all(
             r.continuation == "parse_detail"
             for r in results
-            if isinstance(r, NavigatingRequest)
+            if isinstance(r, Request)
         )
 
     def test_parse_detail_yields_parsed_data(self, scraper: BugCourtScraper):
@@ -324,7 +324,7 @@ class TestBugCourtScraper:
 
         case = CASES[0]
         html = generate_case_detail_html(case)
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"/cases/{case.docket}",
@@ -351,7 +351,7 @@ class TestBugCourtScraper:
 
         case = CASES[0]
         html = generate_case_detail_html(case)
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"/cases/{case.docket}",
@@ -485,7 +485,7 @@ class TestIntegration:
         """Continuation specified as string shall be fully serializable."""
         import json
 
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/cases/BCC-2024-001",

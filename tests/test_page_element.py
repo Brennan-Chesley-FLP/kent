@@ -92,7 +92,7 @@ def test_form_get_field():
 
 
 def test_form_submit_post():
-    """Form.submit should create a NavigatingRequest for POST forms."""
+    """Form.submit should create a Request for POST forms."""
     fields = [
         FormField(name="username", field_type="input", value="john"),
         FormField(name="password", field_type="password", value="secret"),
@@ -158,7 +158,7 @@ def test_form_submit_with_submit_selector():
 
 
 def test_link_follow():
-    """Link.follow should create a NavigatingRequest."""
+    """Link.follow should create a Request."""
     link = Link(
         url="https://example.com/detail/123",
         text="Case Details",

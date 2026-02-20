@@ -523,7 +523,7 @@ class TestSeedSpeculativeRequests:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
 
         engine, session_factory = initialized_db
@@ -544,8 +544,8 @@ class TestSeedSpeculativeRequests:
 
         class TestSpeculateScraper(BaseScraper):
             @entry(dict, speculative=SimpleSpeculation(highest_observed=100))
-            def fetch_item(self, item_id: int) -> NavigatingRequest:
-                return NavigatingRequest(
+            def fetch_item(self, item_id: int) -> Request:
+                return Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"https://example.com/items/{item_id}",
@@ -629,7 +629,7 @@ class TestSeedSpeculativeRequests:
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
-            NavigatingRequest,
+            Request,
         )
 
         engine, session_factory = initialized_db
@@ -645,8 +645,8 @@ class TestSeedSpeculativeRequests:
 
         # Create a scraper without speculative @entry decorator
         class TestNonSpeculateScraper(BaseScraper):
-            def fetch_item(self, item_id: int) -> NavigatingRequest:
-                return NavigatingRequest(
+            def fetch_item(self, item_id: int) -> Request:
+                return Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"https://example.com/items/{item_id}",

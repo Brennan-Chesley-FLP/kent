@@ -19,8 +19,8 @@ from kent.data_types import (
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     ScraperYield,
     WaitForLoadState,
     WaitForSelector,
@@ -38,8 +38,8 @@ class TestPageInjection:
         """The @step decorator shall inject PageElement when parameter is named 'page'."""
 
         class PageScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -81,8 +81,8 @@ class TestPageInjection:
         """Both page and lxml_tree parameters can be used in the same step."""
 
         class BothScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -132,8 +132,8 @@ class TestPageInjection:
         """The observer should be accessible via StepMetadata after step execution."""
 
         class ObserverScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",

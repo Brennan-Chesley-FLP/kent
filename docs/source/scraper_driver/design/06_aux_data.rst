@@ -15,7 +15,7 @@ Overview
 
 In this step, we introduce:
 
-1. **aux_data** - Field on BaseRequest for navigation metadata (tokens, session data)
+1. **aux_data** - Field on Request for navigation metadata (tokens, session data)
 2. **Deep copy semantics** - Same protection as accumulated_data
 3. **Request chain propagation** - Data flows automatically through resolve_from
 4. **Contrast with accumulated_data** - Clear separation of concerns
@@ -38,7 +38,7 @@ Without aux_data, you might be tempted to put it in accumulated_data:
 .. code-block:: python
 
     # BAD: Mixing navigation metadata with case data
-    yield NavigatingRequest(
+    yield Request(
         url=detail_url,
         continuation="parse_detail",
         accumulated_data={
@@ -58,7 +58,7 @@ With aux_data, navigation metadata stays separate:
 .. code-block:: python
 
     # GOOD: Separate concerns
-    yield NavigatingRequest(
+    yield Request(
         url=detail_url,
         continuation="parse_detail",
         accumulated_data={"case_name": "Ant v. Bee"},  # Case data only
@@ -75,13 +75,13 @@ With aux_data, navigation metadata stays separate:
 The aux_data Field
 ------------------
 
-BaseRequest gets a new field alongside accumulated_data:
+Request gets a new field alongside accumulated_data:
 
 .. code-block:: python
 
     @dataclass(frozen=True)
-    class BaseRequest:
-        """Base class for all request types.
+    class Request:
+        """Unified request type.
 
         Attributes:
             request: The HTTP request parameters.
@@ -94,7 +94,7 @@ BaseRequest gets a new field alongside accumulated_data:
         request: HTTPRequestParams
         continuation: str
         current_location: str = ""
-        previous_requests: list[BaseRequest] = field(default_factory=list)
+        previous_requests: list[Request] = field(default_factory=list)
         accumulated_data: dict[str, Any] = field(default_factory=dict)
         aux_data: dict[str, Any] = field(default_factory=dict)
 
@@ -119,14 +119,14 @@ sibling request contamination.
     # Deep copy prevents mutation bugs
     shared_aux = {"session_token": "abc123"}
 
-    request1 = NavigatingRequest(
+    request1 = Request(
         url="/case1",
         continuation="parse",
         aux_data=shared_aux
     )
     # __post_init__ deep copies shared_aux
 
-    request2 = NavigatingRequest(
+    request2 = Request(
         url="/case2",
         continuation="parse",
         aux_data=shared_aux
@@ -153,7 +153,7 @@ scrape pruning, and improve debuggability.
     session_token = extract_token(html)  # aux_data
     case_name = extract_case_name(html)  # accumulated_data
 
-    yield NavigatingRequest(
+    yield Request(
         url=detail_url,
         continuation="parse_detail",
         accumulated_data={"case_name": case_name},  # Will be in final output
@@ -168,10 +168,11 @@ scrape pruning, and improve debuggability.
         token = response.request.aux_data["session_token"]  # Navigation data
         headers = {"X-Session-Token": token}  # Use for download
 
-        yield ArchiveRequest(
+        yield Request(
             url=pdf_url,
             headers=headers,  # Token used here
             continuation="archive_pdf",
+            archive=True,
             accumulated_data=data,  # Case data flows
             aux_data=response.request.aux_data,  # Token flows (but not used after this)
         )
@@ -199,7 +200,7 @@ Data Flow Diagram
         H-->>D: Response (HTML with hidden token)
         D->>S: parse_list(response)
         Note over S: Extract session_token → aux_data<br/>Extract case_name → accumulated_data
-        S-->>D: yield NavigatingRequest(<br/>  url=/cases/BCC-001,<br/>  accumulated_data={case_name: "Ant v. Bee"},<br/>  aux_data={session_token: "abc123"})
+        S-->>D: yield Request(<br/>  url=/cases/BCC-001,<br/>  accumulated_data={case_name: "Ant v. Bee"},<br/>  aux_data={session_token: "abc123"})
 
         Note over D: resolve_from propagates both dicts
 
@@ -207,7 +208,7 @@ Data Flow Diagram
         H-->>D: Response (detail HTML)
         D->>S: parse_detail(response)
         Note over S: Get token from aux_data<br/>Enrich accumulated_data<br/>Use token in headers
-        S-->>D: yield ArchiveRequest(<br/>  url=/opinions/BCC-001.pdf,<br/>  headers={X-Session-Token: "abc123"},<br/>  accumulated_data={case_name, judge, docket},<br/>  aux_data={session_token: "abc123"})
+        S-->>D: yield Request(<br/>  url=/opinions/BCC-001.pdf,<br/>  headers={X-Session-Token: "abc123"},<br/>  accumulated_data={case_name, judge, docket},<br/>  aux_data={session_token: "abc123"})
 
         Note over D: resolve_from propagates both dicts
 
@@ -234,12 +235,11 @@ Here's the complete Step 6 scraper:
     from lxml import html
 
     from kent.data_types import (
-        ArchiveRequest,
         ArchiveResponse,
         BaseScraper,
         HttpMethod,
         HTTPRequestParams,
-        NavigatingRequest,
+        Request,
         ParsedData,
         Response,
         ScraperYield,
@@ -258,8 +258,8 @@ Here's the complete Step 6 scraper:
 
         BASE_URL = "http://bugcourt.example.com"
 
-        def get_entry(self) -> NavigatingRequest:
-            return NavigatingRequest(
+        def get_entry(self) -> Request:
+            return Request(
                 request=HTTPRequestParams(
                     method=HttpMethod.GET,
                     url=f"{self.BASE_URL}/cases",
@@ -286,7 +286,7 @@ Here's the complete Step 6 scraper:
                 # Separate concerns:
                 # - aux_data: session token (needed for PDF download later)
                 # - accumulated_data: case data (docket, case_name)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"/cases/{docket}",
@@ -317,13 +317,14 @@ Here's the complete Step 6 scraper:
                 # Create headers with session token from aux_data
                 headers = {"X-Session-Token": token}
 
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=opinion_links[0],
                         headers=headers,  # Token from aux_data!
                     ),
                     continuation="archive_opinion",
+                    archive=True,
                     expected_type="pdf",
                     accumulated_data=data,  # Case data flows
                     aux_data=response.request.aux_data,  # Token flows

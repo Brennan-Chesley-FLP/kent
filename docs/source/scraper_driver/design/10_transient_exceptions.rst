@@ -163,11 +163,11 @@ The SyncDriver now checks HTTP status codes and raises
 
 .. code-block:: python
 
-    def resolve_request(self, request: BaseRequest) -> Response:
-        """Fetch a BaseRequest and return the Response.
+    def resolve_request(self, request: Request) -> Response:
+        """Fetch a Request and return the Response.
 
         Args:
-            request: The BaseRequest to fetch.
+            request: The request to fetch.
 
         Returns:
             Response containing the HTTP response data.
@@ -242,13 +242,13 @@ transient exceptions and invoke the ``on_transient_exception`` callback:
 .. code-block:: python
 
     while self.request_queue:
-        request: BaseRequest = self.request_queue.pop(0)
+        request: Request = self.request_queue.pop(0)
 
         # Step 10: Wrap request resolution to catch transient exceptions
         try:
             response: Response = (
                 self.resolve_archive_request(request)
-                if isinstance(request, ArchiveRequest)
+                if request.archive
                 else self.resolve_request(request)
             )
         except TransientException as e:

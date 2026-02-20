@@ -11,8 +11,8 @@ from kent.data_types import (
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     WaitForLoadState,
     WaitForSelector,
 )
@@ -34,7 +34,7 @@ class TestPlaywrightIntegration:
 
             def get_entry(self):
                 """Entry point that navigates to example.com."""
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -81,7 +81,7 @@ class TestPlaywrightIntegration:
 
             def get_entry(self):
                 """Entry point."""
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -123,7 +123,7 @@ class TestPlaywrightIntegration:
 
             def get_entry(self):
                 """Entry point."""
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -169,7 +169,7 @@ class TestPlaywrightIntegration:
 
             def get_entry(self):
                 """Entry point."""
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",
@@ -219,7 +219,7 @@ class TestPlaywrightIntegration:
 
             def get_entry(self):
                 """Entry point."""
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url="https://example.com",

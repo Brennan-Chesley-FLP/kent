@@ -14,7 +14,7 @@ import pytest
 from kent.data_types import (
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import SyncDriver
@@ -29,7 +29,7 @@ class TestAccumulatedDataField:
 
     def test_base_request_has_accumulated_data_field(self):
         """BaseRequest shall have an accumulated_data field."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/test",
@@ -43,7 +43,7 @@ class TestAccumulatedDataField:
     def test_accumulated_data_can_be_set(self):
         """BaseRequest shall allow setting accumulated_data."""
         data = {"key": "value"}
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/test",
@@ -57,7 +57,7 @@ class TestAccumulatedDataField:
     def test_accumulated_data_is_deep_copied(self):
         """BaseRequest shall deep copy accumulated_data in __post_init__."""
         original_data: dict = {"key": "value", "nested": {"inner": "data"}}
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/test",
@@ -84,7 +84,7 @@ class TestDeepCopySemantics:
         """Sibling requests shall have independent accumulated_data copies."""
         shared_data = {"case_name": "Ant v. Bee"}
 
-        request1 = NavigatingRequest(
+        request1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/case1",
@@ -93,7 +93,7 @@ class TestDeepCopySemantics:
             accumulated_data=shared_data,
         )
 
-        request2 = NavigatingRequest(
+        request2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/case2",
@@ -110,7 +110,7 @@ class TestDeepCopySemantics:
         """Mutations to nested dicts shall not affect sibling requests."""
         shared_data = {"metadata": {"court": "trial", "year": 2024}}
 
-        request1 = NavigatingRequest(
+        request1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/case1",
@@ -119,7 +119,7 @@ class TestDeepCopySemantics:
             accumulated_data=shared_data,
         )
 
-        request2 = NavigatingRequest(
+        request2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/case2",
@@ -140,8 +140,8 @@ class TestAccumulatedDataPropagation:
     """Tests for accumulated_data propagation through resolve_from."""
 
     def test_navigating_request_propagates_accumulated_data(self):
-        """NavigatingRequest.resolve_from shall propagate accumulated_data."""
-        parent_request = NavigatingRequest(
+        """Request.resolve_from shall propagate accumulated_data."""
+        parent_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/parent",
@@ -158,7 +158,7 @@ class TestAccumulatedDataPropagation:
             request=parent_request,
         )
 
-        child_request = NavigatingRequest(
+        child_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/child",
@@ -214,7 +214,7 @@ class TestBugCourtScraperWithAccumulatedData:
 
         assert len(results) > 0
         request = results[0]
-        assert isinstance(request, NavigatingRequest)
+        assert isinstance(request, Request)
         assert "case_name" in request.accumulated_data
         assert (
             request.accumulated_data["case_name"] == appeals_cases[0].case_name

@@ -14,13 +14,12 @@ from pathlib import Path
 import pytest
 
 from kent.data_types import (
-    ArchiveRequest,
     ArchiveResponse,
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.async_driver import AsyncDriver
@@ -37,8 +36,8 @@ class TestAsyncDriverBasic:
         """The async driver shall process a single request and return data."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -70,8 +69,8 @@ class TestAsyncDriverBasic:
         """The async driver shall process multiple pages yielded from entry."""
 
         class MultiPageScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -81,7 +80,7 @@ class TestAsyncDriverBasic:
 
             def parse_entry(self, response: Response):
                 for i in range(1, 4):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/page{i}",
@@ -119,8 +118,8 @@ class TestAsyncDriverStopEvent:
         """The async driver shall not process requests when stop_event is set before run()."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -157,8 +156,8 @@ class TestAsyncDriverStopEvent:
         """The async driver shall complete all requests when stop_event is not set."""
 
         class MultiPageScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -168,7 +167,7 @@ class TestAsyncDriverStopEvent:
 
             def parse_entry(self, response: Response):
                 for i in range(1, 4):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/page{i}",
@@ -210,8 +209,8 @@ class TestAsyncDriverWorkers:
         """The async driver with one worker shall process all requests."""
 
         class MultiPageScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -221,7 +220,7 @@ class TestAsyncDriverWorkers:
 
             def parse_entry(self, response: Response):
                 for i in range(1, 6):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/page{i}",
@@ -256,8 +255,8 @@ class TestAsyncDriverWorkers:
         """The async driver with multiple workers shall process all requests."""
 
         class MultiPageScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -267,7 +266,7 @@ class TestAsyncDriverWorkers:
 
             def parse_entry(self, response: Response):
                 for i in range(1, 11):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/page{i}",
@@ -310,8 +309,8 @@ class TestAsyncDriverPriority:
         """The async driver shall process requests in priority order with single worker."""
 
         class PriorityScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -322,7 +321,7 @@ class TestAsyncDriverPriority:
             def parse_entry(self, response: Response):
                 # Yield requests with different priorities
                 # Priority 9 (default)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/low",
@@ -331,7 +330,7 @@ class TestAsyncDriverPriority:
                     priority=9,
                 )
                 # Priority 1 (high)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/high",
@@ -340,7 +339,7 @@ class TestAsyncDriverPriority:
                     priority=1,
                 )
                 # Priority 5 (medium)
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/medium",
@@ -385,11 +384,11 @@ class TestAsyncDriverArchive:
     async def test_archive_request_saves_file(
         self, server_url: str, tmp_path: Path
     ) -> None:
-        """The async driver shall handle ArchiveRequest and save files."""
+        """The async driver shall handle archive Request and save files."""
 
         class ArchiveScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -398,13 +397,14 @@ class TestAsyncDriverArchive:
                 )
 
             def parse_entry(self, response: Response):
-                yield ArchiveRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/files/test.pdf",
                     ),
                     continuation="parse_archive",
                     expected_type="pdf",
+                    archive=True,
                 )
 
             def parse_archive(self, response: ArchiveResponse):
@@ -452,8 +452,8 @@ class TestAsyncDriverLifecycle:
             lifecycle_events.append(f"complete:{scraper_name}:{status}")
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",

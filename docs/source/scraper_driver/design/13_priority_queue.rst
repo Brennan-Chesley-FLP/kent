@@ -15,9 +15,9 @@ Overview
 
 In this step, we introduce:
 
-1. **priority field** - Added to BaseRequest with a default of 9
+1. **priority field** - Added to Request with a default of 9
 2. **heapq-based queue** - Replaced list with min-heap for priority ordering
-3. **ArchiveRequest priority** - Default priority of 1 (higher than regular requests)
+3. **Archive request priority** - Default priority of 1 (higher than regular requests)
 4. **FIFO tie-breaking** - Maintain insertion order for same-priority requests
 
 
@@ -29,7 +29,7 @@ Why Priority Queue?
 Consider a scraper that:
 1. Fetches a list page with 100 case links (priority 9)
 2. Navigates to each case detail page (priority 9)
-3. Downloads a PDF for each case (priority 1 via ArchiveRequest)
+3. Downloads a PDF for each case (priority 1 via archive request)
 
 Without priority queue:
 - All 100 case detail requests are queued
@@ -54,39 +54,45 @@ Processing them early:
 Priority Field
 --------------
 
-The ``priority`` field is added to ``BaseRequest`` with a default value of 9:
+The ``priority`` field is on ``Request`` with a default value of 9:
 
 .. code-block:: python
 
     @dataclass(frozen=True)
-    class BaseRequest:
+    class Request:
         request: HTTPRequestParams
         continuation: str
         current_location: str = ""
-        previous_requests: list[BaseRequest] = field(default_factory=list)
+        previous_requests: list[Request] = field(default_factory=list)
         accumulated_data: dict[str, Any] = field(default_factory=dict)
         aux_data: dict[str, Any] = field(default_factory=dict)
+        nonnavigating: bool = False
+        archive: bool = False
+        expected_type: str | None = None
         priority: int = 9  # Lower number = higher priority
 
 **Semantics:**
 
 - **Lower number = higher priority** (min-heap ordering)
 - **Default priority 9** - Regular navigating and non-navigating requests
-- **Priority 1** - ArchiveRequest (terminal, should be processed early)
+- **Priority 1** - Archive requests (terminal, should be processed early)
 - **Custom priorities** - Scrapers can set any integer priority, but it
   should generally be the number of steps left until you're done.
 
-ArchiveRequest Priority
-------------------------
+Archive Request Priority
+-------------------------
 
-``ArchiveRequest`` overrides the default priority to 1:
+Archive requests typically use priority 1:
 
 .. code-block:: python
 
-    @dataclass(frozen=True)
-    class ArchiveRequest(NonNavigatingRequest):
-        expected_type: str | None = None
-        priority: int = 1  # Step 15: Higher priority than regular requests
+    yield Request(
+        request=HTTPRequestParams(url="/opinions/case.pdf"),
+        continuation="archive_opinion",
+        archive=True,
+        expected_type="pdf",
+        priority=1,  # Higher priority than regular requests
+    )
 
 This ensures archive requests (file downloads) are processed before most navigating
 requests, reducing queue size.
@@ -105,7 +111,7 @@ The SyncDriver uses Python's ``heapq`` module to implement a min-heap priority q
         def __init__(self, ...):
             # Step 15: Use heapq for priority queue (min heap)
             # Each entry is (priority, counter, request) for stable FIFO ordering
-            self.request_queue: list[tuple[int, int, BaseRequest]] = []
+            self.request_queue: list[tuple[int, int, Request]] = []
             self._queue_counter = 0  # For FIFO tie-breaking within same priority
 
 **Queue Operations:**
@@ -114,7 +120,7 @@ The SyncDriver uses Python's ``heapq`` module to implement a min-heap priority q
 
 .. code-block:: python
 
-    def enqueue_request(self, new_request: BaseRequest, context: Response | BaseRequest):
+    def enqueue_request(self, new_request: Request, context: Response | Request):
         resolved_request = new_request.resolve_from(context)
         # Step 15: Push onto heap with priority and counter for stable ordering
         heapq.heappush(

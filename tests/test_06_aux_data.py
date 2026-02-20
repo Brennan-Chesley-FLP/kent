@@ -14,10 +14,9 @@ Tests use a real aiohttp server to verify actual HTTP behavior.
 import pytest
 
 from kent.data_types import (
-    ArchiveRequest,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import SyncDriver
@@ -32,7 +31,7 @@ class TestAuxDataField:
 
     def test_base_request_has_aux_data_field(self):
         """BaseRequest shall have an aux_data field."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/test",
@@ -46,7 +45,7 @@ class TestAuxDataField:
     def test_aux_data_can_be_set(self):
         """BaseRequest shall allow setting aux_data."""
         aux = {"session_token": "abc123"}
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/test",
@@ -60,7 +59,7 @@ class TestAuxDataField:
     def test_aux_data_is_deep_copied(self):
         """BaseRequest shall deep copy aux_data in __post_init__."""
         original_aux: dict = {"token": "abc123", "nested": {"key": "value"}}
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/test",
@@ -81,7 +80,7 @@ class TestAuxDataField:
 
     def test_aux_data_and_accumulated_data_are_independent(self):
         """BaseRequest shall have independent aux_data and accumulated_data."""
-        request = NavigatingRequest(
+        request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/test",
@@ -103,7 +102,7 @@ class TestDeepCopySemantics:
         """Sibling requests shall have independent aux_data copies."""
         shared_aux = {"session_token": "abc123"}
 
-        request1 = NavigatingRequest(
+        request1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/case1",
@@ -112,7 +111,7 @@ class TestDeepCopySemantics:
             aux_data=shared_aux,
         )
 
-        request2 = NavigatingRequest(
+        request2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/case2",
@@ -129,7 +128,7 @@ class TestDeepCopySemantics:
         """Mutations to nested dicts shall not affect sibling requests."""
         shared_aux = {"session": {"token": "abc123", "expires": 3600}}
 
-        request1 = NavigatingRequest(
+        request1 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/case1",
@@ -138,7 +137,7 @@ class TestDeepCopySemantics:
             aux_data=shared_aux,
         )
 
-        request2 = NavigatingRequest(
+        request2 = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/case2",
@@ -159,8 +158,8 @@ class TestAuxDataPropagation:
     """Tests for aux_data propagation through resolve_from."""
 
     def test_navigating_request_propagates_aux_data(self):
-        """NavigatingRequest.resolve_from shall propagate aux_data."""
-        parent_request = NavigatingRequest(
+        """Request.resolve_from shall propagate aux_data."""
+        parent_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/parent",
@@ -177,7 +176,7 @@ class TestAuxDataPropagation:
             request=parent_request,
         )
 
-        child_request = NavigatingRequest(
+        child_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/child",
@@ -191,12 +190,8 @@ class TestAuxDataPropagation:
         assert resolved.aux_data == {"session_token": "abc123"}
 
     def test_non_navigating_request_propagates_aux_data(self):
-        """NonNavigatingRequest.resolve_from shall propagate aux_data."""
-        from kent.data_types import (
-            NonNavigatingRequest,
-        )
-
-        parent_request = NavigatingRequest(
+        """Non-navigating Request.resolve_from shall propagate aux_data."""
+        parent_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/parent",
@@ -213,12 +208,13 @@ class TestAuxDataPropagation:
             request=parent_request,
         )
 
-        child_request = NonNavigatingRequest(
+        child_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/api/data",
             ),
             continuation="parse_api",
+            nonnavigating=True,
             aux_data={"api_key": "secret123"},
         )
 
@@ -227,8 +223,8 @@ class TestAuxDataPropagation:
         assert resolved.aux_data == {"api_key": "secret123"}
 
     def test_archive_request_propagates_aux_data(self):
-        """ArchiveRequest.resolve_from shall propagate aux_data."""
-        parent_request = NavigatingRequest(
+        """Archive Request.resolve_from shall propagate aux_data."""
+        parent_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="http://example.com/parent",
@@ -245,12 +241,13 @@ class TestAuxDataPropagation:
             request=parent_request,
         )
 
-        child_request = ArchiveRequest(
+        child_request = Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url="/files/document.pdf",
             ),
             continuation="archive_file",
+            archive=True,
             expected_type="pdf",
             aux_data={"download_token": "xyz789"},
         )
@@ -289,7 +286,7 @@ class TestBugCourtScraperWithAuxData:
         assert len(results) > 0
         # All requests should have session token in aux_data
         for request in results:
-            assert isinstance(request, NavigatingRequest)
+            assert isinstance(request, Request)
             assert "session_token" in request.aux_data
             assert (
                 request.aux_data["session_token"] == "bug-session-token-abc123"
@@ -316,7 +313,7 @@ class TestBugCourtScraperWithAuxData:
         assert len(results) > 0
         # First request should have case data in accumulated_data
         request = results[0]
-        assert isinstance(request, NavigatingRequest)
+        assert isinstance(request, Request)
         assert "docket" in request.accumulated_data
         assert "case_name" in request.accumulated_data
         # Case data should NOT be in aux_data

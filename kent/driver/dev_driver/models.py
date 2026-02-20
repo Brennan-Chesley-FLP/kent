@@ -101,7 +101,7 @@ class Request(SQLModel, table=True):  # type: ignore[call-arg]
     deduplication_key: str | None = Field(default=None)
     cache_key: str | None = None
 
-    # ArchiveRequest-specific
+    # Archive-specific
     expected_type: str | None = None
 
     # Timestamps (human-readable)

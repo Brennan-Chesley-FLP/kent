@@ -138,14 +138,14 @@ class SelectorInfo(BaseModel):
 class OutputYield(BaseModel):
     """A single item yielded by a continuation."""
 
-    type: str  # "ParsedData", "NavigatingRequest", etc.
+    type: str  # "ParsedData", "Request", etc.
     data_type: str | None = None  # For ParsedData: the model class name
     preview: str | None = None  # For ParsedData: truncated string repr
     url: str | None = None  # For request types
     method: str | None = None  # For request types
     continuation: str | None = None  # For request types
     speculative_id: int | None = None  # For speculative requests
-    expected_type: str | None = None  # For ArchiveRequest
+    expected_type: str | None = None  # For archive requests
 
 
 class ResponseOutputResponse(BaseModel):
@@ -156,9 +156,7 @@ class ResponseOutputResponse(BaseModel):
     is_html: bool
     selectors: list[SelectorInfo]
     yields: list[OutputYield]
-    yield_summary: dict[
-        str, int
-    ]  # e.g., {"ParsedData": 3, "NavigatingRequest": 2}
+    yield_summary: dict[str, int]  # e.g., {"ParsedData": 3, "Request": 2}
     error: str | None = None
 
 
@@ -501,10 +499,8 @@ def _selector_query_to_info(query: dict[str, Any]) -> SelectorInfo:
 def _describe_yield_for_output(item: Any) -> OutputYield:
     """Create OutputYield from a yielded item."""
     from kent.data_types import (
-        ArchiveRequest,
-        NavigatingRequest,
-        NonNavigatingRequest,
         ParsedData,
+        Request,
     )
 
     if isinstance(item, ParsedData):
@@ -517,41 +513,34 @@ def _describe_yield_for_output(item: Any) -> OutputYield:
             if len(data_str) > 500
             else data_str,
         )
-    elif isinstance(item, NavigatingRequest):
-        return OutputYield(
-            type="NavigatingRequest",
-            url=item.request.url,
-            method=item.request.method.value,
-            continuation=(
-                item.continuation
-                if isinstance(item.continuation, str)
-                else item.continuation.__name__
-            ),
+    elif isinstance(item, Request):
+        continuation = (
+            item.continuation
+            if isinstance(item.continuation, str)
+            else item.continuation.__name__
         )
-    elif isinstance(item, ArchiveRequest):
-        # Check ArchiveRequest before NonNavigatingRequest (it's a subclass)
-        return OutputYield(
-            type="ArchiveRequest",
-            url=item.request.url,
-            method=item.request.method.value,
-            continuation=(
-                item.continuation
-                if isinstance(item.continuation, str)
-                else item.continuation.__name__
-            ),
-            expected_type=item.expected_type,
-        )
-    elif isinstance(item, NonNavigatingRequest):
-        return OutputYield(
-            type="NonNavigatingRequest",
-            url=item.request.url,
-            method=item.request.method.value,
-            continuation=(
-                item.continuation
-                if isinstance(item.continuation, str)
-                else item.continuation.__name__
-            ),
-        )
+        if item.archive:
+            return OutputYield(
+                type="ArchiveRequest",
+                url=item.request.url,
+                method=item.request.method.value,
+                continuation=continuation,
+                expected_type=item.expected_type,
+            )
+        elif item.nonnavigating:
+            return OutputYield(
+                type="NonNavigatingRequest",
+                url=item.request.url,
+                method=item.request.method.value,
+                continuation=continuation,
+            )
+        else:
+            return OutputYield(
+                type="NavigatingRequest",
+                url=item.request.url,
+                method=item.request.method.value,
+                continuation=continuation,
+            )
     elif item is None:
         return OutputYield(type="None")
     else:
@@ -695,7 +684,7 @@ async def get_response_output(
     from kent.data_types import (
         HttpMethod,
         HTTPRequestParams,
-        NavigatingRequest,
+        Request,
     )
     from kent.data_types import (
         Response as ScraperResponse,
@@ -772,7 +761,7 @@ async def get_response_output(
         method=HttpMethod(method),
         url=request_url,
     )
-    reconstructed_request = NavigatingRequest(
+    reconstructed_request = Request(
         request=http_params,
         continuation=continuation_name,
         current_location=request_url,

@@ -37,7 +37,7 @@ Supported Parameter Names
 The decorator inspects function signatures and injects values based on parameter names:
 
 - **response**: The Response object
-- **request**: The current BaseRequest
+- **request**: The current Request
 - **previous_request**: The parent request from the chain (None for entry request)
 - **json_content**: Response content parsed as JSON
 - **lxml_tree**: Response content parsed as CheckedHtmlElement
@@ -67,7 +67,7 @@ The decorator auto-resolves Callable continuations to function names:
     @step
     def parse_first(self, response):
         # Can use Callable instead of string!
-        yield NavigatingRequest(
+        yield Request(
             url="/next",
             continuation=self.parse_second  # Callable!
         )
@@ -105,7 +105,7 @@ HTML Parsing
             cases = lxml_tree.checked_xpath("//tr[@class='case']", "cases")
             for case in cases:
                 docket = case.checked_xpath(".//td[@class='docket']", "docket")[0]
-                yield NavigatingRequest(
+                yield Request(
                     url=f"/cases/{docket.text_content()}",
                     continuation="parse_detail"
                 )

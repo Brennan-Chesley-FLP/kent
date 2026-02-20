@@ -51,6 +51,7 @@ from kent.common.speculation_types import (
 from kent.data_types import (
     ArchiveResponse,
     BaseRequest,
+    Request,
     Response,
     ScraperYield,
 )
@@ -303,7 +304,7 @@ def step(
         @step
         def parse_with_callable(self, text: str):
             # Can yield requests with Callable continuations
-            yield NavigatingRequest(
+            yield Request(
                 url="/next",
                 continuation=self.parse_next_page  # Callable!
             )
@@ -474,7 +475,7 @@ def speculate(
 
     The @speculate decorator marks functions that generate speculative requests.
     These functions accept a single integer parameter (the ID) and return a
-    NavigatingRequest with is_speculative=True.
+    Request with is_speculative=True.
 
     Drivers use these functions to seed their initial queues and track which
     IDs have been successfully fetched.
@@ -482,8 +483,8 @@ def speculate(
     Example::
 
         @speculate(highest_observed=500, largest_observed_gap=20)
-        def fetch_case(self, case_id: int) -> NavigatingRequest:
-            return NavigatingRequest(
+        def fetch_case(self, case_id: int) -> Request:
+            return Request(
                 url=f"/case/{case_id}",
                 continuation=self.parse_case
             )
@@ -536,14 +537,14 @@ def speculate(
         )
 
         @wraps(fn)
-        def wrapper(scraper_self: Any, id_value: int) -> BaseRequest:
+        def wrapper(scraper_self: Any, id_value: int) -> Request:
             # Call the original function
             request = fn(scraper_self, id_value)
 
-            # Ensure the returned value is a BaseRequest
-            if not isinstance(request, BaseRequest):
+            # Ensure the returned value is a Request
+            if not isinstance(request, Request):
                 raise TypeError(
-                    f"Speculate function '{fn.__name__}' must return a BaseRequest, "
+                    f"Speculate function '{fn.__name__}' must return a Request, "
                     f"got {type(request).__name__}"
                 )
 
@@ -763,7 +764,7 @@ def _validate_int_range(
     raw_value: Any, param_name: str, func_name: str
 ) -> tuple[int, int]:
     """Validate that a value is a 2-element integer range."""
-    if not isinstance(raw_value, (list, tuple)) or len(raw_value) != 2:
+    if not isinstance(raw_value, list | tuple) or len(raw_value) != 2:
         raise ValueError(
             f"Parameter '{param_name}' for speculative entry "
             f"'{func_name}' must be a 2-element [start, end] range, "
@@ -797,11 +798,11 @@ def entry(
     Example::
 
         @entry(Docket)
-        def search_by_number(self, docket_number: str) -> Generator[NavigatingRequest, None, None]:
+        def search_by_number(self, docket_number: str) -> Generator[Request, None, None]:
             ...
 
         @entry(Docket, speculative=SimpleSpeculation(highest_observed=105336, largest_observed_gap=20))
-        def fetch_docket(self, crn: int) -> NavigatingRequest:
+        def fetch_docket(self, crn: int) -> Request:
             ...
 
         @entry(Docket, speculative=YearlySpeculation(
@@ -809,7 +810,7 @@ def entry(
             trailing_period=timedelta(days=60),
             largest_observed_gap=15,
         ))
-        def docket_stabber(self, year: int, number: int) -> NavigatingRequest:
+        def docket_stabber(self, year: int, number: int) -> Request:
             ...
 
     Args:
@@ -901,9 +902,7 @@ def entry(
 
         # Validate speculation config against param_types
         if isinstance(speculative, SimpleSpeculation):
-            non_self_params = [
-                (n, t) for n, t in param_types.items()
-            ]
+            non_self_params = list(param_types.items())
             if len(non_self_params) != 1 or non_self_params[0][1] is not int:
                 raise TypeError(
                     f"Entry function '{fn.__name__}' with SimpleSpeculation "

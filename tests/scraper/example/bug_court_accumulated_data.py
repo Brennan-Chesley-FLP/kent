@@ -20,8 +20,8 @@ from kent.data_types import (
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
     ScraperYield,
 )
@@ -75,9 +75,9 @@ class BugCourtScraperWithAccumulatedData(BaseScraper[dict]):
     BASE_URL = "http://127.0.0.1"
 
     @entry(dict)
-    def get_entry(self) -> Generator[NavigatingRequest, None, None]:
+    def get_entry(self) -> Generator[Request, None, None]:
         """Create the initial request to start scraping."""
-        yield NavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"{self.BASE_URL}/appeals",
@@ -97,7 +97,7 @@ class BugCourtScraperWithAccumulatedData(BaseScraper[dict]):
             response: The Response from fetching the appeals list page.
 
         Yields:
-            NavigatingRequest for each appeal with accumulated_data.
+            Request for each appeal with accumulated_data.
         """
         tree = html.fromstring(response.text)
         case_rows = tree.xpath("//tr[@class='case-row']")
@@ -108,7 +108,7 @@ class BugCourtScraperWithAccumulatedData(BaseScraper[dict]):
 
             if docket:
                 # Start accumulated_data with case_name from list page
-                yield NavigatingRequest(
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"/appeals/{docket}",
@@ -129,7 +129,7 @@ class BugCourtScraperWithAccumulatedData(BaseScraper[dict]):
             response: The Response from fetching the appeals detail page.
 
         Yields:
-            NavigatingRequest to trial court with enriched accumulated_data.
+            Request to trial court with enriched accumulated_data.
         """
         tree = html.fromstring(response.text)
 
@@ -149,7 +149,7 @@ class BugCourtScraperWithAccumulatedData(BaseScraper[dict]):
             trial_court_docket = trial_court_docket.split(":")[-1].strip()
 
         # Navigate to trial court with accumulated data
-        yield NavigatingRequest(
+        yield Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
                 url=f"/cases/{trial_court_docket}",

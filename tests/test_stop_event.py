@@ -17,8 +17,8 @@ from kent.data_types import (
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
-    NavigatingRequest,
     ParsedData,
+    Request,
     Response,
 )
 from kent.driver.sync_driver import SyncDriver
@@ -34,8 +34,8 @@ class TestStopEventBasic:
         """The driver shall not process any requests when stop_event is set before run()."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -71,8 +71,8 @@ class TestStopEventBasic:
         """The driver shall complete all requests when stop_event is not set."""
 
         class MultiPageScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -82,7 +82,7 @@ class TestStopEventBasic:
 
             def parse_entry(self, response: Response):
                 for i in range(1, 4):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/page{i}",
@@ -119,8 +119,8 @@ class TestStopEventBasic:
         """The driver shall work normally when no stop_event is provided."""
 
         class SimpleScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -157,8 +157,8 @@ class TestStopEventMidRun:
         requests_processed = []
 
         class TrackingScraper(BaseScraper[dict]):
-            def get_entry(self) -> Generator[NavigatingRequest, None, None]:
-                yield NavigatingRequest(
+            def get_entry(self) -> Generator[Request, None, None]:
+                yield Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
                         url=f"{server_url}/test",
@@ -170,7 +170,7 @@ class TestStopEventMidRun:
                 requests_processed.append("entry")
                 # Yield multiple requests
                 for i in range(1, 6):
-                    yield NavigatingRequest(
+                    yield Request(
                         request=HTTPRequestParams(
                             method=HttpMethod.GET,
                             url=f"{server_url}/page{i}",
