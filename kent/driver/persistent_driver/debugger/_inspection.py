@@ -671,12 +671,33 @@ class InspectionMixin:
     # =========================================================================
 
     async def get_rate_limiter_state(self) -> dict[str, Any] | None:
-        """Get current rate limiter state.
+        """Get current rate limiter state from the rate_items bucket.
 
         Returns:
-            Dictionary with rate limiter state, or None if no state exists.
+            Dictionary with rate item count, or None if no items exist.
         """
-        return await self.sql.get_rate_limiter_state()
+        from kent.driver.persistent_driver.models import (
+            RateItem as RateItemModel,
+        )
+
+        async with self._session_factory() as session:
+            import sqlalchemy as sa
+
+            result = await session.execute(
+                sa.select(
+                    sa.func.count().label("count"),
+                    sa.func.coalesce(
+                        sa.func.sum(RateItemModel.weight), 0
+                    ).label("total_weight"),
+                )
+            )
+            row = result.first()
+            if row is None or row[0] == 0:
+                return None
+            return {
+                "item_count": row[0],
+                "total_weight": row[1],
+            }
 
     async def get_throughput_stats(self) -> dict[str, Any]:
         """Get request throughput statistics.

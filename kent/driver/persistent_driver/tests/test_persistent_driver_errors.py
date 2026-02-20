@@ -438,7 +438,6 @@ class TestExponentialBackoff:
             scraper,
             db_path,
             max_backoff_time=60.0,
-            initial_rate=10.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -513,7 +512,6 @@ class TestExponentialBackoff:
             scraper,
             db_path,
             max_backoff_time=0.5,
-            initial_rate=10.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -600,7 +598,6 @@ class TestRequeueErroredRequests:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -689,7 +686,7 @@ class TestRequeueErrorsByType:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create requests that will be associated with errors
             async with driver.db._session_factory() as session:
@@ -789,7 +786,7 @@ class TestRequeueErrorsByType:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create requests with different continuations
             async with driver.db._session_factory() as session:
@@ -867,7 +864,7 @@ class TestRequeueErrorsByType:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Try to requeue with no errors in DB
             new_ids = await driver.requeue_errors_by_type(

@@ -99,7 +99,6 @@ async def cmd_run(args: argparse.Namespace) -> int:
         scraper=scraper,
         db_path=Path(args.db),
         storage_dir=storage_dir,
-        initial_rate=args.initial_rate,
         num_workers=args.workers,
         resume=not args.no_resume,
         max_backoff_time=args.max_backoff,
@@ -107,9 +106,6 @@ async def cmd_run(args: argparse.Namespace) -> int:
         print(f"Running scraper: {scraper_class.__name__}")
         print(f"Database: {args.db}")
         print(f"Workers: {args.workers}")
-        print(
-            f"Initial rate: {args.initial_rate} req/s ({args.initial_rate * 60:.1f} req/min)"
-        )
 
         await driver.run()
 
@@ -541,13 +537,6 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--storage",
         help="Directory for downloaded files",
-    )
-    parser.add_argument(
-        "--initial-rate",
-        type=float,
-        default=0.1,
-        dest="initial_rate",
-        help="Initial request rate in req/s (default: 0.1 = 6 req/min)",
     )
     parser.add_argument(
         "--workers",

@@ -37,6 +37,8 @@ from typing import (
 )
 from urllib.parse import quote, unquote, urljoin, urlparse, urlunparse
 
+from pyrate_limiter import Rate  # noqa: F401 (used in ClassVar annotation)
+
 from kent.common.speculation_types import (
     SimpleSpeculation,
     SpeculationType,
@@ -171,7 +173,7 @@ class BaseScraper(Generic[ScraperReturnType]):
         last_verified: Date when scraper was last verified working.
         oldest_record: Earliest date for which records are available.
         requires_auth: Whether authentication is required.
-        msec_per_request_rate_limit: Minimum milliseconds between requests.
+        rate_limits: pyrate_limiter Rate objects defining rate ceilings for this scraper.
     """
 
     # === METADATA FOR AUTODOC ===
@@ -197,7 +199,7 @@ class BaseScraper(Generic[ScraperReturnType]):
 
     # Optional metadata
     requires_auth: ClassVar[bool] = False
-    msec_per_request_rate_limit: ClassVar[int | None] = None
+    rate_limits: ClassVar[list[Rate] | None] = None
 
     # SSL/TLS configuration for servers requiring specific ciphers or TLS versions.
     # If set, drivers will use this context for HTTPS connections.

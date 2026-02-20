@@ -492,7 +492,6 @@ class TestCompressionRoundTrip:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -695,10 +694,12 @@ class TestAioSQLiteBucket:
 
 
 class TestRateLimiterIntegration:
-    """Tests for rate limiter integration with LocalDevDriver."""
+    """Tests for rate limiter integration with PersistentDriver."""
 
-    async def test_atb_rate_limiter_used_on_init(self, db_path: Path) -> None:
-        """Test that ATBAsyncRequestManager is used as the request manager."""
+    async def test_rate_limited_request_manager_used_on_init(
+        self, db_path: Path
+    ) -> None:
+        """Test that RateLimitedRequestManager is used as the request manager."""
         from kent.data_types import (
             BaseScraper,
             HttpMethod,
@@ -706,7 +707,7 @@ class TestRateLimiterIntegration:
             Request,
         )
         from kent.driver.persistent_driver.atb_rate_limiter import (
-            ATBAsyncRequestManager,
+            RateLimitedRequestManager,
         )
         from kent.driver.persistent_driver.persistent_driver import (
             PersistentDriver,
@@ -729,13 +730,10 @@ class TestRateLimiterIntegration:
         scraper = MinimalScraper()
 
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=5.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
-            # Verify ATBAsyncRequestManager is being used
+            # Verify RateLimitedRequestManager is being used
             assert isinstance(
                 driver.request_manager,
-                ATBAsyncRequestManager,
+                RateLimitedRequestManager,
             )
-
-            # Verify initial rate was passed correctly
-            assert driver.request_manager.config.initial_rate == 5.0

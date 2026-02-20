@@ -59,7 +59,7 @@ class TestDeduplication:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             # Create a fake response to use as context for queueing
             parent_request = Request(
@@ -144,7 +144,7 @@ class TestDeduplication:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             parent_request = Request(
                 request=HTTPRequestParams(
@@ -218,7 +218,7 @@ class TestDeduplication:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             url_a = "https://example.com/page-a"
             url_b = "https://example.com/page-b"
@@ -336,7 +336,7 @@ class TestDeduplication:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             parent_request = Request(
                 request=HTTPRequestParams(
@@ -415,7 +415,7 @@ class TestDeduplication:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             parent_request = Request(
                 request=HTTPRequestParams(
@@ -480,7 +480,7 @@ class TestDeduplication:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             parent_request = Request(
                 request=HTTPRequestParams(
@@ -555,7 +555,7 @@ class TestDeduplication:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             parent_request = Request(
                 request=HTTPRequestParams(
@@ -678,7 +678,6 @@ class TestRequestLineageTracking:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -795,7 +794,6 @@ class TestRequestLineageTracking:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:

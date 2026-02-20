@@ -27,6 +27,8 @@ from kent.common.exceptions import (
 from kent.data_types import BaseRequest, Response
 
 if TYPE_CHECKING:
+    from pyrate_limiter import Rate
+
     from kent.driver.persistent_driver.sql_manager import (
         SQLManager,
     )
@@ -56,6 +58,7 @@ class SyncRequestManager:
         self,
         ssl_context: ssl.SSLContext | None = None,
         timeout: float | None = None,
+        rates: list[Rate] | None = None,
     ) -> None:
         """Initialize the request manager.
 
@@ -63,11 +66,27 @@ class SyncRequestManager:
             ssl_context: Optional SSL context for HTTPS connections. Use this
                 for servers requiring specific cipher suites.
             timeout: Request timeout in seconds. None means no timeout (default).
+            rates: Optional list of pyrate_limiter Rate objects. When provided,
+                requests are throttled at the httpx transport layer.
         """
         self.timeout = timeout
 
-        # Initialize httpx client
-        if ssl_context:
+        # Initialize httpx client, with rate-limited transport if rates given
+        if rates:
+            from pyrate_limiter import Limiter
+            from pyrate_limiter.extras.httpx_limiter import (
+                RateLimiterTransport,
+            )
+
+            limiter = Limiter(rates)
+            transport_kwargs: dict[str, Any] = {}
+            if ssl_context:
+                transport_kwargs["verify"] = ssl_context
+            transport = RateLimiterTransport(
+                limiter=limiter, **transport_kwargs
+            )
+            self._client = httpx.Client(transport=transport, timeout=timeout)
+        elif ssl_context:
             self._client = httpx.Client(verify=ssl_context, timeout=timeout)
         else:
             self._client = httpx.Client(timeout=timeout)
@@ -160,6 +179,7 @@ class AsyncRequestManager:
         self,
         ssl_context: ssl.SSLContext | None = None,
         timeout: float | None = None,
+        rates: list[Rate] | None = None,
     ) -> None:
         """Initialize the request manager.
 
@@ -167,11 +187,29 @@ class AsyncRequestManager:
             ssl_context: Optional SSL context for HTTPS connections. Use this
                 for servers requiring specific cipher suites.
             timeout: Request timeout in seconds. None means no timeout (default).
+            rates: Optional list of pyrate_limiter Rate objects. When provided,
+                requests are throttled at the httpx transport layer.
         """
         self.timeout = timeout
 
-        # Initialize httpx async client
-        if ssl_context:
+        # Initialize httpx async client, with rate-limited transport if rates given
+        if rates:
+            from pyrate_limiter import Limiter
+            from pyrate_limiter.extras.httpx_limiter import (
+                AsyncRateLimiterTransport,
+            )
+
+            limiter = Limiter(rates)
+            transport_kwargs: dict[str, Any] = {}
+            if ssl_context:
+                transport_kwargs["verify"] = ssl_context
+            transport = AsyncRateLimiterTransport(
+                limiter=limiter, **transport_kwargs
+            )
+            self._client = httpx.AsyncClient(
+                transport=transport, timeout=timeout
+            )
+        elif ssl_context:
             self._client = httpx.AsyncClient(
                 verify=ssl_context, timeout=timeout
             )

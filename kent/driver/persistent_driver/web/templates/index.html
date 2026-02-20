@@ -58,11 +58,6 @@
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="initial-rate">Initial Rate (req/s)</label>
-                        <input type="number" id="initial-rate" name="initial_rate"
-                               value="0.1" step="0.01" min="0.01">
-                    </div>
-                    <div class="form-group">
                         <label for="workers">Workers</label>
                         <input type="number" id="workers" name="num_workers"
                                value="1" min="1" max="10">
@@ -491,7 +486,6 @@ document.getElementById('new-run-form').addEventListener('submit', async (e) => 
     const body = {
         run_id: formData.get('run_id'),
         scraper_path: formData.get('scraper_path'),
-        initial_rate: parseFloat(formData.get('initial_rate')),
         num_workers: parseInt(formData.get('num_workers')),
         params: { models: {}, speculative: {} },
         speculation_config: {}

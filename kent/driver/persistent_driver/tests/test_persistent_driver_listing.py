@@ -436,7 +436,7 @@ class TestListRequestsFiltering:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create requests with various statuses
             async with driver.db._session_factory() as session:
@@ -513,7 +513,7 @@ class TestListRequestsFiltering:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create requests with different continuations
             async with driver.db._session_factory() as session:
@@ -576,7 +576,7 @@ class TestListRequestsFiltering:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create 10 requests
             async with driver.db._session_factory() as session:
@@ -657,7 +657,7 @@ class TestResponsesAndResultsListing:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create requests
             async with driver.db._session_factory() as session:
@@ -755,7 +755,7 @@ class TestResponsesAndResultsListing:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create 10 requests and responses
             async with driver.db._session_factory() as session:
@@ -833,7 +833,7 @@ class TestResponsesAndResultsListing:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create results of different types and validity
             async with driver.db._session_factory() as session:

@@ -149,7 +149,6 @@ class TestGracefulShutdownAndResume:
             mock_scraper,
             db_path,
             resume=True,
-            initial_rate=100.0,
             enable_monitor=False,
         ) as driver:
             # Check that in_progress was reset to pending on open
@@ -183,7 +182,7 @@ class TestGracefulShutdownAndResume:
 
         # First run: Open driver, add requests, then close
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             # Manually add some requests in different states
             async with driver.db._session_factory() as session:
@@ -217,7 +216,6 @@ class TestGracefulShutdownAndResume:
             mock_scraper,
             db_path,
             resume=True,
-            initial_rate=100.0,
             enable_monitor=False,
         ) as driver:
             # Check counts after resume
@@ -251,7 +249,7 @@ class TestGracefulShutdownAndResume:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             # stop_event should be created
             assert driver.stop_event is not None
@@ -276,7 +274,7 @@ class TestGracefulShutdownAndResume:
 
         # First open creates metadata with 'created' status
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             async with driver.db._session_factory() as session:
                 result = await session.execute(
@@ -378,7 +376,7 @@ class TestGracefulShutdownAndResume:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             # Initially, no requests (entry point not added yet if no run())
             # But the entry point request is added by run(), so status depends on
@@ -425,7 +423,7 @@ class TestGracefulShutdownAndResume:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             # Add requests in different states
             async with driver.db._session_factory() as session:
@@ -473,7 +471,7 @@ class TestGracefulShutdownAndResume:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             # Add only held requests
             async with driver.db._session_factory() as session:
@@ -500,7 +498,7 @@ class TestGracefulShutdownAndResume:
         )
 
         async with PersistentDriver.open(
-            mock_scraper, db_path, initial_rate=100.0, enable_monitor=False
+            mock_scraper, db_path, enable_monitor=False
         ) as driver:
             # Add requests with different continuations
             async with driver.db._session_factory() as session:
@@ -604,7 +602,6 @@ class TestGracefulShutdownSigterm:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -694,7 +691,6 @@ class TestGracefulShutdownSigterm:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -789,7 +785,6 @@ class TestGracefulShutdownSigterm:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -832,7 +827,6 @@ class TestGracefulShutdownSigterm:
             scraper2,
             db_path,
             resume=True,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager2,
         ) as driver2:

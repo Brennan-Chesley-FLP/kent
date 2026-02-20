@@ -238,28 +238,6 @@ async def populated_db(initialized_db, db_path: Path) -> Path:
             )
         await session.commit()
 
-    # Insert rate limiter state
-    async with session_factory() as session:
-        await session.execute(
-            sa.text("""
-            INSERT INTO rate_limiter_state (
-                tokens, rate, bucket_size, last_congestion_rate, jitter,
-                last_used_at, total_requests, total_successes, total_rate_limited
-            ) VALUES (:tokens, :rate, :bucket_size, :last_congestion_rate, :jitter, datetime('now'), :total_requests, :total_successes, :total_rate_limited)
-            """),
-            {
-                "tokens": 10.0,
-                "rate": 2.0,
-                "bucket_size": 20.0,
-                "last_congestion_rate": 1.5,
-                "jitter": 0.2,
-                "total_requests": 100,
-                "total_successes": 95,
-                "total_rate_limited": 5,
-            },
-        )
-        await session.commit()
-
     # Insert compression dictionary
     async with session_factory() as session:
         await session.execute(

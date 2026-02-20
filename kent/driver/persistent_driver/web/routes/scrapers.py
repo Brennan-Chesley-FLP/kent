@@ -56,7 +56,7 @@ class ScraperResponse(BaseModel):
     status: str
     version: str
     requires_auth: bool
-    rate_limit_ms: int | None
+    rate_limits: list[dict[str, int]] | None
     models: list[ModelSchemaResponse]
     speculative_steps: list[SpeculativeStepResponse]
     entry_schema: dict[str, Any] | None = None
@@ -88,7 +88,7 @@ def _scraper_info_to_response(info: ScraperInfo) -> ScraperResponse:
         status=info.status,
         version=info.version,
         requires_auth=info.requires_auth,
-        rate_limit_ms=info.rate_limit_ms,
+        rate_limits=info.rate_limits,
         models=[],
         speculative_steps=[],
         entry_schema=info.entry_schema,

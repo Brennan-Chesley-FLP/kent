@@ -57,7 +57,6 @@ class TestRequestStatusMarking:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -132,7 +131,6 @@ class TestRequestStatusMarking:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -217,7 +215,6 @@ class TestDataStorage:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -302,7 +299,6 @@ class TestHeadersOnlyResponse:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -428,7 +424,6 @@ class TestDeferredValidationHandling:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -532,7 +527,6 @@ class TestDeferredValidationHandling:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -645,7 +639,6 @@ class TestNonNavigatingHandling:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -750,7 +743,6 @@ class TestNonNavigatingHandling:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:

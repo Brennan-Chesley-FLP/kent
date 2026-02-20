@@ -229,6 +229,7 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         else:
             self.request_manager = AsyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
+                rates=scraper.rate_limits,
             )
             self._owns_request_manager = True
 

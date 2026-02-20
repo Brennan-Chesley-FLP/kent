@@ -167,8 +167,7 @@ class RunManager:
             ValueError: If run_id already exists.
         """
         from kent.driver.persistent_driver.atb_rate_limiter import (
-            ATBAsyncRequestManager,
-            ATBConfig,
+            RateLimitedRequestManager,
         )
         from kent.driver.persistent_driver.database import (
             init_database,
@@ -194,12 +193,6 @@ class RunManager:
             storage_dir = get_storage_dir_for_run(self.runs_dir, run_id)
 
             # Extract config from driver_kwargs
-            # ATB config parameters
-            initial_rate = driver_kwargs.pop("initial_rate", 0.1)
-            bucket_size = driver_kwargs.pop("bucket_size", 4.0)
-            first_step = driver_kwargs.pop("first_step", 1.5)
-            second_step = driver_kwargs.pop("second_step", 1.2)
-            min_rate = driver_kwargs.pop("min_rate", 0.01)
             num_workers = driver_kwargs.get("num_workers", 1)
             max_backoff_time = driver_kwargs.get("max_backoff_time", 3600.0)
             speculation_config = driver_kwargs.pop("speculation_config", None)
@@ -221,17 +214,10 @@ class RunManager:
                 speculation_config=speculation_config,
             )
 
-            # Set up ATB rate limiter request manager
-            atb_config = ATBConfig(
-                bucket_size=bucket_size,
-                initial_rate=initial_rate,
-                first_step=first_step,
-                second_step=second_step,
-                min_rate=min_rate,
-            )
-            request_manager = ATBAsyncRequestManager(
-                config=atb_config,
+            # Set up rate-limited request manager
+            request_manager = RateLimitedRequestManager(
                 sql_manager=sql_manager,
+                rates=scraper.rate_limits,
                 ssl_context=scraper.get_ssl_context(),
             )
             await request_manager.initialize()
@@ -276,8 +262,7 @@ class RunManager:
             ValueError: If run_id not found or already loaded.
         """
         from kent.driver.persistent_driver.atb_rate_limiter import (
-            ATBAsyncRequestManager,
-            ATBConfig,
+            RateLimitedRequestManager,
         )
         from kent.driver.persistent_driver.database import (
             init_database,
@@ -308,12 +293,6 @@ class RunManager:
             storage_dir = get_storage_dir_for_run(self.runs_dir, run_id)
 
             # Extract config from driver_kwargs
-            # ATB config parameters (with defaults)
-            initial_rate = driver_kwargs.pop("initial_rate", 0.1)
-            bucket_size = driver_kwargs.pop("bucket_size", 4.0)
-            first_step = driver_kwargs.pop("first_step", 1.5)
-            second_step = driver_kwargs.pop("second_step", 1.2)
-            min_rate = driver_kwargs.pop("min_rate", 0.01)
             num_workers = driver_kwargs.get("num_workers", 1)
             max_backoff_time = driver_kwargs.get("max_backoff_time", 3600.0)
             speculation_config = driver_kwargs.pop("speculation_config", None)
@@ -345,18 +324,10 @@ class RunManager:
                     f"Restored {pending_count} pending requests from database"
                 )
 
-            # Set up ATB rate limiter request manager
-            # ATB will restore its state from the database if it exists
-            atb_config = ATBConfig(
-                bucket_size=bucket_size,
-                initial_rate=initial_rate,
-                first_step=first_step,
-                second_step=second_step,
-                min_rate=min_rate,
-            )
-            request_manager = ATBAsyncRequestManager(
-                config=atb_config,
+            # Set up rate-limited request manager
+            request_manager = RateLimitedRequestManager(
                 sql_manager=sql_manager,
+                rates=scraper.rate_limits,
                 ssl_context=scraper.get_ssl_context(),
             )
             await request_manager.initialize()

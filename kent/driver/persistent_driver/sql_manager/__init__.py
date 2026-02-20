@@ -20,9 +20,6 @@ from kent.driver.persistent_driver.sql_manager._estimates import (
     EstimateStorageMixin,
 )
 from kent.driver.persistent_driver.sql_manager._listing import ListingMixin
-from kent.driver.persistent_driver.sql_manager._rate_limiter import (
-    RateLimiterMixin,
-)
 from kent.driver.persistent_driver.sql_manager._requests import (
     RequestQueueMixin,
 )
@@ -60,7 +57,6 @@ class SQLManager(
     EstimateStorageMixin,
     ErrorRequeueMixin,
     SpeculationMixin,
-    RateLimiterMixin,
     ValidationMixin,
     ListingMixin,
     RequeueMixin,

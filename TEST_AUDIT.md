@@ -154,7 +154,7 @@ Cross-reference of features against existing test coverage.
 | `last_verified` | **UNTESTED** | — |
 | `oldest_record` | **UNTESTED** | — |
 | `requires_auth` | **UNTESTED** | — |
-| `msec_per_request_rate_limit` | **UNTESTED** | — |
+| `rate_limits` | **UNTESTED** | — |
 | `ssl_context` | **UNTESTED** | — |
 
 ### Instance Methods

@@ -36,7 +36,7 @@ class ScraperInfo:
     status: str = "unknown"
     version: str = ""
     requires_auth: bool = False
-    rate_limit_ms: int | None = None
+    rate_limits: list[dict[str, int]] | None = None
 
     # Entry schema (from BaseScraper.schema())
     entry_schema: dict[str, Any] | None = None
@@ -53,7 +53,7 @@ class ScraperInfo:
             "status": self.status,
             "version": self.version,
             "requires_auth": self.requires_auth,
-            "rate_limit_ms": self.rate_limit_ms,
+            "rate_limits": self.rate_limits,
         }
         if self.entry_schema is not None:
             result["entry_schema"] = self.entry_schema
@@ -165,9 +165,13 @@ class ScraperRegistry:
         status = status_enum.value if status_enum else "unknown"
         version = getattr(scraper_class, "version", "") or ""
         requires_auth = getattr(scraper_class, "requires_auth", False)
-        rate_limit_ms = getattr(
-            scraper_class, "msec_per_request_rate_limit", None
-        )
+        raw_rate_limits = getattr(scraper_class, "rate_limits", None)
+        rate_limits = None
+        if raw_rate_limits:
+            rate_limits = [
+                {"limit": r.limit, "interval_ms": r.interval}
+                for r in raw_rate_limits
+            ]
 
         entry_schema = self._extract_entry_schema(scraper_class)
 
@@ -181,7 +185,7 @@ class ScraperRegistry:
             status=status,
             version=version,
             requires_auth=requires_auth,
-            rate_limit_ms=rate_limit_ms,
+            rate_limits=rate_limits,
             entry_schema=entry_schema,
         )
 

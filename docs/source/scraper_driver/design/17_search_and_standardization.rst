@@ -72,8 +72,8 @@ Every scraper should define these class variables for documentation:
         # Authentication requirements
         requires_auth: ClassVar[bool] = False
 
-        # Rate limiting (milliseconds between requests)
-        msec_per_request_rate_limit: ClassVar[int] = 500
+        # Rate limiting (pyrate_limiter Rate objects)
+        rate_limits: ClassVar[list[Rate]] = [Rate(2, Duration.SECOND)]
 
 **Metadata Purpose:**
 
@@ -95,8 +95,8 @@ Every scraper should define these class variables for documentation:
      - Track scraper changes; cache invalidation
    * - ``oldest_record``
      - Set user expectations for data availability
-   * - ``msec_per_request_rate_limit``
-     - Rate limiter configuration
+   * - ``rate_limits``
+     - Rate limiter configuration (list of pyrate_limiter Rate objects)
 
 
 The @entry Decorator

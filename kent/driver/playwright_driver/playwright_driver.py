@@ -37,7 +37,7 @@ from playwright.async_api import (
 from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
-from pyrate_limiter import Duration, Limiter, Rate, RateItem
+from pyrate_limiter import Limiter, RateItem
 
 from kent.common.decorators import get_step_metadata
 from kent.common.exceptions import (
@@ -183,8 +183,6 @@ class PlaywrightDriver(
         user_agent: str | None = None,
         locale: str = "en-US",
         timezone_id: str = "America/New_York",
-        initial_rate: float = 0.1,
-        bucket_size: float = 4.0,
         **kwargs: Any,
     ) -> AsyncIterator[PlaywrightDriver[ScraperReturnDatatype]]:
         """Open Playwright driver as async context manager.
@@ -200,8 +198,6 @@ class PlaywrightDriver(
             user_agent: Custom user agent string (default: None = browser default).
             locale: Browser locale (default: "en-US").
             timezone_id: Browser timezone (default: "America/New_York").
-            initial_rate: Initial rate limit in requests/second (default: 0.1).
-            bucket_size: Maximum burst size in requests (default: 4.0).
             **kwargs: Additional arguments passed to __init__.
 
         Yields:
@@ -213,8 +209,6 @@ class PlaywrightDriver(
                 Path("run.db"),
                 browser_type="chromium",
                 headless=True,
-                initial_rate=0.5,
-                bucket_size=10.0,
             ) as driver:
                 await driver.run()
         """
@@ -311,19 +305,11 @@ class PlaywrightDriver(
                     )
 
                     try:
-                        # Initialize rate limiter if rates specified
+                        # Initialize rate limiter from explicit rates or scraper declaration
                         rate_limiter = None
-                        if rates:
-                            bucket = AioSQLiteBucket(db._db, rates)  # type: ignore[attr-defined]
-                            rate_limiter = Limiter(bucket)
-                        elif initial_rate > 0 or bucket_size > 0:
-                            # Create default rate from initial_rate and bucket_size
-                            # Convert initial_rate (requests/second) to bucket parameters
-                            rate = Rate(
-                                int(bucket_size),
-                                int(1.0 / initial_rate) * Duration.SECOND,
-                            )
-                            bucket = AioSQLiteBucket(db._db, [rate])  # type: ignore[attr-defined]
+                        effective_rates = rates or scraper.rate_limits
+                        if effective_rates:
+                            bucket = AioSQLiteBucket(db._db, effective_rates)  # type: ignore[attr-defined]
                             rate_limiter = Limiter(bucket)
 
                         # Create driver instance (no request manager needed for Playwright)

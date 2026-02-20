@@ -17,12 +17,12 @@ dependencies = [
     "typing-extensions>=4.0.0",
     "cssselect",
     "sqlmodel>=0.0.32",
+    "pyrate-limiter>=3.9.0",
 ]
 
 [project.optional-dependencies]
 playwright = [
     "playwright>=1.57.0",
-    "pyrate-limiter>=3.9.0",
 ]
 persistent-driver = [
     "aiosqlite>=0.22.1",
@@ -55,6 +55,7 @@ dev = [
     "sphinxcontrib-mermaid>=2.0.0",
     "sphinx-autobuild>=2024.10.3",
     "pytest-xdist>=3.8.0",
+    "freezegun>=1.5.5",
 ]
 
 [tool.pytest.ini_options]

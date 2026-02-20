@@ -204,8 +204,6 @@ class PersistentDriver(
                 await driver.run()
         """
         # Extract driver-specific kwargs for SQLManager initialization
-        initial_rate = kwargs.pop("initial_rate", 0.1)
-        bucket_size = kwargs.pop("bucket_size", 4.0)
         num_workers = kwargs.pop("num_workers", 1)
         max_workers = kwargs.pop("max_workers", 10)
         max_backoff_time = kwargs.pop("max_backoff_time", 3600.0)
@@ -240,22 +238,17 @@ class PersistentDriver(
                 )
 
         # Use custom request manager if provided (e.g., for testing)
-        # Otherwise, set up ATB rate limiter request manager
+        # Otherwise, set up rate-limited request manager
         if custom_request_manager is not None:
             request_manager = custom_request_manager
         else:
             from kent.driver.persistent_driver.atb_rate_limiter import (
-                ATBAsyncRequestManager,
-                ATBConfig,
+                RateLimitedRequestManager,
             )
 
-            atb_config = ATBConfig(
-                bucket_size=bucket_size,
-                initial_rate=initial_rate,
-            )
-            request_manager = ATBAsyncRequestManager(
-                config=atb_config,
+            request_manager = RateLimitedRequestManager(
                 sql_manager=sql_manager,
+                rates=scraper.rate_limits,
                 ssl_context=scraper.get_ssl_context(),
                 timeout=timeout,
             )

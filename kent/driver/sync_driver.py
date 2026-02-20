@@ -280,6 +280,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         else:
             self.request_manager = SyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
+                rates=scraper.rate_limits,
             )
             self._owns_request_manager = True
 

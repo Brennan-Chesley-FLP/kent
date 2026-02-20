@@ -382,58 +382,6 @@ class RateItem(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
 
-class RateLimiterState(SQLModel, table=True):  # type: ignore[call-arg]
-    """Adaptive Token Bucket rate limiter state."""
-
-    __tablename__ = "rate_limiter_state"
-    __table_args__ = (
-        sa.CheckConstraint("id = 1", name="rate_limiter_state_single_row"),
-    )
-
-    id: int | None = Field(default=None, primary_key=True)
-    tokens: float = Field(
-        default=1.0,
-        sa_column_kwargs={"server_default": sa.text("1.0")},
-    )
-    rate: float = Field(
-        default=0.1,
-        sa_column_kwargs={"server_default": sa.text("0.1")},
-    )
-    bucket_size: float = Field(
-        default=4.0,
-        sa_column_kwargs={"server_default": sa.text("4.0")},
-    )
-    last_congestion_rate: float = Field(
-        default=1.0,
-        sa_column_kwargs={"server_default": sa.text("1.0")},
-    )
-    jitter: float = Field(
-        default=2.0,
-        sa_column_kwargs={"server_default": sa.text("2.0")},
-    )
-    last_used_at: float
-    total_requests: int = Field(
-        default=0,
-        sa_column_kwargs={"server_default": sa.text("0")},
-    )
-    total_successes: int = Field(
-        default=0,
-        sa_column_kwargs={"server_default": sa.text("0")},
-    )
-    total_rate_limited: int = Field(
-        default=0,
-        sa_column_kwargs={"server_default": sa.text("0")},
-    )
-    created_at: str | None = Field(
-        default=None,
-        sa_column_kwargs={"server_default": sa.text("CURRENT_TIMESTAMP")},
-    )
-    updated_at: str | None = Field(
-        default=None,
-        sa_column_kwargs={"server_default": sa.text("CURRENT_TIMESTAMP")},
-    )
-
-
 class SpeculativeStartId(SQLModel, table=True):  # type: ignore[call-arg]
     """Starting IDs for speculative steps."""
 

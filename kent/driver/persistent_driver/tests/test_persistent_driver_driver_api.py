@@ -111,7 +111,6 @@ class TestDevDriverVsOtherDrivers:
         async with PersistentDriver.open(
             scraper2,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=create_request_manager(),
         ) as persistent_driver:
@@ -182,7 +181,6 @@ class TestDevDriverVsOtherDrivers:
         async with PersistentDriver.open(
             scraper,
             db_path,
-            initial_rate=100.0,
             enable_monitor=False,
             request_manager=request_manager,
         ) as driver:
@@ -267,7 +265,7 @@ class TestGetterMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create request and response
             async with driver.db._session_factory() as session:
@@ -339,7 +337,7 @@ class TestGetterMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             response = await driver.get_response(999)
             assert response is None
@@ -372,7 +370,7 @@ class TestGetterMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create a result
             async with driver.db._session_factory() as session:
@@ -423,7 +421,7 @@ class TestGetterMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             result = await driver.get_result(999)
             assert result is None
@@ -460,7 +458,7 @@ class TestCancellationMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create a pending request
             async with driver.db._session_factory() as session:
@@ -517,7 +515,7 @@ class TestCancellationMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create a held request
             async with driver.db._session_factory() as session:
@@ -573,7 +571,7 @@ class TestCancellationMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create an in_progress request
             async with driver.db._session_factory() as session:
@@ -627,7 +625,7 @@ class TestCancellationMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             cancelled = await driver.cancel_request(999)
             assert cancelled is False
@@ -662,7 +660,7 @@ class TestCancellationMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             # Create requests with different continuations and statuses
             async with driver.db._session_factory() as session:
@@ -745,7 +743,7 @@ class TestCancellationMethods:
 
         scraper = SimpleScraper()
         async with PersistentDriver.open(
-            scraper, db_path, initial_rate=100.0, enable_monitor=False
+            scraper, db_path, enable_monitor=False
         ) as driver:
             count = await driver.cancel_requests_by_continuation("nonexistent")
             assert count == 0

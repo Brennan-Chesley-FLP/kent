@@ -14,6 +14,7 @@ from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 import pytest
+from freezegun import freeze_time
 
 from kent.common.decorators import (
     EntryMetadata,
@@ -1084,3 +1085,549 @@ class TestSyncDriverEndToEndSpeculation:
 # methods as SyncDriver. The SyncDriver end-to-end tests above verify the speculation
 # logic works correctly. AsyncDriver-specific tests would be redundant since the
 # speculation tracking logic is identical.
+
+
+# =============================================================================
+# _extend_speculation() Unit Tests
+# =============================================================================
+
+
+class TestExtendSpeculation:
+    """Test _extend_speculation() in isolation."""
+
+    def test_extends_when_near_ceiling(self):
+        """Verify extension adds `plus` new IDs when highest_successful_id approaches ceiling."""
+        scraper = SpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        spec_state = driver._speculation_state["fetch_case"]
+
+        # Seed so queue is populated and ceiling set
+        driver._seed_speculative_queue()
+        initial_queue_size = len(driver.request_queue)
+        assert spec_state.current_ceiling == 5  # highest_observed=5
+
+        # Set highest_successful_id near ceiling (5 >= 5 - 2 = 3)
+        spec_state.highest_successful_id = 5
+        spec_state.consecutive_failures = 0
+
+        driver._extend_speculation("fetch_case")
+
+        # Should have added `largest_observed_gap` (2) new IDs: 6, 7
+        assert len(driver.request_queue) == initial_queue_size + 2
+        assert spec_state.current_ceiling == 7
+
+    def test_does_not_extend_when_far_from_ceiling(self):
+        """Verify no extension when highest_successful_id is well below ceiling."""
+        scraper = SpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        spec_state = driver._speculation_state["fetch_case"]
+
+        driver._seed_speculative_queue()
+        initial_queue_size = len(driver.request_queue)
+
+        # highest_successful_id=1, ceiling=5, plus=2 → 1 < (5-2)=3, no extension
+        spec_state.highest_successful_id = 1
+        spec_state.consecutive_failures = 0
+
+        driver._extend_speculation("fetch_case")
+
+        assert len(driver.request_queue) == initial_queue_size
+        assert spec_state.current_ceiling == 5
+
+    def test_config_plus_overrides_largest_observed_gap(self):
+        """Verify config.plus is used instead of speculation.largest_observed_gap."""
+        from kent.common.searchable import SpeculateFunctionConfig
+
+        scraper = SpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        spec_state = driver._speculation_state["fetch_case"]
+
+        driver._seed_speculative_queue()
+        initial_queue_size = len(driver.request_queue)
+
+        # Override plus to 4 (larger than largest_observed_gap=2)
+        spec_state.config = SpeculateFunctionConfig(plus=4)
+        spec_state.highest_successful_id = 5
+        spec_state.current_ceiling = 5
+        spec_state.consecutive_failures = 0
+
+        driver._extend_speculation("fetch_case")
+
+        # Should add 4 new IDs (6, 7, 8, 9) using config.plus=4
+        assert len(driver.request_queue) == initial_queue_size + 4
+        assert spec_state.current_ceiling == 9
+
+    def test_stopped_partition_not_extended(self):
+        """Verify _extend_speculation is a no-op for stopped partitions."""
+        scraper = SpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        spec_state = driver._speculation_state["fetch_case"]
+
+        driver._seed_speculative_queue()
+        initial_queue_size = len(driver.request_queue)
+
+        spec_state.highest_successful_id = 5
+        spec_state.stopped = True
+
+        driver._extend_speculation("fetch_case")
+
+        assert len(driver.request_queue) == initial_queue_size
+        assert spec_state.current_ceiling == 5
+
+    def test_extends_yearly_speculation_with_composite_key(self):
+        """Verify extension works for YearlySpeculation with year parameter."""
+        scraper = YearlySpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        # Isolate the 2024 non-frozen partition
+        driver._speculation_state = {
+            k: v
+            for k, v in driver._speculation_state.items()
+            if k == "fetch_docket:2024"
+        }
+        driver._seed_speculative_queue()
+        initial_queue_size = len(driver.request_queue)
+
+        spec_state = driver._speculation_state["fetch_docket:2024"]
+        # Set near ceiling: highest=3, ceiling=3, plus=2 → 3 >= (3-2)=1
+        spec_state.highest_successful_id = 3
+        spec_state.consecutive_failures = 0
+
+        driver._extend_speculation("fetch_docket:2024")
+
+        # Should add 2 new requests with year=2024
+        assert len(driver.request_queue) == initial_queue_size + 2
+        assert spec_state.current_ceiling == 5
+
+        # Verify new requests have correct year in URL
+        new_requests = sorted(driver.request_queue, key=lambda x: x[1])[-2:]
+        for _p, _c, req in new_requests:
+            assert "/docket/2024/" in req.request.url
+            assert req.is_speculative is True
+
+
+# =============================================================================
+# fails_successfully() Soft 404 Detection Tests
+# =============================================================================
+
+
+class SoftFourOhFourScraper(BaseScraper[dict]):
+    """Scraper that detects soft 404s in 200 responses."""
+
+    def __init__(self) -> None:
+        self.processed_ids: list[int] = []
+
+    @entry(
+        dict,
+        speculative=SimpleSpeculation(
+            highest_observed=5,
+            largest_observed_gap=2,
+        ),
+    )
+    def fetch_case(self, case_id: int) -> Request:
+        return Request(
+            request=HTTPRequestParams(
+                method=HttpMethod.GET,
+                url=f"https://example.com/case/{case_id}",
+            ),
+            continuation="parse_case",
+            is_speculative=True,
+        )
+
+    @step
+    def parse_case(
+        self, response: Response
+    ) -> Generator[ScraperYield, None, None]:
+        case_id = int(response.url.split("/")[-1])
+        self.processed_ids.append(case_id)
+        yield ParsedData({"case_id": case_id})
+
+    @entry(dict)
+    def get_entry(self) -> Generator[Request, None, None]:
+        return
+        yield
+
+    def fails_successfully(self, response: Response) -> bool:
+        """Detect soft 404: pages containing 'No results found'."""
+        return "No results found" not in response.text
+
+
+class TestFailsSuccessfully:
+    """Test fails_successfully() soft 404 detection."""
+
+    def test_default_returns_true(self):
+        """Default BaseScraper.fails_successfully() always returns True."""
+        scraper = SpeculationTestScraper()
+        response = Response(
+            status_code=200,
+            headers={},
+            content=b"anything",
+            text="anything",
+            url="https://example.com/test",
+            request=MagicMock(),
+        )
+        assert scraper.fails_successfully(response) is True
+
+    def test_override_returns_false_treated_as_failure(self):
+        """A 200 response where fails_successfully() returns False is treated as failure."""
+        scraper = SoftFourOhFourScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        spec_state = driver._speculation_state["fetch_case"]
+
+        request = scraper.fetch_case(3).speculative("fetch_case", 3)
+        # 200 response with soft 404 content
+        response = Response(
+            status_code=200,
+            headers={},
+            content=b"No results found",
+            text="No results found",
+            url="https://example.com/case/3",
+            request=request,
+        )
+
+        driver._track_speculation_outcome(request, response)
+
+        # Should be treated as a failure despite 200 status
+        assert spec_state.highest_successful_id == 0
+        assert spec_state.consecutive_failures == 1
+
+    def test_end_to_end_soft_404_stops_speculation(self):
+        """Full driver.run() with soft 404s causes speculation to stop."""
+        scraper = SoftFourOhFourScraper()
+        collected_data: list[dict] = []
+
+        def collect(data: dict) -> None:
+            collected_data.append(data)
+
+        # IDs 1-3 return real content, 4+ return soft 404
+        def mock_request(**kwargs) -> MagicMock:
+            url = kwargs["url"]
+            case_id = int(url.split("/")[-1])
+            resp = MagicMock()
+            resp.headers = {}
+            if case_id <= 3:
+                resp.status_code = 200
+                resp.content = b"<html>Real case data</html>"
+                resp.text = "<html>Real case data</html>"
+            else:
+                resp.status_code = 200  # Still 200!
+                resp.content = b"No results found"
+                resp.text = "No results found"
+            return resp
+
+        driver = SyncDriver(scraper, on_data=collect)
+        driver.request_manager._client = MagicMock()
+        driver.request_manager._client.request.side_effect = mock_request
+
+        driver.run()
+
+        # parse_case runs for ALL responses (soft 404 detection only
+        # affects speculation state, not whether the continuation runs).
+        # Trace:
+        #   IDs 1-5 seeded (ceiling=5, plus=2)
+        #   ID 3 succeeds → highest_successful_id=3 >= (5-2)=3 → extend to 6,7
+        #   ID 4 soft 404 → consecutive_failures=1
+        #   ID 5 soft 404 → consecutive_failures=2 >= plus=2 → stopped
+        #   IDs 6,7 already queued → still processed, no further extension
+        assert set(scraper.processed_ids) == {1, 2, 3, 4, 5, 6, 7}
+
+        # Verify speculation stopped and soft 404s were detected
+        spec_state = driver._speculation_state["fetch_case"]
+        assert spec_state.stopped is True
+        assert spec_state.highest_successful_id == 3
+        # 4 failures total: IDs 4,5,6,7 all soft 404 beyond watermark
+        # (stopped flag set at 2, but remaining queued items still tracked)
+        assert spec_state.consecutive_failures == 4
+
+
+# =============================================================================
+# _track_speculation_outcome() Edge Cases
+# =============================================================================
+
+
+class TestTrackSpeculationEdgeCases:
+    """Test edge cases in _track_speculation_outcome()."""
+
+    def test_failure_below_watermark_ignored(self):
+        """Failure for ID below highest_successful_id does not increment consecutive_failures."""
+        scraper = SpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        spec_state = driver._speculation_state["fetch_case"]
+        spec_state.highest_successful_id = 10
+
+        # Failure for ID 5 (below watermark of 10)
+        request = scraper.fetch_case(5).speculative("fetch_case", 5)
+        response = Response(
+            status_code=404,
+            headers={},
+            content=b"",
+            text="",
+            url="https://example.com/case/5",
+            request=request,
+        )
+
+        driver._track_speculation_outcome(request, response)
+
+        assert spec_state.consecutive_failures == 0
+        assert spec_state.highest_successful_id == 10
+
+    def test_non_speculative_request_ignored(self):
+        """Non-speculative requests are ignored by _track_speculation_outcome()."""
+        scraper = SpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        spec_state = driver._speculation_state["fetch_case"]
+
+        # Normal (non-speculative) request
+        request = Request(
+            request=HTTPRequestParams(
+                method=HttpMethod.GET,
+                url="https://example.com/case/1",
+            ),
+            continuation="parse_case",
+        )
+        assert request.is_speculative is False
+
+        response = Response(
+            status_code=404,
+            headers={},
+            content=b"",
+            text="",
+            url="https://example.com/case/1",
+            request=request,
+        )
+
+        driver._track_speculation_outcome(request, response)
+
+        # State unchanged
+        assert spec_state.highest_successful_id == 0
+        assert spec_state.consecutive_failures == 0
+
+    def test_success_below_watermark_does_not_lower_it(self):
+        """Success for ID below highest_successful_id does not lower the watermark."""
+        scraper = SpeculationTestScraper()
+        driver = SyncDriver(scraper)
+
+        driver._speculation_state = driver._discover_speculate_functions()
+        spec_state = driver._speculation_state["fetch_case"]
+        spec_state.highest_successful_id = 10
+
+        # Success for ID 3 (below watermark of 10)
+        request = scraper.fetch_case(3).speculative("fetch_case", 3)
+        response = Response(
+            status_code=200,
+            headers={},
+            content=b"",
+            text="",
+            url="https://example.com/case/3",
+            request=request,
+        )
+
+        driver._track_speculation_outcome(request, response)
+
+        # Watermark stays at 10 (not lowered to 3)
+        assert spec_state.highest_successful_id == 10
+        # Failures reset on any success
+        assert spec_state.consecutive_failures == 0
+
+
+# =============================================================================
+# Trailing Period Discovery Tests
+# =============================================================================
+
+
+class TrailingPeriodScraper(BaseScraper[dict]):
+    """Scraper with YearlySpeculation and no backfill, for testing trailing period."""
+
+    @entry(
+        dict,
+        speculative=YearlySpeculation(
+            backfill=(),
+            trailing_period=timedelta(days=60),
+            largest_observed_gap=3,
+        ),
+    )
+    def fetch_docket(self, year: int, number: int) -> Request:
+        return Request(
+            request=HTTPRequestParams(
+                method=HttpMethod.GET,
+                url=f"https://example.com/docket/{year}/{number}",
+            ),
+            continuation="parse_docket",
+            is_speculative=True,
+        )
+
+    @step
+    def parse_docket(
+        self, response: Response
+    ) -> Generator[ScraperYield, None, None]:
+        yield ParsedData({"ok": True})
+
+    @entry(dict)
+    def get_entry(self) -> Generator[Request, None, None]:
+        return
+        yield
+
+
+class TestTrailingPeriodDiscovery:
+    """Test trailing period auto-creates previous year partition."""
+
+    @freeze_time("2026-01-15")
+    def test_previous_year_created_within_trailing_period(self):
+        """Previous year partition auto-created when within trailing_period of Jan 1."""
+        scraper = TrailingPeriodScraper()
+        driver = SyncDriver(scraper)
+
+        state = driver._discover_speculate_functions()
+
+        assert "fetch_docket:2026" in state
+        assert "fetch_docket:2025" in state
+        assert state["fetch_docket:2025"].frozen is False
+
+    @freeze_time("2026-06-15")
+    def test_previous_year_not_created_outside_trailing_period(self):
+        """Previous year partition NOT created when well past trailing_period."""
+        scraper = TrailingPeriodScraper()
+        driver = SyncDriver(scraper)
+
+        state = driver._discover_speculate_functions()
+
+        assert "fetch_docket:2026" in state
+        assert "fetch_docket:2025" not in state
+
+
+# =============================================================================
+# Discovery with initial_seed() Overrides
+# =============================================================================
+
+
+class TestDiscoveryWithOverrides:
+    """Test that _discover_speculate_functions uses initial_seed() overrides."""
+
+    def test_override_partitions_replace_decorator_backfill(self):
+        """Override partitions from initial_seed() replace decorator-defined backfill."""
+        scraper = YearlySpeculationTestScraper()
+
+        # Simulate what initial_seed() does: store overrides
+        scraper._speculation_overrides = {
+            "fetch_docket": [
+                {"year": 2025, "number": (1, 50), "frozen": False},
+                {"year": 2020, "number": (1, 200), "frozen": True},
+            ]
+        }
+
+        driver = SyncDriver(scraper)
+        state = driver._discover_speculate_functions()
+
+        # Override partitions should be present
+        assert "fetch_docket:2025" in state
+        assert state["fetch_docket:2025"].config.definite_range == (1, 50)
+        assert state["fetch_docket:2025"].frozen is False
+
+        assert "fetch_docket:2020" in state
+        assert state["fetch_docket:2020"].config.definite_range == (1, 200)
+        assert state["fetch_docket:2020"].frozen is True
+
+        # Decorator-defined backfill (2023, 2024) should NOT be present
+        # since overrides replace them entirely
+        assert "fetch_docket:2023" not in state
+        assert "fetch_docket:2024" not in state
+
+
+# =============================================================================
+# YearlySpeculation End-to-End with HTTP Mocking
+# =============================================================================
+
+
+class TestYearlySpeculationEndToEnd:
+    """End-to-end test for YearlySpeculation with mocked HTTP."""
+
+    def test_yearly_end_to_end_processes_partitions(self):
+        """Full driver.run() with YearlySpeculation processes correct year/number pairs."""
+        scraper = YearlySpeculationTestScraper()
+        collected_data: list[dict] = []
+
+        def collect(data: dict) -> None:
+            collected_data.append(data)
+
+        def mock_request(**kwargs) -> MagicMock:
+            url = kwargs["url"]
+            parts = url.rstrip("/").split("/")
+            year, number = int(parts[-2]), int(parts[-1])
+            resp = MagicMock()
+            resp.headers = {}
+            # 2023 partition: all succeed (frozen, just backfill)
+            # 2024 partition: IDs 1-3 succeed, 4+ fail
+            if year == 2023 or number <= 3:
+                resp.status_code = 200
+            else:
+                resp.status_code = 404
+            resp.content = b"<html>ok</html>"
+            resp.text = "<html>ok</html>"
+            return resp
+
+        driver = SyncDriver(scraper, on_data=collect)
+
+        # Override state to just the two backfill partitions for determinism
+        driver._speculation_state = driver._discover_speculate_functions()
+        driver._speculation_state = {
+            k: v
+            for k, v in driver._speculation_state.items()
+            if k in ("fetch_docket:2023", "fetch_docket:2024")
+        }
+
+        # Seed and run manually since we've overridden state
+        driver.request_queue = []
+        driver._seed_speculative_queue()
+
+        # Mock the HTTP client
+        driver.request_manager._client = MagicMock()
+        driver.request_manager._client.request.side_effect = mock_request
+
+        # Process queue
+        import heapq
+
+        while driver.request_queue:
+            _priority, _counter, request = heapq.heappop(driver.request_queue)
+            try:
+                response = driver.resolve_request(request)
+            except Exception:
+                continue
+
+            if request.is_speculative:
+                driver._track_speculation_outcome(request, response)
+
+            continuation_name = (
+                request.continuation
+                if isinstance(request.continuation, str)
+                else request.continuation.__name__
+            )
+            continuation = scraper.get_continuation(continuation_name)
+            gen = continuation(response)
+            driver._process_generator(gen, response, request)
+
+        # 2023 frozen: processed IDs 1-5, stopped after seeding
+        assert driver._speculation_state["fetch_docket:2023"].stopped is True
+        # 2024 non-frozen: processed IDs 1-3, then failures stop it
+        assert driver._speculation_state["fetch_docket:2024"].stopped is True
+
+        # Verify correct year/number combos were processed
+        processed_pairs = set(scraper.processed)
+        for n in range(1, 6):
+            assert (2023, n) in processed_pairs
+        for n in range(1, 4):
+            assert (2024, n) in processed_pairs

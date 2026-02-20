@@ -62,8 +62,6 @@ class TestPlaywrightIntegration:
                 db_path,
                 headless=True,
                 enable_monitor=False,
-                initial_rate=0,
-                bucket_size=0,
             ) as driver:
                 await driver.run(setup_signal_handlers=False)
 
@@ -104,8 +102,6 @@ class TestPlaywrightIntegration:
                 db_path,
                 headless=True,
                 enable_monitor=False,
-                initial_rate=0,
-                bucket_size=0,
             ) as driver:
                 await driver.run(setup_signal_handlers=False)
 
@@ -150,8 +146,6 @@ class TestPlaywrightIntegration:
                 db_path,
                 headless=True,
                 enable_monitor=False,
-                initial_rate=0,
-                bucket_size=0,
             ) as driver:
                 await driver.run(setup_signal_handlers=False)
 
@@ -200,8 +194,6 @@ class TestPlaywrightIntegration:
                 db_path,
                 headless=True,
                 enable_monitor=False,
-                initial_rate=0,
-                bucket_size=0,
             ) as driver:
                 await driver.run(setup_signal_handlers=False)
 
@@ -245,8 +237,6 @@ class TestPlaywrightIntegration:
                 locale="en-GB",
                 timezone_id="Europe/London",
                 enable_monitor=False,
-                initial_rate=0,
-                bucket_size=0,
             ) as driver:
                 await driver.run(setup_signal_handlers=False)
 
