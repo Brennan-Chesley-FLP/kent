@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from kent.driver.dev_driver.models import Response
+from kent.driver.dev_driver.models import Request
 
 if TYPE_CHECKING:
     import asyncio
@@ -44,11 +44,13 @@ class ValidationMixin:
         async with self._session_factory() as session:
             result = await session.execute(
                 select(
-                    Response.id,
-                    Response.request_id,
-                    Response.content_compressed,
-                    Response.compression_dict_id,
-                ).where(Response.continuation == continuation)
+                    Request.id,
+                    Request.content_compressed,
+                    Request.compression_dict_id,
+                ).where(
+                    Request.continuation == continuation,
+                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                )
             )
             rows = result.all()
 
@@ -58,7 +60,7 @@ class ValidationMixin:
         invalid_request_ids = []
 
         for row in rows:
-            response_id, request_id, compressed_content, dict_id = row
+            request_id, compressed_content, dict_id = row
 
             if compressed_content is None:
                 continue
@@ -106,11 +108,13 @@ class ValidationMixin:
         async with self._session_factory() as session:
             result = await session.execute(
                 select(
-                    Response.id,
-                    Response.request_id,
-                    Response.content_compressed,
-                    Response.compression_dict_id,
-                ).where(Response.continuation == continuation)
+                    Request.id,
+                    Request.content_compressed,
+                    Request.compression_dict_id,
+                ).where(
+                    Request.continuation == continuation,
+                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                )
             )
             rows = result.all()
 
@@ -120,7 +124,7 @@ class ValidationMixin:
         invalid_request_ids = []
 
         for row in rows:
-            response_id, request_id, compressed_content, dict_id = row
+            request_id, compressed_content, dict_id = row
 
             if compressed_content is None:
                 continue

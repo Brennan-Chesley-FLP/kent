@@ -124,67 +124,30 @@ class TestIntegrityChecks:
             assert req_id in result["orphaned_requests"]["ids"]
             assert result["orphaned_responses"]["count"] == 0
 
-    async def test_check_integrity_orphaned_response(
+    async def test_check_integrity_no_orphaned_responses(
         self, db_path: Path, initialized_db
     ) -> None:
-        """Test check_integrity detects orphaned responses."""
-        engine, session_factory = initialized_db
+        """Test that orphaned responses cannot exist in merged model.
 
-        # Insert a response WITHOUT a matching request
-        # (We'll temporarily disable foreign keys to allow this)
-        content = b"<html>Orphan</html>"
-        compressed_content = compress(content)
-
-        async with session_factory() as session:
-            await session.execute(sa.text("PRAGMA foreign_keys = OFF"))
-            await session.execute(
-                sa.text(
-                    """
-                    INSERT INTO responses (
-                        request_id, status_code, headers_json, url,
-                        content_compressed, content_size_original,
-                        content_size_compressed, compression_dict_id, continuation,
-                        warc_record_id, created_at
-                    ) VALUES (:request_id, :status_code, :headers_json, :url,
-                        :content_compressed, :content_size_original,
-                        :content_size_compressed, :compression_dict_id, :continuation,
-                        :warc_record_id, datetime('now'))
-                    """
-                ),
-                {
-                    "request_id": 9999,  # Non-existent request ID
-                    "status_code": 200,
-                    "headers_json": "{}",
-                    "url": "https://example.com/orphan",
-                    "content_compressed": compressed_content,
-                    "content_size_original": len(content),
-                    "content_size_compressed": len(compressed_content),
-                    "compression_dict_id": None,
-                    "continuation": "step1",
-                    "warc_record_id": str(uuid.uuid4()),
-                },
-            )
-            await session.execute(sa.text("PRAGMA foreign_keys = ON"))
-            await session.commit()
+        Since response data is stored on the request row itself,
+        it is impossible to have an orphaned response.
+        """
+        engine, _ = initialized_db
         await engine.dispose()
 
         async with LocalDevDriverDebugger.open(db_path) as debugger:
             result = await debugger.check_integrity()
 
-            assert result["has_issues"] is True
-            assert result["orphaned_requests"]["count"] == 0
-            assert result["orphaned_responses"]["count"] == 1
-            # Response ID should be 1 (first response in the table)
-            assert 1 in result["orphaned_responses"]["ids"]
+            assert result["orphaned_responses"]["count"] == 0
 
-    async def test_check_integrity_multiple_issues(
+    async def test_check_integrity_orphaned_request_only(
         self, db_path: Path, initialized_db
     ) -> None:
-        """Test check_integrity detects multiple types of issues."""
+        """Test check_integrity detects orphaned request (no orphaned responses possible)."""
         engine, session_factory = initialized_db
         sql_manager = SQLManager(engine, session_factory)
 
-        # Create orphaned request
+        # Create orphaned request (completed but no response data)
         orphan_req_id = await sql_manager.insert_request(
             priority=1,
             request_type="navigating",
@@ -208,41 +171,6 @@ class TestIntegrityChecks:
                 {"status": "completed", "id": orphan_req_id},
             )
             await session.commit()
-
-        # Create orphaned response (non-existent request)
-        content = b"<html>Orphan Response</html>"
-        compressed_content = compress(content)
-        async with session_factory() as session:
-            await session.execute(sa.text("PRAGMA foreign_keys = OFF"))
-            await session.execute(
-                sa.text(
-                    """
-                    INSERT INTO responses (
-                        request_id, status_code, headers_json, url,
-                        content_compressed, content_size_original,
-                        content_size_compressed, compression_dict_id, continuation,
-                        warc_record_id, created_at
-                    ) VALUES (:request_id, :status_code, :headers_json, :url,
-                        :content_compressed, :content_size_original,
-                        :content_size_compressed, :compression_dict_id, :continuation,
-                        :warc_record_id, datetime('now'))
-                    """
-                ),
-                {
-                    "request_id": 9999,
-                    "status_code": 200,
-                    "headers_json": "{}",
-                    "url": "https://example.com/orphan_resp",
-                    "content_compressed": compressed_content,
-                    "content_size_original": len(content),
-                    "content_size_compressed": len(compressed_content),
-                    "compression_dict_id": None,
-                    "continuation": "step2",
-                    "warc_record_id": str(uuid.uuid4()),
-                },
-            )
-            await session.execute(sa.text("PRAGMA foreign_keys = ON"))
-            await session.commit()
         await engine.dispose()
 
         async with LocalDevDriverDebugger.open(db_path) as debugger:
@@ -250,7 +178,7 @@ class TestIntegrityChecks:
 
             assert result["has_issues"] is True
             assert result["orphaned_requests"]["count"] == 1
-            assert result["orphaned_responses"]["count"] == 1
+            assert result["orphaned_responses"]["count"] == 0
 
     async def test_get_orphan_details_no_orphans(
         self, db_path: Path, initialized_db
@@ -307,55 +235,17 @@ class TestIntegrityChecks:
             assert req["url"] == "https://example.com/orphan"
             assert req["continuation"] == "step1"
 
-    async def test_get_orphan_details_with_orphaned_response(
+    async def test_get_orphan_details_no_orphaned_responses(
         self, db_path: Path, initialized_db
     ) -> None:
-        """Test get_orphan_details includes response details."""
-        engine, session_factory = initialized_db
-
-        # Create orphaned response
-        content = b"<html>Orphan</html>"
-        compressed_content = compress(content)
-        async with session_factory() as session:
-            await session.execute(sa.text("PRAGMA foreign_keys = OFF"))
-            await session.execute(
-                sa.text(
-                    """
-                    INSERT INTO responses (
-                        request_id, status_code, headers_json, url,
-                        content_compressed, content_size_original,
-                        content_size_compressed, compression_dict_id, continuation,
-                        warc_record_id, created_at
-                    ) VALUES (:request_id, :status_code, :headers_json, :url,
-                        :content_compressed, :content_size_original,
-                        :content_size_compressed, :compression_dict_id, :continuation,
-                        :warc_record_id, datetime('now'))
-                    """
-                ),
-                {
-                    "request_id": 9999,
-                    "status_code": 404,
-                    "headers_json": "{}",
-                    "url": "https://example.com/orphan_response",
-                    "content_compressed": compressed_content,
-                    "content_size_original": len(content),
-                    "content_size_compressed": len(compressed_content),
-                    "compression_dict_id": None,
-                    "continuation": "step2",
-                    "warc_record_id": str(uuid.uuid4()),
-                },
-            )
-            await session.execute(sa.text("PRAGMA foreign_keys = ON"))
-            await session.commit()
+        """Test get_orphan_details returns empty orphaned_responses in merged model."""
+        engine, _ = initialized_db
         await engine.dispose()
 
         async with LocalDevDriverDebugger.open(db_path) as debugger:
             result = await debugger.get_orphan_details()
 
-            assert len(result["orphaned_responses"]) == 1
-            resp = result["orphaned_responses"][0]
-            assert resp["id"] == 1
-            assert resp["url"] == "https://example.com/orphan_response"
+            assert len(result["orphaned_responses"]) == 0
 
 
 class TestGhostRequestDetection:

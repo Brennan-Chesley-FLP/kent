@@ -164,7 +164,7 @@ class StorageMixin:
         # Generate WARC record ID for later export
         warc_record_id = str(uuid.uuid4())
 
-        response_id = await self.db.store_response(
+        await self.db.store_response(
             request_id=request_id,
             status_code=response.status_code,
             headers_json=headers_json,
@@ -196,7 +196,7 @@ class StorageMixin:
                 content=response.content,
             )
 
-        return response_id
+        return request_id
 
     async def _store_archived_file(
         self,

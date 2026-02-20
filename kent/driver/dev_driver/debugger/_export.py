@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 
 from kent.driver.dev_driver.models import (
-    Response,
+    Request,
     Result,
 )
 from kent.driver.dev_driver.sql_manager import (
@@ -30,10 +30,10 @@ class ExportSearchMixin:
         # Provided by InspectionMixin / DebuggerBase at runtime.
         async def get_error(self, error_id: int) -> dict[str, Any] | None: ...
         async def get_response(
-            self, response_id: int
+            self, request_id: int
         ) -> ResponseRecord | None: ...
         async def get_response_content(
-            self, response_id: int
+            self, request_id: int
         ) -> bytes | None: ...
         async def get_run_metadata(
             self,
@@ -76,25 +76,14 @@ class ExportSearchMixin:
         if not request_id:
             raise ValueError("Error has no associated request_id")
 
-        # Find response for this request
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(Response.id)
-                .where(Response.request_id == request_id)
-                .limit(1)
-            )
-            row = result.first()
-            if not row:
-                raise ValueError(f"No response found for request {request_id}")
-            response_id = row[0]
-
-        response = await self.get_response(response_id)
+        # Response data is now on the request row itself
+        response = await self.get_response(request_id)
         if not response:
-            raise ValueError(f"Response {response_id} not found")
+            raise ValueError(f"No response found for request {request_id}")
 
-        content = await self.get_response_content(response_id)
+        content = await self.get_response_content(request_id)
         if not content:
-            raise ValueError(f"No content for response {response_id}")
+            raise ValueError(f"No content for request {request_id}")
 
         # Discover scraper if not provided
         if scraper_class is None:
@@ -285,15 +274,21 @@ class ExportSearchMixin:
             Dictionary with record_count and estimated_size.
         """
         async with self._session_factory() as session:
-            query = select(
-                sa.func.count(),
-                sa.func.coalesce(
-                    sa.func.sum(Response.content_size_original), 0
-                ),
-            ).select_from(Response)
+            query = (
+                select(
+                    sa.func.count(),
+                    sa.func.coalesce(
+                        sa.func.sum(Request.content_size_original), 0
+                    ),
+                )
+                .select_from(Request)
+                .where(
+                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                )
+            )
 
             if continuation:
-                query = query.where(Response.continuation == continuation)
+                query = query.where(Request.continuation == continuation)
 
             result = await session.execute(query)
             row = result.first()
@@ -331,7 +326,7 @@ class ExportSearchMixin:
             continuation: Optional filter by continuation (step name).
 
         Returns:
-            List of dictionaries with response_id and request_id.
+            List of dictionaries with request_id.
 
         Raises:
             ValueError: If zero or more than one search pattern is provided.
@@ -355,9 +350,15 @@ class ExportSearchMixin:
 
             xpath_expr = etree.XPath(xpath)
 
-        query = select(Response.id, Response.request_id).order_by(Response.id)
+        query = (
+            select(Request.id)
+            .where(
+                Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+            )
+            .order_by(Request.id)
+        )
         if continuation:
-            query = query.where(Response.continuation == continuation)
+            query = query.where(Request.continuation == continuation)
 
         matches: list[dict[str, int]] = []
 
@@ -366,9 +367,9 @@ class ExportSearchMixin:
             rows = result.all()
 
         for row in rows:
-            response_id, request_id = row
+            request_id = row[0]
 
-            content = await self.get_response_content(response_id)
+            content = await self.get_response_content(request_id)
             if content is None:
                 continue
 
@@ -399,8 +400,6 @@ class ExportSearchMixin:
                     continue
 
             if matched:
-                matches.append(
-                    {"response_id": response_id, "request_id": request_id}
-                )
+                matches.append({"request_id": request_id})
 
         return matches

@@ -16,7 +16,6 @@ from sqlmodel import select
 from kent.driver.dev_driver.models import (
     Error,
     Request,
-    Response,
     Result,
     RunMetadata,
 )
@@ -347,15 +346,15 @@ async def get_compression_stats(
             select(
                 sa.func.count(),
                 sa.func.coalesce(
-                    sa.func.sum(Response.content_size_original), 0
+                    sa.func.sum(Request.content_size_original), 0
                 ),
                 sa.func.coalesce(
-                    sa.func.sum(Response.content_size_compressed), 0
+                    sa.func.sum(Request.content_size_compressed), 0
                 ),
                 sa.func.sum(
                     sa.case(
                         (
-                            Response.compression_dict_id.isnot(None),  # type: ignore[union-attr]
+                            Request.compression_dict_id.isnot(None),  # type: ignore[union-attr]
                             1,
                         ),
                         else_=0,
@@ -363,10 +362,12 @@ async def get_compression_stats(
                 ),
                 sa.func.sum(
                     sa.case(
-                        (Response.compression_dict_id.is_(None), 1),  # type: ignore[union-attr]
+                        (Request.compression_dict_id.is_(None), 1),  # type: ignore[union-attr]
                         else_=0,
                     )
                 ),
+            ).where(
+                Request.response_status_code.isnot(None),  # type: ignore[union-attr]
             )
         )
         row = result.first()

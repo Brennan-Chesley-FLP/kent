@@ -217,7 +217,9 @@ class TestDevDriverVsOtherDrivers:
             # Verify responses are stored
             async with driver.db._session_factory() as session:
                 result = await session.execute(
-                    sa.text("SELECT COUNT(*) FROM responses")
+                    sa.text(
+                        "SELECT COUNT(*) FROM requests WHERE response_status_code IS NOT NULL"
+                    )
                 )
                 resp_row = result.first()
             assert resp_row[0] >= 1, "Should have at least 1 response stored"
@@ -275,12 +277,15 @@ class TestGetterMethods:
                 warc_id = str(uuid.uuid4())
                 await session.execute(
                     sa.text("""
-                    INSERT INTO responses (request_id, status_code, headers_json, url,
-                                          content_compressed, content_size_original,
-                                          content_size_compressed, continuation, warc_record_id)
-                    VALUES (1, 200, '{"Content-Type": "text/html"}', 'https://example.com/test',
-                            :content_compressed, :content_size_original, :content_size_compressed,
-                            'parse', :warc_record_id)
+                    UPDATE requests SET
+                        response_status_code = 200,
+                        response_headers_json = '{"Content-Type": "text/html"}',
+                        response_url = 'https://example.com/test',
+                        content_compressed = :content_compressed,
+                        content_size_original = :content_size_original,
+                        content_size_compressed = :content_size_compressed,
+                        warc_record_id = :warc_record_id
+                    WHERE id = 1
                     """),
                     {
                         "content_compressed": compressed,

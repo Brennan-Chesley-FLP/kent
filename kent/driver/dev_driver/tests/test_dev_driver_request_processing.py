@@ -312,9 +312,9 @@ class TestHeadersOnlyResponse:
             async with driver.db._session_factory() as session:
                 result = await session.execute(
                     sa.text("""
-                    SELECT status_code, headers_json, content_size_original, content_size_compressed
-                    FROM responses
-                    WHERE url = 'https://example.com/resource'
+                    SELECT response_status_code, response_headers_json, content_size_original, content_size_compressed
+                    FROM requests
+                    WHERE response_url = 'https://example.com/resource'
                     """)
                 )
                 row = result.first()
@@ -340,7 +340,7 @@ class TestHeadersOnlyResponse:
             async with driver.db._session_factory() as session:
                 result = await session.execute(
                     sa.text(
-                        "SELECT id FROM responses WHERE url = 'https://example.com/resource'"
+                        "SELECT id FROM requests WHERE response_url = 'https://example.com/resource'"
                     )
                 )
                 resp_row = result.first()

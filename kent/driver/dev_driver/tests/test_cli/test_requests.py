@@ -205,11 +205,11 @@ class TestResponsesCommands:
     ) -> None:
         """Test responses show command."""
         result = runner.invoke(
-            cli, ["responses", "show", "--db", str(populated_db), "1"]
+            cli, ["responses", "show", "--db", str(populated_db), "2"]
         )
 
         assert result.exit_code == 0
-        assert "ID: 1" in result.output
+        assert "ID: 2" in result.output
         assert "Status Code:" in result.output
 
     def test_responses_content(
@@ -217,7 +217,7 @@ class TestResponsesCommands:
     ) -> None:
         """Test responses content command."""
         result = runner.invoke(
-            cli, ["responses", "content", "--db", str(populated_db), "1"]
+            cli, ["responses", "content", "--db", str(populated_db), "2"]
         )
 
         assert result.exit_code == 0
@@ -235,7 +235,7 @@ class TestResponsesCommands:
                 "content",
                 "--db",
                 str(populated_db),
-                "1",
+                "2",
                 "-o",
                 str(output_file),
             ],

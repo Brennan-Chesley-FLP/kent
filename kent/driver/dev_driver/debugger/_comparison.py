@@ -11,7 +11,6 @@ from sqlmodel import select
 
 from kent.driver.dev_driver.models import (
     Request,
-    Response,
 )
 from kent.driver.dev_driver.sql_manager import (
     Page,
@@ -30,7 +29,7 @@ class ComparisonMixin:
     if TYPE_CHECKING:
         # Provided by InspectionMixin at runtime via multiple inheritance.
         async def get_response_content(
-            self, response_id: int
+            self, request_id: int
         ) -> bytes | None: ...
         async def list_errors(
             self,
@@ -266,35 +265,49 @@ class ComparisonMixin:
             "permanent_json": request_row[7],
         }
 
-        # Get the response for this request
+        # Get the response data from the request row (merged table)
         async with self._session_factory() as session:
             result = await session.execute(
-                select(Response)
-                .where(Response.request_id == request_id)
-                .limit(1)
+                select(
+                    Request.id,
+                    Request.response_status_code,
+                    Request.response_headers_json,
+                    Request.response_url,
+                    Request.content_compressed,
+                    Request.content_size_original,
+                    Request.content_size_compressed,
+                    Request.compression_dict_id,
+                    Request.continuation,
+                    Request.response_created_at,
+                    Request.warc_record_id,
+                    Request.speculation_outcome,
+                ).where(
+                    Request.id == request_id,
+                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                )
             )
-            response_obj = result.scalars().first()
-            if not response_obj:
+            response_row = result.first()
+            if not response_row:
                 raise ValueError(f"No response found for request {request_id}")
 
         response_data = {
-            "id": response_obj.id,
-            "request_id": response_obj.request_id,
-            "status_code": response_obj.status_code,
-            "headers_json": response_obj.headers_json,
-            "url": response_obj.url,
-            "content_compressed": response_obj.content_compressed,
-            "content_size_original": response_obj.content_size_original,
-            "content_size_compressed": response_obj.content_size_compressed,
-            "compression_dict_id": response_obj.compression_dict_id,
-            "continuation": response_obj.continuation,
-            "created_at": response_obj.created_at,
-            "warc_record_id": response_obj.warc_record_id,
-            "speculation_outcome": response_obj.speculation_outcome,
+            "id": response_row[0],
+            "request_id": response_row[0],
+            "status_code": response_row[1],
+            "headers_json": response_row[2],
+            "url": response_row[3],
+            "content_compressed": response_row[4],
+            "content_size_original": response_row[5],
+            "content_size_compressed": response_row[6],
+            "compression_dict_id": response_row[7],
+            "continuation": response_row[8],
+            "created_at": response_row[9],
+            "warc_record_id": response_row[10],
+            "speculation_outcome": response_row[11],
         }
 
         # Get decompressed content
-        response_content = await self.get_response_content(response_data["id"])
+        response_content = await self.get_response_content(request_id)
         if response_content is None:
             raise ValueError(
                 f"No content available for response {response_data['id']}"

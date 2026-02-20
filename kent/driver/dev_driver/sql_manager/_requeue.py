@@ -11,7 +11,6 @@ from kent.driver.dev_driver.models import (
     Error,
     IncidentalRequest,
     Request,
-    Response,
     Result,
 )
 from kent.driver.dev_driver.sql_manager._types import RequeueResult
@@ -40,7 +39,7 @@ class RequeueMixin:
 
         Args:
             request_ids: List of request IDs to requeue.
-            clear_responses: If True, delete responses for the requeued requests.
+            clear_responses: If True, clear response columns for the requeued requests.
             clear_downstream: If True, recursively delete child requests and artifacts.
             dry_run: If True, report what would happen without making changes.
 
@@ -102,9 +101,11 @@ class RequeueMixin:
 
         async with self._session_factory() as session:
             if clear_responses and affected_list:
+                # Identify requests that have responses (for reporting)
                 result = await session.execute(
-                    select(Response.id).where(
-                        Response.request_id.in_(affected_list)  # type: ignore[attr-defined]
+                    select(Request.id).where(
+                        Request.id.in_(affected_list),  # type: ignore[union-attr]
+                        Request.response_status_code.isnot(None),  # type: ignore[union-attr]
                     )
                 )
                 requeue_result.cleared_response_ids = [
@@ -187,11 +188,25 @@ class RequeueMixin:
 
             async with self._session_factory() as session:
                 if clear_responses and requeue_result.cleared_response_ids:
+                    # NULL out response columns instead of deleting from a separate table
                     await session.execute(
-                        delete(Response).where(
-                            Response.id.in_(  # type: ignore[union-attr]
+                        update(Request)
+                        .where(
+                            Request.id.in_(  # type: ignore[union-attr]
                                 requeue_result.cleared_response_ids
                             )
+                        )
+                        .values(
+                            response_status_code=None,
+                            response_headers_json=None,
+                            response_url=None,
+                            content_compressed=None,
+                            content_size_original=None,
+                            content_size_compressed=None,
+                            compression_dict_id=None,
+                            response_created_at=None,
+                            warc_record_id=None,
+                            speculation_outcome=None,
                         )
                     )
                     if affected_list:
@@ -233,32 +248,23 @@ class RequeueMixin:
 
     async def requeue_response(
         self,
-        response_id: int,
+        request_id: int,
         *,
         clear_responses: bool = False,
         clear_downstream: bool = False,
         dry_run: bool = False,
     ) -> RequeueResult:
-        """Requeue the request associated with a response.
+        """Requeue a request that has a response.
 
         Args:
-            response_id: The database ID of the response.
-            clear_responses: If True, delete responses for the requeued request.
+            request_id: The database ID of the request.
+            clear_responses: If True, clear response columns to force re-fetch.
             clear_downstream: If True, recursively delete downstream artifacts.
             dry_run: If True, report what would happen without making changes.
 
         Returns:
             RequeueResult with lists of affected IDs and dry_run flag.
         """
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(Response.request_id).where(Response.id == response_id)
-            )
-            request_id = result.scalar()
-
-        if request_id is None:
-            return RequeueResult(dry_run=dry_run)
-
         return await self.requeue_requests(
             [request_id],
             clear_responses=clear_responses,
@@ -280,7 +286,7 @@ class RequeueMixin:
         Args:
             error_id: The database ID of the error.
             mark_resolved: If True, mark error as resolved after requeuing.
-            clear_responses: If True, delete responses for the requeued request.
+            clear_responses: If True, clear response columns for the requeued request.
             clear_downstream: If True, recursively delete downstream artifacts.
             dry_run: If True, report what would happen without making changes.
 
@@ -347,7 +353,7 @@ class RequeueMixin:
             continuation: The continuation method name to filter by.
             error_type: Optional error type filter.
             traceback_contains: Optional substring to match in error tracebacks.
-            clear_responses: If True, delete responses for the requeued requests.
+            clear_responses: If True, clear response columns for the requeued requests.
             clear_downstream: If True, recursively delete downstream artifacts.
             dry_run: If True, report what would happen without making changes.
 

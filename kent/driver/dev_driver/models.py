@@ -5,8 +5,8 @@ the raw DDL in schema.py. These models are used with SQLAlchemy's async
 engine for all database operations.
 
 Tables:
-- requests: HTTP request queue with status tracking and retry logic
-- responses: Compressed HTTP responses with dictionary references
+- requests: HTTP request queue with status tracking, retry logic, and
+  inline response storage (compressed HTTP responses with dictionary refs)
 - compression_dicts: Versioned zstd dictionaries per-continuation
 - results: Validated scraped data
 - archived_files: Downloaded file metadata
@@ -61,6 +61,8 @@ class Request(SQLModel, table=True):  # type: ignore[call-arg]
         sa.Index("idx_requests_deduplication", "deduplication_key"),
         sa.Index("idx_requests_cache_key", "cache_key"),
         sa.Index("idx_requests_parent", "parent_request_id"),
+        sa.Index("idx_requests_response_status_code", "response_status_code"),
+        sa.Index("idx_requests_compression_dict", "compression_dict_id"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -141,24 +143,11 @@ class Request(SQLModel, table=True):  # type: ignore[call-arg]
     )
     speculation_id: str | None = None
 
-
-class Response(SQLModel, table=True):  # type: ignore[call-arg]
-    """Compressed HTTP responses with dictionary references."""
-
-    __tablename__ = "responses"
-    __table_args__ = (
-        sa.Index("idx_responses_request", "request_id"),
-        sa.Index("idx_responses_continuation", "continuation"),
-        sa.Index("idx_responses_dict", "compression_dict_id"),
-    )
-
-    id: int | None = Field(default=None, primary_key=True)
-    request_id: int = Field(foreign_key="requests.id")
-
-    # HTTP Response
-    status_code: int
-    headers_json: str | None = None
-    url: str
+    # --- Response fields (populated when response is received) ---
+    # NULL response_status_code means no response has been stored yet.
+    response_status_code: int | None = None
+    response_headers_json: str | None = None
+    response_url: str | None = None
 
     # Content (compressed)
     content_compressed: bytes | None = Field(
@@ -171,13 +160,9 @@ class Response(SQLModel, table=True):  # type: ignore[call-arg]
     compression_dict_id: int | None = Field(
         default=None, foreign_key="compression_dicts.id"
     )
-    continuation: str
 
-    # Timestamps
-    created_at: str | None = Field(
-        default=None,
-        sa_column_kwargs={"server_default": sa.text("CURRENT_TIMESTAMP")},
-    )
+    # Response timestamps
+    response_created_at: str | None = None
 
     # WARC export metadata
     warc_record_id: str | None = None

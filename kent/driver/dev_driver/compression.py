@@ -18,7 +18,7 @@ import sqlalchemy as sa
 import zstandard as zstd
 from sqlmodel import select
 
-from kent.driver.dev_driver.models import CompressionDict, Response
+from kent.driver.dev_driver.models import CompressionDict, Request
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -210,12 +210,13 @@ async def train_compression_dict(
         # Sample responses for this continuation (decompress first if needed)
         result = await session.execute(
             select(
-                Response.content_compressed,
-                Response.compression_dict_id,
+                Request.content_compressed,
+                Request.compression_dict_id,
             )
             .where(
-                Response.continuation == continuation,
-                Response.content_compressed.isnot(None),  # type: ignore[union-attr]
+                Request.continuation == continuation,
+                Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                Request.content_compressed.isnot(None),  # type: ignore[union-attr]
             )
             .order_by(sa.func.random())
             .limit(sample_limit)
@@ -320,12 +321,13 @@ async def recompress_responses(
     async with session_factory() as session:
         result = await session.execute(
             select(
-                Response.id,
-                Response.content_compressed,
-                Response.compression_dict_id,
+                Request.id,
+                Request.content_compressed,
+                Request.compression_dict_id,
             ).where(
-                Response.continuation == continuation,
-                Response.content_compressed.isnot(None),  # type: ignore[union-attr]
+                Request.continuation == continuation,
+                Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                Request.content_compressed.isnot(None),  # type: ignore[union-attr]
             )
         )
         rows = result.all()
@@ -334,7 +336,7 @@ async def recompress_responses(
     total_original = 0
     total_compressed = 0
 
-    for response_id, compressed, old_dict_id in rows:
+    for request_id, compressed, old_dict_id in rows:
         try:
             # Decompress using the old dictionary (or none)
             content = await decompress_response(
@@ -348,11 +350,11 @@ async def recompress_responses(
             )
             new_size = len(new_compressed)
 
-            # Update the response
+            # Update the request row
             async with session_factory() as session:
                 await session.execute(
-                    sa.update(Response)
-                    .where(Response.id == response_id)
+                    sa.update(Request)
+                    .where(Request.id == request_id)
                     .values(
                         content_compressed=new_compressed,
                         content_size_original=original_size,

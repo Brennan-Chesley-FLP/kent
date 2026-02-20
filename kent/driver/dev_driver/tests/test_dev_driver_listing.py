@@ -148,30 +148,49 @@ class TestListingMethods:
                 """)
             )
 
-            # Create responses
+            # Store response data on request rows
             content = b"<html>Test</html>"
             compressed = compress(content)
 
-            for url, cont, warc_id in [
-                ("https://example.com/1", "parse", "uuid1"),
-                ("https://example.com/2", "process", "uuid2"),
-            ]:
-                await session.execute(
-                    sa.text("""
-                    INSERT INTO responses (request_id, status_code, url, content_compressed,
-                                           content_size_original, content_size_compressed,
-                                           continuation, warc_record_id)
-                    VALUES (1, 200, :url, :compressed, :original_size, :compressed_size, :continuation, :warc_id)
-                    """),
-                    {
-                        "url": url,
-                        "compressed": compressed,
-                        "original_size": len(content),
-                        "compressed_size": len(compressed),
-                        "continuation": cont,
-                        "warc_id": warc_id,
-                    },
-                )
+            # Need separate request rows since response data is on the request row
+            # Update the existing request to have parse continuation and response
+            await session.execute(
+                sa.text("""
+                UPDATE requests SET
+                    response_status_code = 200,
+                    response_url = :url,
+                    content_compressed = :compressed,
+                    content_size_original = :original_size,
+                    content_size_compressed = :compressed_size,
+                    warc_record_id = 'uuid1'
+                WHERE id = 1
+                """),
+                {
+                    "url": "https://example.com/1",
+                    "compressed": compressed,
+                    "original_size": len(content),
+                    "compressed_size": len(compressed),
+                },
+            )
+            # Insert a second request with process continuation and response
+            await session.execute(
+                sa.text("""
+                INSERT INTO requests (id, status, priority, queue_counter, method, url,
+                                      continuation, current_location,
+                                      response_status_code, response_url,
+                                      content_compressed, content_size_original,
+                                      content_size_compressed, warc_record_id)
+                VALUES (2, 'completed', 9, 2, 'GET', 'https://example.com/2',
+                        'process', '',
+                        200, 'https://example.com/2',
+                        :compressed, :original_size, :compressed_size, 'uuid2')
+                """),
+                {
+                    "compressed": compressed,
+                    "original_size": len(content),
+                    "compressed_size": len(compressed),
+                },
+            )
             await session.commit()
 
         # Test helper
@@ -185,13 +204,13 @@ class TestListingMethods:
                 conditions.append("continuation = :continuation")
                 bind_params["continuation"] = continuation
 
-            where_clause = (
-                f"WHERE {' AND '.join(conditions)}" if conditions else ""
-            )
+            base_where = "WHERE response_status_code IS NOT NULL"
+            if conditions:
+                base_where += " AND " + " AND ".join(conditions)
 
             async with session_factory() as session:
                 result = await session.execute(
-                    sa.text(f"SELECT COUNT(*) FROM responses {where_clause}"),
+                    sa.text(f"SELECT COUNT(*) FROM requests {base_where}"),
                     bind_params,
                 )
                 row = result.first()
@@ -200,11 +219,11 @@ class TestListingMethods:
             async with session_factory() as session:
                 result = await session.execute(
                     sa.text(f"""
-                    SELECT id, request_id, status_code, url, content_size_original,
-                           content_size_compressed, continuation, created_at,
+                    SELECT id, response_status_code, response_url, content_size_original,
+                           content_size_compressed, continuation, response_created_at,
                            compression_dict_id
-                    FROM responses
-                    {where_clause}
+                    FROM requests
+                    {base_where}
                     """),
                     bind_params,
                 )
@@ -213,14 +232,13 @@ class TestListingMethods:
             items = [
                 ResponseRecord(
                     id=r[0],
-                    request_id=r[1],
-                    status_code=r[2],
-                    url=r[3],
-                    content_size_original=r[4],
-                    content_size_compressed=r[5],
-                    continuation=r[6],
-                    created_at=r[7],
-                    compression_dict_id=r[8],
+                    status_code=r[1],
+                    url=r[2],
+                    content_size_original=r[3],
+                    content_size_compressed=r[4],
+                    continuation=r[5],
+                    created_at=r[6],
+                    compression_dict_id=r[7],
                 )
                 for r in rows
             ]
@@ -270,7 +288,6 @@ class TestListingMethods:
         # Test ResponseRecord
         resp = ResponseRecord(
             id=1,
-            request_id=1,
             status_code=200,
             url="https://example.com",
             content_size_original=1000,
@@ -656,7 +673,7 @@ class TestResponsesAndResultsListing:
                 )
 
                 # Create responses
-                for req_id, cont, url in [
+                for req_id, _cont, url in [
                     (1, "parse_listing", "https://example.com/1"),
                     (2, "parse_detail", "https://example.com/2"),
                     (3, "parse_detail", "https://example.com/3"),
@@ -665,11 +682,15 @@ class TestResponsesAndResultsListing:
                     compressed = compress(content)
                     await session.execute(
                         sa.text("""
-                        INSERT INTO responses (request_id, status_code, headers_json, url,
-                                              content_compressed, content_size_original,
-                                              content_size_compressed, continuation, warc_record_id)
-                        VALUES (:request_id, 200, '{}', :url, :content_compressed, :content_size_original,
-                                :content_size_compressed, :continuation, :warc_record_id)
+                        UPDATE requests SET
+                            response_status_code = 200,
+                            response_headers_json = '{}',
+                            response_url = :url,
+                            content_compressed = :content_compressed,
+                            content_size_original = :content_size_original,
+                            content_size_compressed = :content_size_compressed,
+                            warc_record_id = :warc_record_id
+                        WHERE id = :request_id
                         """),
                         {
                             "request_id": req_id,
@@ -677,7 +698,6 @@ class TestResponsesAndResultsListing:
                             "content_compressed": compressed,
                             "content_size_original": len(content),
                             "content_size_compressed": len(compressed),
-                            "continuation": cont,
                             "warc_record_id": str(uuid.uuid4()),
                         },
                     )
@@ -755,11 +775,15 @@ class TestResponsesAndResultsListing:
                     compressed = compress(content)
                     await session.execute(
                         sa.text("""
-                        INSERT INTO responses (request_id, status_code, headers_json, url,
-                                              content_compressed, content_size_original,
-                                              content_size_compressed, continuation, warc_record_id)
-                        VALUES (:request_id, 200, '{}', :url, :content_compressed, :content_size_original,
-                                :content_size_compressed, 'parse', :warc_record_id)
+                        UPDATE requests SET
+                            response_status_code = 200,
+                            response_headers_json = '{}',
+                            response_url = :url,
+                            content_compressed = :content_compressed,
+                            content_size_original = :content_size_original,
+                            content_size_compressed = :content_size_compressed,
+                            warc_record_id = :warc_record_id
+                        WHERE id = :request_id
                         """),
                         {
                             "request_id": i + 1,

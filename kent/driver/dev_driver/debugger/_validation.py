@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 
 from kent.driver.dev_driver.models import (
-    Response,
+    Request,
 )
 from kent.driver.dev_driver.sql_manager import (
     SQLManager,
@@ -180,8 +180,11 @@ class ValidationMixin:
             async with self._session_factory() as session:
                 count_result = await session.execute(
                     select(sa.func.count())
-                    .select_from(Response)
-                    .where(Response.continuation == continuation)
+                    .select_from(Request)
+                    .where(
+                        Request.continuation == continuation,
+                        Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                    )
                 )
                 total = count_result.scalar() or 0
 
@@ -213,15 +216,7 @@ class ValidationMixin:
                     continuation, model_class
                 )
 
-            invalid_response_ids: list[int] = []
-            if invalid_request_ids:
-                async with self._session_factory() as session:
-                    resp_result = await session.execute(
-                        select(Response.id).where(
-                            Response.request_id.in_(invalid_request_ids)  # type: ignore[attr-defined]
-                        )
-                    )
-                    invalid_response_ids = [r[0] for r in resp_result.all()]
+            invalid_response_ids = list(invalid_request_ids)
 
             invalid_count = len(invalid_request_ids)
             step_results.append(
@@ -284,35 +279,36 @@ class ValidationMixin:
             if response_id is not None:
                 result = await session.execute(
                     select(
-                        Response.id,
-                        Response.request_id,
-                        Response.continuation,
-                        Response.content_compressed,
-                        Response.compression_dict_id,
-                    ).where(Response.id == response_id)
+                        Request.id,
+                        Request.continuation,
+                        Request.content_compressed,
+                        Request.compression_dict_id,
+                    ).where(
+                        Request.id == response_id,
+                        Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                    )
                 )
                 row = result.first()
                 if not row:
                     raise ValueError(f"Response {response_id} not found")
-                resp_id, req_id, continuation, compressed, dict_id = row
+                req_id, continuation, compressed, dict_id = row
+                resp_id = req_id
             else:
                 result = await session.execute(
                     select(
-                        Response.id,
-                        Response.request_id,
-                        Response.continuation,
-                        Response.content_compressed,
-                        Response.compression_dict_id,
-                    )
-                    .where(Response.request_id == request_id)
-                    .limit(1)
+                        Request.id,
+                        Request.continuation,
+                        Request.content_compressed,
+                        Request.compression_dict_id,
+                    ).where(Request.id == request_id)
                 )
                 row = result.first()
                 if not row:
                     raise ValueError(
                         f"No response found for request {request_id}"
                     )
-                resp_id, req_id, continuation, compressed, dict_id = row
+                req_id, continuation, compressed, dict_id = row
+                resp_id = req_id
 
         metadata = await self.get_run_metadata()
         if not metadata:

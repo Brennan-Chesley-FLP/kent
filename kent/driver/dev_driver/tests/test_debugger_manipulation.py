@@ -379,7 +379,6 @@ class TestResponseSearch:
             matches = await debugger.search_responses(text="Response")
 
             assert len(matches) == 2
-            assert all("response_id" in m for m in matches)
             assert all("request_id" in m for m in matches)
 
     async def test_search_text_case_insensitive(
@@ -506,7 +505,6 @@ class TestResponseSearch:
             matches = await debugger.search_responses(text="Response 1")
 
             assert len(matches) == 1
-            assert matches[0]["response_id"] == 1
             # Request IDs are 2 and 5 for the two completed requests
             assert matches[0]["request_id"] == 2
 

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from kent.driver.dev_driver.models import Request, Response, Result
+from kent.driver.dev_driver.models import Request, Result
 from kent.driver.dev_driver.sql_manager._types import (
     Page,
     RequestRecord,
@@ -163,6 +163,8 @@ class ListingMixin:
     ) -> Page[ResponseRecord]:
         """List responses with optional filters and pagination.
 
+        Queries requests that have a response (response_status_code IS NOT NULL).
+
         Args:
             continuation: Filter by continuation method name.
             request_id: Filter by request ID.
@@ -174,38 +176,37 @@ class ListingMixin:
             Page of ResponseRecord instances.
         """
         async with self._session_factory() as session:
-            conditions = []
+            conditions = [Request.response_status_code.isnot(None)]  # type: ignore[union-attr]
             if continuation:
-                conditions.append(Response.continuation == continuation)
+                conditions.append(Request.continuation == continuation)
             if request_id:
-                conditions.append(Response.request_id == request_id)
+                conditions.append(Request.id == request_id)
             if speculation_outcome:
                 conditions.append(
-                    Response.speculation_outcome == speculation_outcome
+                    Request.speculation_outcome == speculation_outcome
                 )
 
-            count_stmt = select(func.count()).select_from(Response)
+            count_stmt = select(func.count()).select_from(Request)
             for cond in conditions:
                 count_stmt = count_stmt.where(cond)
             result = await session.execute(count_stmt)
             total = result.scalar() or 0
 
             data_stmt = select(
-                Response.id,
-                Response.request_id,
-                Response.status_code,
-                Response.url,
-                Response.content_size_original,
-                Response.content_size_compressed,
-                Response.continuation,
-                Response.created_at,
-                Response.compression_dict_id,
-                Response.speculation_outcome,
+                Request.id,
+                Request.response_status_code,
+                Request.response_url,
+                Request.content_size_original,
+                Request.content_size_compressed,
+                Request.continuation,
+                Request.response_created_at,
+                Request.compression_dict_id,
+                Request.speculation_outcome,
             )
             for cond in conditions:
                 data_stmt = data_stmt.where(cond)
             data_stmt = (
-                data_stmt.order_by(Response.id.desc())  # type: ignore[union-attr]
+                data_stmt.order_by(Request.id.desc())  # type: ignore[union-attr]
                 .limit(limit)
                 .offset(offset)
             )
@@ -216,15 +217,14 @@ class ListingMixin:
             items = [
                 ResponseRecord(
                     id=row[0],
-                    request_id=row[1],
-                    status_code=row[2],
-                    url=row[3],
-                    content_size_original=row[4],
-                    content_size_compressed=row[5],
-                    continuation=row[6],
-                    created_at=row[7],
-                    compression_dict_id=row[8],
-                    speculation_outcome=row[9],
+                    status_code=row[1],
+                    url=row[2],
+                    content_size_original=row[3],
+                    content_size_compressed=row[4],
+                    continuation=row[5],
+                    created_at=row[6],
+                    compression_dict_id=row[7],
+                    speculation_outcome=row[8],
                 )
                 for row in rows
             ]
@@ -365,44 +365,45 @@ class ListingMixin:
                 completed_at_ns=row[16],
             )
 
-    async def get_response(self, response_id: int) -> ResponseRecord | None:
-        """Get a single response by ID.
+    async def get_response(self, request_id: int) -> ResponseRecord | None:
+        """Get response data for a request by its ID.
 
         Args:
-            response_id: The database ID of the response.
+            request_id: The database ID of the request.
 
         Returns:
-            ResponseRecord or None if not found.
+            ResponseRecord or None if not found or no response stored.
         """
         async with self._session_factory() as session:
             result = await session.execute(
                 select(
-                    Response.id,
-                    Response.request_id,
-                    Response.status_code,
-                    Response.url,
-                    Response.content_size_original,
-                    Response.content_size_compressed,
-                    Response.continuation,
-                    Response.created_at,
-                    Response.compression_dict_id,
-                    Response.speculation_outcome,
-                ).where(Response.id == response_id)
+                    Request.id,
+                    Request.response_status_code,
+                    Request.response_url,
+                    Request.content_size_original,
+                    Request.content_size_compressed,
+                    Request.continuation,
+                    Request.response_created_at,
+                    Request.compression_dict_id,
+                    Request.speculation_outcome,
+                ).where(
+                    Request.id == request_id,
+                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                )
             )
             row = result.first()
             if row is None:
                 return None
             return ResponseRecord(
                 id=row[0],
-                request_id=row[1],
-                status_code=row[2],
-                url=row[3],
-                content_size_original=row[4],
-                content_size_compressed=row[5],
-                continuation=row[6],
-                created_at=row[7],
-                compression_dict_id=row[8],
-                speculation_outcome=row[9],
+                status_code=row[1],
+                url=row[2],
+                content_size_original=row[3],
+                content_size_compressed=row[4],
+                continuation=row[5],
+                created_at=row[6],
+                compression_dict_id=row[7],
+                speculation_outcome=row[8],
             )
 
     async def get_result(self, result_id: int) -> ResultRecord | None:
@@ -485,20 +486,21 @@ class ListingMixin:
 
     # --- Response Content Access ---
 
-    async def get_response_content(self, response_id: int) -> bytes | None:
-        """Get decompressed response content by response ID.
+    async def get_response_content(self, request_id: int) -> bytes | None:
+        """Get decompressed response content by request ID.
 
         Args:
-            response_id: The database ID of the response.
+            request_id: The database ID of the request.
 
         Returns:
-            Decompressed content bytes, or None if response not found.
+            Decompressed content bytes, or None if request not found
+            or has no response.
         """
         from kent.driver.dev_driver.compression import (
             decompress_response,
         )
 
-        result = await self.get_response_compressed(response_id)  # type: ignore[attr-defined]
+        result = await self.get_response_compressed(request_id)  # type: ignore[attr-defined]
         if result is None:
             return None
 
@@ -511,12 +513,12 @@ class ListingMixin:
         )
 
     async def get_response_content_with_headers(
-        self, response_id: int
+        self, request_id: int
     ) -> tuple[bytes, str | None] | None:
         """Get decompressed response content and headers.
 
         Args:
-            response_id: The database ID of the response.
+            request_id: The database ID of the request.
 
         Returns:
             Tuple of (decompressed_content, headers_json) or None if not found.
@@ -528,10 +530,13 @@ class ListingMixin:
         async with self._session_factory() as session:
             result = await session.execute(
                 select(
-                    Response.content_compressed,
-                    Response.compression_dict_id,
-                    Response.headers_json,
-                ).where(Response.id == response_id)
+                    Request.content_compressed,
+                    Request.compression_dict_id,
+                    Request.response_headers_json,
+                ).where(
+                    Request.id == request_id,
+                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                )
             )
             row = result.first()
 

@@ -220,16 +220,16 @@ class APIMixin:
 
     # --- Response Content Access ---
 
-    async def get_response_content(self, response_id: int) -> bytes | None:
-        """Get decompressed response content by response ID.
+    async def get_response_content(self, request_id: int) -> bytes | None:
+        """Get decompressed response content by request ID.
 
         Args:
-            response_id: The database ID of the response.
+            request_id: The database ID of the request.
 
         Returns:
             Decompressed content bytes, or None if response not found.
         """
-        return await self.db.get_response_content(response_id)
+        return await self.db.get_response_content(request_id)
 
     # --- Statistics ---
 
@@ -250,7 +250,7 @@ class APIMixin:
 
     async def diagnose(
         self,
-        response_id: int,
+        request_id: int,
         speculation_cap: int = 3,  # Deprecated, kept for backwards compatibility
     ) -> DiagnoseResult:
         """Re-run a continuation against a stored response with XPath observation.
@@ -263,51 +263,44 @@ class APIMixin:
         may have changed or XPath queries are incorrect.
 
         Args:
-            response_id: The database ID of the response to diagnose.
+            request_id: The database ID of the request whose response to diagnose.
             speculation_cap: Deprecated, no longer used.
 
         Returns:
             DiagnoseResult with yields, observation tree, and any errors.
 
         Raises:
-            ValueError: If response_id not found.
+            ValueError: If request_id not found or has no response.
         """
         from kent.common.xpath_observer import (
             XPathObserver,
         )
 
-        # Get response and request data
+        # Get response and request data - all in one table now
         from kent.driver.dev_driver.models import Request as RequestModel
-        from kent.driver.dev_driver.models import (
-            Response as ResponseModel,
-        )
 
         async with self.db._session_factory() as session:
             from sqlmodel import select
 
-            stmt = (
-                select(
-                    ResponseModel.status_code,
-                    ResponseModel.url,
-                    ResponseModel.headers_json,
-                    ResponseModel.continuation,
-                    RequestModel.method,
-                    RequestModel.url.label("request_url"),  # type: ignore[attr-defined]
-                    RequestModel.accumulated_data_json,
-                    RequestModel.aux_data_json,
-                    RequestModel.permanent_json,
-                )
-                .join(
-                    RequestModel,
-                    ResponseModel.request_id == RequestModel.id,
-                )
-                .where(ResponseModel.id == response_id)
+            stmt = select(
+                RequestModel.response_status_code,
+                RequestModel.response_url,
+                RequestModel.response_headers_json,
+                RequestModel.continuation,
+                RequestModel.method,
+                RequestModel.url,
+                RequestModel.accumulated_data_json,
+                RequestModel.aux_data_json,
+                RequestModel.permanent_json,
+            ).where(
+                RequestModel.id == request_id,
+                RequestModel.response_status_code.isnot(None),  # type: ignore[union-attr]
             )
             result = await session.execute(stmt)
             row = result.first()
 
         if row is None:
-            raise ValueError(f"Response {response_id} not found")
+            raise ValueError(f"Response for request {request_id} not found")
 
         (
             status_code,
@@ -322,7 +315,7 @@ class APIMixin:
         ) = row
 
         # Decompress content
-        content = await self.get_response_content(response_id)
+        content = await self.get_response_content(request_id)
         if content is None:
             content = b""
 
@@ -384,7 +377,7 @@ class APIMixin:
                 error = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
 
         return DiagnoseResult(
-            response_id=response_id,
+            response_id=request_id,
             continuation=continuation_name,
             yields=yields,
             simple_tree=observer.simple_tree(),
@@ -485,9 +478,9 @@ class APIMixin:
         """Get a single request by ID."""
         return await self.db.get_request(request_id)
 
-    async def get_response(self, response_id: int) -> ResponseRecord | None:
-        """Get a single response by ID."""
-        return await self.db.get_response(response_id)
+    async def get_response(self, request_id: int) -> ResponseRecord | None:
+        """Get a single response by request ID."""
+        return await self.db.get_response(request_id)
 
     async def get_result(self, result_id: int) -> ResultRecord | None:
         """Get a single result by ID."""

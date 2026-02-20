@@ -237,8 +237,9 @@ class TestCompressionStatsByContinuation:
                 COUNT(*) as response_count,
                 COALESCE(SUM(r.content_size_original), 0) as total_original,
                 COALESCE(SUM(r.content_size_compressed), 0) as total_compressed
-            FROM responses r
+            FROM requests r
             LEFT JOIN compression_dicts d ON r.compression_dict_id = d.id
+            WHERE r.response_status_code IS NOT NULL
             GROUP BY r.continuation, r.compression_dict_id
             ORDER BY r.continuation, d.version DESC NULLS LAST
         """
@@ -340,14 +341,18 @@ class TestCompressionStatsByContinuation:
                 orig_size,
                 comp_size,
                 dict_id,
-                cont,
+                _cont,
             ) in responses_data:
                 await session.execute(
                     sa.text("""
-                    INSERT INTO responses (request_id, status_code, url, content_compressed,
-                                           content_size_original, content_size_compressed,
-                                           compression_dict_id, continuation)
-                    VALUES (:req_id, :status, :url, :content, :orig_size, :comp_size, :dict_id, :cont)
+                    UPDATE requests SET
+                        response_status_code = :status,
+                        response_url = :url,
+                        content_compressed = :content,
+                        content_size_original = :orig_size,
+                        content_size_compressed = :comp_size,
+                        compression_dict_id = :dict_id
+                    WHERE id = :req_id
                     """),
                     {
                         "req_id": req_id,
@@ -357,7 +362,6 @@ class TestCompressionStatsByContinuation:
                         "orig_size": orig_size,
                         "comp_size": comp_size,
                         "dict_id": dict_id,
-                        "cont": cont,
                     },
                 )
             await session.commit()
@@ -371,8 +375,9 @@ class TestCompressionStatsByContinuation:
                 COUNT(*) as response_count,
                 COALESCE(SUM(r.content_size_original), 0) as total_original,
                 COALESCE(SUM(r.content_size_compressed), 0) as total_compressed
-            FROM responses r
+            FROM requests r
             LEFT JOIN compression_dicts d ON r.compression_dict_id = d.id
+            WHERE r.response_status_code IS NOT NULL
             GROUP BY r.continuation, r.compression_dict_id
             ORDER BY r.continuation, d.version DESC NULLS LAST
         """

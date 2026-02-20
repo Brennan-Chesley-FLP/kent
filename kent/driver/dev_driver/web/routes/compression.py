@@ -188,16 +188,19 @@ async def train_dictionary(
 
     if dict_size is None or sample_limit is None:
         # Query collection stats for this continuation
-        from kent.driver.dev_driver.models import Response as ResponseModel
+        from kent.driver.dev_driver.models import Request as RequestModel
 
         async with debugger._session_factory() as session:
             result = await session.execute(
                 select(
                     sa.func.count(),
                     sa.func.coalesce(
-                        sa.func.sum(ResponseModel.content_size_original), 0
+                        sa.func.sum(RequestModel.content_size_original), 0
                     ),
-                ).where(ResponseModel.continuation == request.continuation)
+                ).where(
+                    RequestModel.continuation == request.continuation,
+                    RequestModel.response_status_code.isnot(None),  # type: ignore[union-attr]
+                )
             )
             row = result.first()
         response_count = row[0] or 0
@@ -225,7 +228,6 @@ async def train_dictionary(
                 sample_limit = DEFAULT_SAMPLE_LIMIT
 
     try:
-        # Use compression module directly since LDDD doesn't expose dict_size param
         dict_id = await train_compression_dict(
             debugger._session_factory,
             request.continuation,
@@ -286,7 +288,6 @@ async def recompress_responses(
     debugger = await _get_debugger(run_id, manager, read_only=False)
 
     try:
-        # Use compression module directly for proper signature
         count, total_original, total_compressed = await do_recompress(
             debugger._session_factory,
             request.continuation,
@@ -366,7 +367,7 @@ async def get_compression_stats_by_continuation(
         CompressionDict,
     )
     from kent.driver.dev_driver.models import (
-        Response as ResponseModel,
+        Request as RequestModel,
     )
 
     debugger = await _get_debugger(run_id, manager, read_only=True)
@@ -381,27 +382,30 @@ async def get_compression_stats_by_continuation(
         # Query stats grouped by continuation and dictionary
         result = await session.execute(
             select(
-                ResponseModel.continuation,
-                ResponseModel.compression_dict_id,
+                RequestModel.continuation,
+                RequestModel.compression_dict_id,
                 CompressionDict.version,
                 sa.func.count().label("response_count"),
                 sa.func.coalesce(
-                    sa.func.sum(ResponseModel.content_size_original), 0
+                    sa.func.sum(RequestModel.content_size_original), 0
                 ).label("total_original"),
                 sa.func.coalesce(
-                    sa.func.sum(ResponseModel.content_size_compressed), 0
+                    sa.func.sum(RequestModel.content_size_compressed), 0
                 ).label("total_compressed"),
+            )
+            .where(
+                RequestModel.response_status_code.isnot(None),  # type: ignore[union-attr]
             )
             .outerjoin(
                 CompressionDict,
-                ResponseModel.compression_dict_id == CompressionDict.id,
+                RequestModel.compression_dict_id == CompressionDict.id,
             )
             .group_by(
-                ResponseModel.continuation,
-                ResponseModel.compression_dict_id,
+                RequestModel.continuation,
+                RequestModel.compression_dict_id,
             )
             .order_by(
-                ResponseModel.continuation,
+                RequestModel.continuation,
                 CompressionDict.version.desc().nulls_last(),  # type: ignore[attr-defined]
             )
         )

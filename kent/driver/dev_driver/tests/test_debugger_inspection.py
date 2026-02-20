@@ -318,10 +318,10 @@ class TestResponseInspection:
         await engine.dispose()
 
         async with LocalDevDriverDebugger.open(db_path) as debugger:
-            response = await debugger.get_response(1)
+            response = await debugger.get_response(2)
 
             assert response is not None
-            assert response.id == 1
+            assert response.id == 2
             assert response.status_code == 200
 
     async def test_get_response_content(
@@ -332,7 +332,7 @@ class TestResponseInspection:
         await engine.dispose()
 
         async with LocalDevDriverDebugger.open(db_path) as debugger:
-            content = await debugger.get_response_content(1)
+            content = await debugger.get_response_content(2)
 
             assert content is not None
             assert b"Response 1" in content

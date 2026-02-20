@@ -49,7 +49,7 @@ class TestResponseStorage:
             warc_record_id=str(uuid.uuid4()),
         )
 
-        assert response_id > 0
+        assert response_id == request_id
 
         # Verify response was stored
         import sqlalchemy as sa
@@ -57,9 +57,9 @@ class TestResponseStorage:
         async with sql_manager._session_factory() as session:
             result = await session.execute(
                 sa.text(
-                    "SELECT status_code, content_size_original FROM responses WHERE id = :id"
+                    "SELECT response_status_code, content_size_original FROM requests WHERE id = :id"
                 ),
-                {"id": response_id},
+                {"id": request_id},
             )
             row = result.first()
         assert row is not None
@@ -89,7 +89,7 @@ class TestResponseStorage:
         content = b"<html>Test content for retrieval</html>"
         compressed = compress(content)
 
-        response_id = await sql_manager.store_response(
+        await sql_manager.store_response(
             request_id=request_id,
             status_code=200,
             headers_json=None,
@@ -103,7 +103,7 @@ class TestResponseStorage:
         )
 
         # Retrieve content
-        retrieved = await sql_manager.get_response_content(response_id)
+        retrieved = await sql_manager.get_response_content(request_id)
 
         assert retrieved == content
 
@@ -129,7 +129,7 @@ class TestResponseStorage:
             parent_id=None,
         )
 
-        response_id = await sql_manager.store_response(
+        await sql_manager.store_response(
             request_id=request_id,
             status_code=200,
             headers_json=json.dumps(
@@ -145,6 +145,6 @@ class TestResponseStorage:
         )
 
         # Retrieve content
-        retrieved = await sql_manager.get_response_content(response_id)
+        retrieved = await sql_manager.get_response_content(request_id)
 
         assert retrieved == b""

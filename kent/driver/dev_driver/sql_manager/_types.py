@@ -202,14 +202,13 @@ class RequestRecord:
 
 @dataclass
 class ResponseRecord:
-    """Response record from database.
+    """Response projection from the requests table.
 
-    Represents a row from the responses table with essential fields
-    for display. Does not include compressed content.
+    Represents the response-related fields of a request row.
+    Does not include compressed content.
     """
 
     id: int
-    request_id: int
     status_code: int
     url: str
     content_size_original: int | None
@@ -232,7 +231,6 @@ class ResponseRecord:
         """Convert to dictionary for JSON serialization."""
         return {
             "id": self.id,
-            "request_id": self.request_id,
             "status_code": self.status_code,
             "url": self.url,
             "content_size_original": self.content_size_original,

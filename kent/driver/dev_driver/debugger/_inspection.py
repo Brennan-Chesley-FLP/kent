@@ -126,27 +126,27 @@ class InspectionMixin:
             continuation=continuation, limit=limit, offset=offset
         )
 
-    async def get_response(self, response_id: int) -> ResponseRecord | None:
-        """Get a single response by ID.
+    async def get_response(self, request_id: int) -> ResponseRecord | None:
+        """Get a single response by request ID.
 
         Args:
-            response_id: The response ID.
+            request_id: The request ID.
 
         Returns:
             ResponseRecord if found, None otherwise.
         """
-        return await self.sql.get_response(response_id)
+        return await self.sql.get_response(request_id)
 
-    async def get_response_content(self, response_id: int) -> bytes | None:
+    async def get_response_content(self, request_id: int) -> bytes | None:
         """Get decompressed response content.
 
         Args:
-            response_id: The response ID.
+            request_id: The request ID.
 
         Returns:
             Decompressed response content bytes, or None if not found.
         """
-        return await self.sql.get_response_content(response_id)
+        return await self.sql.get_response_content(request_id)
 
     # =========================================================================
     # Incidental Request Inspection

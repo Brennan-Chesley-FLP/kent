@@ -138,7 +138,7 @@ def responses_list(
     default=None,
     help="Path to the database file",
 )
-@click.argument("response_id", type=int)
+@click.argument("request_id", type=int)
 @click.option(
     "--format",
     "format_type",
@@ -148,7 +148,7 @@ def responses_list(
 )
 @click.pass_context
 def responses_show(
-    ctx: click.Context, db_path: str | None, response_id: int, format_type: str
+    ctx: click.Context, db_path: str | None, request_id: int, format_type: str
 ) -> None:
     """Show detailed response information.
 
@@ -161,15 +161,16 @@ def responses_show(
 
     async def run() -> None:
         async with LocalDevDriverDebugger.open(db_path) as debugger:
-            response = await debugger.get_response(response_id)
+            response = await debugger.get_response(request_id)
 
             if response is None:
-                click.echo(f"Response {response_id} not found", err=True)
+                click.echo(
+                    f"Response for request {request_id} not found", err=True
+                )
                 sys.exit(1)
 
             if format_type == "table":
                 click.echo(f"ID: {response.id}")
-                click.echo(f"Request ID: {response.request_id}")
                 click.echo(f"Status Code: {response.status_code}")
                 click.echo(f"URL: {response.url}")
                 click.echo(f"Continuation: {response.continuation}")
@@ -184,7 +185,6 @@ def responses_show(
             else:
                 output = {
                     "id": response.id,
-                    "request_id": response.request_id,
                     "status_code": response.status_code,
                     "url": response.url,
                     "continuation": response.continuation,
@@ -206,13 +206,13 @@ def responses_show(
     default=None,
     help="Path to the database file",
 )
-@click.argument("response_id", type=int)
+@click.argument("request_id", type=int)
 @click.option("--output", "-o", help="Output file path (default: stdout)")
 @click.pass_context
 def responses_content(
     ctx: click.Context,
     db_path: str | None,
-    response_id: int,
+    request_id: int,
     output: str | None,
 ) -> None:
     """Get decompressed response content.
@@ -227,10 +227,12 @@ def responses_content(
 
     async def run() -> None:
         async with LocalDevDriverDebugger.open(db_path) as debugger:
-            content = await debugger.get_response_content(response_id)
+            content = await debugger.get_response_content(request_id)
 
             if content is None:
-                click.echo(f"Response {response_id} not found", err=True)
+                click.echo(
+                    f"Response for request {request_id} not found", err=True
+                )
                 sys.exit(1)
 
             if output:
@@ -314,10 +316,7 @@ def responses_search(
                     if matches:
                         click.echo(f"Found {len(matches)} matching responses:")
                         for match in matches:
-                            click.echo(
-                                f"  response_id={match['response_id']}, "
-                                f"request_id={match['request_id']}"
-                            )
+                            click.echo(f"  request_id={match['request_id']}")
                     else:
                         click.echo("No matching responses found")
                 elif format_type == "json":

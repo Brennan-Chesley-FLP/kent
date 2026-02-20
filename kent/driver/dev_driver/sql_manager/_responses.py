@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from kent.driver.dev_driver.models import (
@@ -12,7 +12,6 @@ from kent.driver.dev_driver.models import (
     CompressionDict,
     IncidentalRequest,
     Request,
-    Response,
 )
 
 if TYPE_CHECKING:
@@ -41,42 +40,45 @@ class ResponseStorageMixin:
         warc_record_id: str,
         speculation_outcome: str | None = None,
     ) -> int:
-        """Store an HTTP response in the database.
+        """Store an HTTP response by updating the request row.
 
         Args:
-            request_id: The database ID of the associated request.
+            request_id: The database ID of the request to update.
             status_code: HTTP status code.
-            headers_json: JSON-encoded headers.
+            headers_json: JSON-encoded response headers.
             url: Final URL after redirects.
             compressed_content: Compressed content bytes.
             content_size_original: Original content size.
             content_size_compressed: Compressed content size.
             dict_id: Compression dictionary ID if used.
-            continuation: Continuation method name.
+            continuation: Continuation method name (unused, kept for API compat).
             warc_record_id: UUID for WARC export.
             speculation_outcome: For speculative requests: 'success', 'stopped', 'skipped'.
 
         Returns:
-            The database ID of the stored response.
+            The request_id (same as input).
         """
+        from sqlalchemy import func
+
         async with self._lock, self._session_factory() as session:
-            resp = Response(
-                request_id=request_id,
-                status_code=status_code,
-                headers_json=headers_json,
-                url=url,
-                content_compressed=compressed_content,
-                content_size_original=content_size_original,
-                content_size_compressed=content_size_compressed,
-                compression_dict_id=dict_id,
-                continuation=continuation,
-                warc_record_id=warc_record_id,
-                speculation_outcome=speculation_outcome,
+            await session.execute(
+                update(Request)
+                .where(Request.id == request_id)
+                .values(
+                    response_status_code=status_code,
+                    response_headers_json=headers_json,
+                    response_url=url,
+                    content_compressed=compressed_content,
+                    content_size_original=content_size_original,
+                    content_size_compressed=content_size_compressed,
+                    compression_dict_id=dict_id,
+                    warc_record_id=warc_record_id,
+                    speculation_outcome=speculation_outcome,
+                    response_created_at=func.current_timestamp(),
+                )
             )
-            session.add(resp)
             await session.commit()
-            await session.refresh(resp)
-            return resp.id  # type: ignore[return-value]
+            return request_id
 
     async def store_archived_file(
         self,
@@ -268,12 +270,12 @@ class ResponseStorageMixin:
             }
 
     async def get_response_compressed(
-        self, response_id: int
+        self, request_id: int
     ) -> tuple[bytes | None, int | None] | None:
-        """Get compressed response content and dict ID.
+        """Get compressed response content and dict ID for a request.
 
         Args:
-            response_id: The database ID of the response.
+            request_id: The database ID of the request.
 
         Returns:
             Tuple of (compressed_content, dict_id) or None if not found.
@@ -281,9 +283,9 @@ class ResponseStorageMixin:
         async with self._session_factory() as session:
             result = await session.execute(
                 select(
-                    Response.content_compressed,
-                    Response.compression_dict_id,
-                ).where(Response.id == response_id)
+                    Request.content_compressed,
+                    Request.compression_dict_id,
+                ).where(Request.id == request_id)
             )
             row = result.first()
             return tuple(row) if row else None  # type: ignore[return-value]
@@ -305,23 +307,21 @@ class ResponseStorageMixin:
         async with self._session_factory() as session:
             result = await session.execute(
                 select(
-                    Response.id,
-                    Response.request_id,
-                    Response.status_code,
-                    Response.headers_json,
-                    Response.url,
-                    Response.content_compressed,
-                    Response.compression_dict_id,
-                    Response.created_at,
+                    Request.id,
+                    Request.response_status_code,
+                    Request.response_headers_json,
+                    Request.response_url,
+                    Request.content_compressed,
+                    Request.compression_dict_id,
+                    Request.response_created_at,
                     Request.method,
                 )
-                .join(Request, Response.request_id == Request.id)
                 .where(
                     Request.cache_key == cache_key,
-                    Response.status_code >= 200,
-                    Response.status_code < 300,
+                    Request.response_status_code >= 200,  # type: ignore[operator]
+                    Request.response_status_code < 300,  # type: ignore[operator]
                 )
-                .order_by(Response.id.desc())  # type: ignore[union-attr]
+                .order_by(Request.id.desc())  # type: ignore[union-attr]
                 .limit(1)
             )
             row = result.first()
@@ -329,14 +329,14 @@ class ResponseStorageMixin:
                 return None
             return {
                 "id": row[0],
-                "request_id": row[1],
-                "status_code": row[2],
-                "headers_json": row[3],
-                "url": row[4],
-                "content_compressed": row[5],
-                "compression_dict_id": row[6],
-                "created_at": row[7],
-                "method": row[8],
+                "request_id": row[0],
+                "status_code": row[1],
+                "headers_json": row[2],
+                "url": row[3],
+                "content_compressed": row[4],
+                "compression_dict_id": row[5],
+                "created_at": row[6],
+                "method": row[7],
             }
 
     async def get_compression_dict(self, dict_id: int) -> bytes | None:

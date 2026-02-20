@@ -20,7 +20,6 @@ from warcio.warcwriter import WARCWriter
 from kent.driver.dev_driver.models import (
     IncidentalRequest,
     Request,
-    Response,
 )
 
 if TYPE_CHECKING:
@@ -62,24 +61,25 @@ async def export_warc(
     # Create parent directory if needed
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Build query - join responses with requests
+    # Build query - all data is now in the requests table
     stmt = (
         select(
-            Response.id,
-            Response.status_code,
-            Response.headers_json,
-            Response.url,
-            Response.content_compressed,
-            Response.compression_dict_id,
-            Response.warc_record_id,
+            Request.id,
+            Request.response_status_code,
+            Request.response_headers_json,
+            Request.response_url,
+            Request.content_compressed,
+            Request.compression_dict_id,
+            Request.warc_record_id,
             Request.method,
-            Request.url.label("request_url"),  # type: ignore[attr-defined]
-            Request.headers_json.label("request_headers_json"),  # type: ignore[union-attr]
+            Request.url,
+            Request.headers_json,
             Request.body,
-            Request.id.label("request_id"),  # type: ignore[union-attr]
         )
-        .join(Request, Response.request_id == Request.id)
-        .order_by(Response.id)
+        .where(
+            Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+        )
+        .order_by(Request.id)
     )
 
     if continuation:
@@ -99,9 +99,9 @@ async def export_warc(
 
         for row in rows:
             (
-                response_id,
+                request_id,
                 status_code,
-                headers_json,
+                response_headers_json,
                 response_url,
                 content_compressed,
                 compression_dict_id,
@@ -110,7 +110,6 @@ async def export_warc(
                 request_url,
                 request_headers_json,
                 request_body,
-                request_id,
             ) = row
 
             # Decompress content
@@ -123,7 +122,7 @@ async def export_warc(
                     )
                 except Exception as e:
                     logger.warning(
-                        f"Failed to decompress response {response_id}: {e}"
+                        f"Failed to decompress response for request {request_id}: {e}"
                     )
                     continue
             else:
@@ -131,8 +130,8 @@ async def export_warc(
 
             # Parse response headers
             response_headers = []
-            if headers_json:
-                headers_dict = json.loads(headers_json)
+            if response_headers_json:
+                headers_dict = json.loads(response_headers_json)
                 response_headers = list(headers_dict.items())
 
             # Build HTTP response headers
@@ -182,7 +181,9 @@ async def export_warc(
             writer.write_record(request_record)
 
             count += 1
-            logger.debug(f"Exported response {response_id} ({response_url})")
+            logger.debug(
+                f"Exported response for request {request_id} ({response_url})"
+            )
 
             # Export incidental requests associated with this parent request
             async with session_factory() as session:
@@ -307,24 +308,26 @@ async def export_warc_for_continuation(
     # Create parent directory if needed
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Query responses for specific continuation
+    # Query responses for specific continuation - all in requests table
     stmt = (
         select(
-            Response.id,
-            Response.status_code,
-            Response.headers_json,
-            Response.url,
-            Response.content_compressed,
-            Response.compression_dict_id,
-            Response.warc_record_id,
+            Request.id,
+            Request.response_status_code,
+            Request.response_headers_json,
+            Request.response_url,
+            Request.content_compressed,
+            Request.compression_dict_id,
+            Request.warc_record_id,
             Request.method,
-            Request.url.label("request_url"),  # type: ignore[attr-defined]
-            Request.headers_json.label("request_headers_json"),  # type: ignore[union-attr]
+            Request.url,
+            Request.headers_json,
             Request.body,
         )
-        .join(Request, Response.request_id == Request.id)
-        .where(Request.continuation == continuation)
-        .order_by(Response.id)
+        .where(
+            Request.continuation == continuation,
+            Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+        )
+        .order_by(Request.id)
     )
 
     async with session_factory() as session:
@@ -341,9 +344,9 @@ async def export_warc_for_continuation(
 
         for row in rows:
             (
-                response_id,
+                request_id,
                 status_code,
-                headers_json,
+                response_headers_json,
                 response_url,
                 content_compressed,
                 compression_dict_id,
@@ -364,7 +367,7 @@ async def export_warc_for_continuation(
                     )
                 except Exception as e:
                     logger.warning(
-                        f"Failed to decompress response {response_id}: {e}"
+                        f"Failed to decompress response for request {request_id}: {e}"
                     )
                     continue
             else:
@@ -372,8 +375,8 @@ async def export_warc_for_continuation(
 
             # Parse response headers
             response_headers = []
-            if headers_json:
-                headers_dict = json.loads(headers_json)
+            if response_headers_json:
+                headers_dict = json.loads(response_headers_json)
                 response_headers = list(headers_dict.items())
 
             # Build HTTP response headers

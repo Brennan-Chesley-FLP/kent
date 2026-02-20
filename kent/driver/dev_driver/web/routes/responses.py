@@ -35,7 +35,6 @@ class ResponseResponse(BaseModel):
     """Response model for a single HTTP response record."""
 
     id: int
-    request_id: int
     status_code: int
     url: str
     content_size_original: int | None
@@ -151,7 +150,7 @@ class OutputYield(BaseModel):
 class ResponseOutputResponse(BaseModel):
     """Response model for /output endpoint - continuation analysis."""
 
-    response_id: int
+    request_id: int
     continuation: str
     is_html: bool
     selectors: list[SelectorInfo]
@@ -173,15 +172,17 @@ async def get_speculation_summary(
     - skipped: Deduplicated speculative requests
     - non_speculative: Regular (non-speculative) requests
     """
-    from kent.driver.dev_driver.models import Response as ResponseModel
+    from kent.driver.dev_driver.models import Request as RequestModel
 
     debugger = await _get_debugger(run_id, manager, read_only=True)
 
     async with debugger._session_factory() as session:
         result = await session.execute(
-            select(
-                ResponseModel.speculation_outcome, sa.func.count()
-            ).group_by(ResponseModel.speculation_outcome)
+            select(RequestModel.speculation_outcome, sa.func.count())
+            .where(
+                RequestModel.response_status_code.isnot(None),  # type: ignore[union-attr]
+            )
+            .group_by(RequestModel.speculation_outcome)
         )
         rows = result.all()
 
@@ -230,7 +231,6 @@ async def list_responses(
     """
     debugger = await _get_debugger(run_id, manager, read_only=True)
 
-    # Use SQLManager's list_responses via debugger.sql (not yet in LDDD)
     page = await debugger.sql.list_responses(
         continuation=continuation,
         request_id=request_id,
@@ -242,7 +242,6 @@ async def list_responses(
     items = [
         ResponseResponse(
             id=r.id,
-            request_id=r.request_id,
             status_code=r.status_code,
             url=r.url,
             content_size_original=r.content_size_original,
@@ -265,17 +264,17 @@ async def list_responses(
     )
 
 
-@router.get("/{response_id}", response_model=ResponseResponse)
+@router.get("/{request_id}", response_model=ResponseResponse)
 async def get_response(
     run_id: str,
-    response_id: int,
+    request_id: int,
     manager: Annotated[RunManager, Depends(get_run_manager)],
 ) -> ResponseResponse:
-    """Get details for a specific response.
+    """Get details for a specific response by request ID.
 
     Args:
         run_id: The run identifier.
-        response_id: The response ID.
+        request_id: The request ID.
 
     Returns:
         Response details (excluding content).
@@ -285,17 +284,16 @@ async def get_response(
     """
     debugger = await _get_debugger(run_id, manager, read_only=True)
 
-    record = await debugger.get_response(response_id)
+    record = await debugger.get_response(request_id)
 
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response {response_id} not found in run '{run_id}'",
+            detail=f"Response for request {request_id} not found in run '{run_id}'",
         )
 
     return ResponseResponse(
         id=record.id,
-        request_id=record.request_id,
         status_code=record.status_code,
         url=record.url,
         content_size_original=record.content_size_original,
@@ -308,10 +306,10 @@ async def get_response(
     )
 
 
-@router.post("/{response_id}/requeue", response_model=RequeueResponse)
+@router.post("/{request_id}/requeue", response_model=RequeueResponse)
 async def requeue_response(
     run_id: str,
-    response_id: int,
+    request_id: int,
     manager: Annotated[RunManager, Depends(get_run_manager)],
     clear_responses: bool = Query(
         False, description="Clear responses to force re-fetch"
@@ -330,7 +328,7 @@ async def requeue_response(
 
     Args:
         run_id: The run identifier.
-        response_id: The response ID.
+        request_id: The request ID.
         clear_responses: If True, delete responses to force re-fetch.
         clear_downstream: If True, recursively delete downstream artifacts.
         dry_run: If True, report what would happen without making changes.
@@ -344,16 +342,15 @@ async def requeue_response(
     debugger = await _get_debugger(run_id, manager, read_only=False)
 
     # Verify response exists
-    record = await debugger.get_response(response_id)
+    record = await debugger.get_response(request_id)
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response {response_id} not found in run '{run_id}'",
+            detail=f"Response for request {request_id} not found in run '{run_id}'",
         )
 
-    # Use SQLManager's requeue_response method (via debugger.sql)
     result = await debugger.sql.requeue_response(
-        response_id,
+        request_id,
         clear_responses=clear_responses,
         clear_downstream=clear_downstream,
         dry_run=dry_run,
@@ -362,7 +359,7 @@ async def requeue_response(
     new_request_id = (
         result.requeued_request_ids[0] if result.requeued_request_ids else None
     )
-    message = f"Requeued response {response_id}"
+    message = f"Requeued request {request_id}"
     if new_request_id:
         message += f" as request {new_request_id}"
     if dry_run:
@@ -380,17 +377,17 @@ async def requeue_response(
     )
 
 
-@router.get("/{response_id}/content")
+@router.get("/{request_id}/content")
 async def get_response_content(
     run_id: str,
-    response_id: int,
+    request_id: int,
     manager: Annotated[RunManager, Depends(get_run_manager)],
 ) -> Response:
     """Get decompressed content for a response.
 
     Args:
         run_id: The run identifier.
-        response_id: The response ID.
+        request_id: The request ID.
 
     Returns:
         Decompressed content as raw bytes.
@@ -402,9 +399,8 @@ async def get_response_content(
     debugger = await _get_debugger(run_id, manager, read_only=True)
 
     try:
-        # Use SQLManager's get_response_content_with_headers (via debugger.sql)
         result = await debugger.sql.get_response_content_with_headers(
-            response_id
+            request_id
         )
     except Exception as e:
         raise HTTPException(
@@ -415,7 +411,7 @@ async def get_response_content(
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response {response_id} not found in run '{run_id}'",
+            detail=f"Response for request {request_id} not found in run '{run_id}'",
         )
 
     content, headers_json = result
@@ -423,7 +419,7 @@ async def get_response_content(
     if not content:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response {response_id} has no content",
+            detail=f"Response for request {request_id} has no content",
         )
 
     # Try to get content-type from headers
@@ -654,10 +650,10 @@ async def _resolve_scraper(run_id: str, manager: RunManager):
     return scraper
 
 
-@router.get("/{response_id}/output", response_model=ResponseOutputResponse)
+@router.get("/{request_id}/output", response_model=ResponseOutputResponse)
 async def get_response_output(
     run_id: str,
-    response_id: int,
+    request_id: int,
     manager: Annotated[RunManager, Depends(get_run_manager)],
 ) -> ResponseOutputResponse:
     """Analyze a response by re-running its continuation with XPath observation.
@@ -671,7 +667,7 @@ async def get_response_output(
 
     Args:
         run_id: The run identifier.
-        response_id: The database ID of the response to analyze.
+        request_id: The request ID of the response to analyze.
 
     Returns:
         Analysis results including selectors, yields, and any errors.
@@ -695,29 +691,25 @@ async def get_response_output(
     # Resolve the scraper instance: prefer loaded driver, fall back to registry
     scraper = await _resolve_scraper(run_id, manager)
 
-    # Get response and request data
+    # Get response and request data - all in one table now
     from kent.driver.dev_driver.models import (
         Request as RequestModel,
     )
-    from kent.driver.dev_driver.models import (
-        Response as ResponseModel,
-    )
 
     async with debugger._session_factory() as session:
-        stmt = (
-            select(
-                ResponseModel.status_code,
-                ResponseModel.url,
-                ResponseModel.headers_json,
-                ResponseModel.continuation,
-                RequestModel.method,
-                RequestModel.url.label("request_url"),  # type: ignore[attr-defined]
-                RequestModel.accumulated_data_json,
-                RequestModel.aux_data_json,
-                RequestModel.permanent_json,
-            )
-            .join(RequestModel, ResponseModel.request_id == RequestModel.id)
-            .where(ResponseModel.id == response_id)
+        stmt = select(
+            RequestModel.response_status_code,
+            RequestModel.response_url,
+            RequestModel.response_headers_json,
+            RequestModel.continuation,
+            RequestModel.method,
+            RequestModel.url,
+            RequestModel.accumulated_data_json,
+            RequestModel.aux_data_json,
+            RequestModel.permanent_json,
+        ).where(
+            RequestModel.id == request_id,
+            RequestModel.response_status_code.isnot(None),  # type: ignore[union-attr]
         )
         result = await session.execute(stmt)
         row = result.first()
@@ -725,7 +717,7 @@ async def get_response_output(
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response {response_id} not found",
+            detail=f"Response for request {request_id} not found",
         )
 
     (
@@ -741,7 +733,7 @@ async def get_response_output(
     ) = row
 
     # Decompress content
-    content = await debugger.get_response_content(response_id)
+    content = await debugger.get_response_content(request_id)
     if content is None:
         content = b""
 
@@ -814,7 +806,7 @@ async def get_response_output(
         selectors = [_selector_query_to_info(q) for q in observer.json()]
 
     return ResponseOutputResponse(
-        response_id=response_id,
+        request_id=request_id,
         continuation=continuation_name,
         is_html=is_html,
         selectors=selectors,
@@ -824,10 +816,10 @@ async def get_response_output(
     )
 
 
-@router.get("/{response_id}/annotated")
+@router.get("/{request_id}/annotated")
 async def get_annotated_response(
     run_id: str,
-    response_id: int,
+    request_id: int,
     manager: Annotated[RunManager, Depends(get_run_manager)],
 ) -> Response:
     """Get HTML response with injected debug palette.
@@ -841,7 +833,7 @@ async def get_annotated_response(
 
     Args:
         run_id: The run identifier.
-        response_id: The response ID.
+        request_id: The request ID.
 
     Returns:
         HTML with injected debug palette, or redirect for non-HTML.
@@ -852,9 +844,8 @@ async def get_annotated_response(
     debugger = await _get_debugger(run_id, manager, read_only=True)
 
     try:
-        # Use SQLManager's get_response_content_with_headers (via debugger.sql)
         result = await debugger.sql.get_response_content_with_headers(
-            response_id
+            request_id
         )
     except Exception as e:
         raise HTTPException(
@@ -865,7 +856,7 @@ async def get_annotated_response(
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response {response_id} not found in run '{run_id}'",
+            detail=f"Response for request {request_id} not found in run '{run_id}'",
         )
 
     content, headers_json = result
@@ -873,7 +864,7 @@ async def get_annotated_response(
     if not content:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response {response_id} has no content",
+            detail=f"Response for request {request_id} has no content",
         )
 
     # Check if HTML
@@ -881,7 +872,7 @@ async def get_annotated_response(
     if not _is_html_content_type(content_type):
         # Redirect to raw content for non-HTML
         return RedirectResponse(
-            url=f"/api/runs/{run_id}/responses/{response_id}/content",
+            url=f"/api/runs/{run_id}/responses/{request_id}/content",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -892,7 +883,7 @@ async def get_annotated_response(
         html = content.decode("utf-8", errors="replace")
 
     # Inject debug palette
-    output_url = f"/api/runs/{run_id}/responses/{response_id}/output"
+    output_url = f"/api/runs/{run_id}/responses/{request_id}/output"
     injected_html = _inject_debug_palette(html, output_url)
 
     return Response(content=injected_html, media_type="text/html")

@@ -115,14 +115,18 @@ class TestStatistics:
                 """)
             )
 
-            # Create responses
+            # Store response data on request row
             await session.execute(
                 sa.text("""
-                INSERT INTO responses (request_id, status_code, url, content_compressed,
-                                       content_size_original, content_size_compressed,
-                                       compression_dict_id, continuation, warc_record_id)
-                VALUES
-                (1, 200, 'https://example.com', x'1234', 1000, 100, NULL, 'parse', 'uuid1')
+                UPDATE requests SET
+                    response_status_code = 200,
+                    response_url = 'https://example.com',
+                    content_compressed = x'1234',
+                    content_size_original = 1000,
+                    content_size_compressed = 100,
+                    compression_dict_id = NULL,
+                    warc_record_id = 'uuid1'
+                WHERE id = 1
                 """)
             )
             await session.commit()
@@ -194,11 +198,15 @@ class TestWarcExport:
 
             await session.execute(
                 sa.text("""
-                INSERT INTO responses (request_id, status_code, headers_json, url,
-                                       content_compressed, content_size_original,
-                                       content_size_compressed, continuation, warc_record_id)
-                VALUES (1, 200, '{"Content-Type": "text/html"}', 'https://example.com/page1',
-                        :compressed, :original_size, :compressed_size, 'parse', 'uuid-1')
+                UPDATE requests SET
+                    response_status_code = 200,
+                    response_headers_json = '{"Content-Type": "text/html"}',
+                    response_url = 'https://example.com/page1',
+                    content_compressed = :compressed,
+                    content_size_original = :original_size,
+                    content_size_compressed = :compressed_size,
+                    warc_record_id = 'uuid-1'
+                WHERE id = 1
                 """),
                 {
                     "compressed": compressed,
@@ -275,14 +283,20 @@ class TestDictionaryTraining:
                 ).replace(b"{day:02d}", f"{(i % 28) + 1:02d}".encode())
                 compressed = compress(content)
 
-                await session.execute(
+                # Insert a new request row and set response data on it
+                result = await session.execute(
                     sa.text("""
-                    INSERT INTO responses (request_id, status_code, url, content_compressed,
-                                           content_size_original, content_size_compressed,
-                                           compression_dict_id, continuation, warc_record_id)
-                    VALUES (1, 200, :url, :compressed, :original_size, :compressed_size, NULL, 'parse', :warc_id)
+                    INSERT INTO requests (status, priority, queue_counter, method, url,
+                                          continuation, current_location,
+                                          response_status_code, response_url,
+                                          content_compressed, content_size_original,
+                                          content_size_compressed, compression_dict_id,
+                                          warc_record_id)
+                    VALUES ('completed', 9, :qc, 'GET', :url, 'parse', '',
+                            200, :url, :compressed, :original_size, :compressed_size, NULL, :warc_id)
                     """),
                     {
+                        "qc": i + 10,
                         "url": f"https://example.com/case/{i}",
                         "compressed": compressed,
                         "original_size": len(content),
@@ -356,14 +370,19 @@ class TestDictionaryTraining:
                 original_sizes.append(len(content))
                 original_compressed_sizes.append(len(compressed))
 
-                await session.execute(
+                result = await session.execute(
                     sa.text("""
-                    INSERT INTO responses (request_id, status_code, url, content_compressed,
-                                           content_size_original, content_size_compressed,
-                                           compression_dict_id, continuation, warc_record_id)
-                    VALUES (1, 200, :url, :compressed, :original_size, :compressed_size, NULL, 'parse', :warc_id)
+                    INSERT INTO requests (status, priority, queue_counter, method, url,
+                                          continuation, current_location,
+                                          response_status_code, response_url,
+                                          content_compressed, content_size_original,
+                                          content_size_compressed, compression_dict_id,
+                                          warc_record_id)
+                    VALUES ('completed', 9, :qc, 'GET', :url, 'parse', '',
+                            200, :url, :compressed, :original_size, :compressed_size, NULL, :warc_id)
                     """),
                     {
+                        "qc": i + 10,
                         "url": f"https://example.com/opinion/{i}",
                         "compressed": compressed,
                         "original_size": len(content),
@@ -396,7 +415,7 @@ class TestDictionaryTraining:
         async with session_factory() as session:
             result = await session.execute(
                 sa.text(
-                    "SELECT compression_dict_id FROM responses WHERE compression_dict_id IS NOT NULL"
+                    "SELECT compression_dict_id FROM requests WHERE compression_dict_id IS NOT NULL"
                 )
             )
             rows = result.all()
@@ -483,7 +502,7 @@ class TestCompressionRoundTrip:
             async with driver.db._session_factory() as session:
                 result = await session.execute(
                     sa.text(
-                        "SELECT id, content_size_original, content_size_compressed FROM responses LIMIT 1"
+                        "SELECT id, content_size_original, content_size_compressed FROM requests WHERE response_status_code IS NOT NULL LIMIT 1"
                     )
                 )
                 row = result.first()

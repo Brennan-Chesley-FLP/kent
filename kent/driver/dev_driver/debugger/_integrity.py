@@ -12,7 +12,6 @@ from sqlmodel import select
 from kent.driver.dev_driver.models import (
     Estimate,
     Request,
-    Response,
     Result,
 )
 
@@ -39,15 +38,19 @@ class IntegrityMixin:
             # Orphaned requests: completed requests with no response
             orphaned_req_stmt = (
                 select(Request.id)
-                .outerjoin(Response, Request.id == Response.request_id)
-                .where(Request.status == "completed", Response.id.is_(None))  # type: ignore[union-attr]
+                .where(
+                    Request.status == "completed",
+                    Request.response_status_code.is_(None),  # type: ignore[union-attr]
+                )
                 .order_by(Request.id)
             )
             orphaned_req_count_stmt = (
                 select(sa.func.count())
                 .select_from(Request)
-                .outerjoin(Response, Request.id == Response.request_id)
-                .where(Request.status == "completed", Response.id.is_(None))  # type: ignore[union-attr]
+                .where(
+                    Request.status == "completed",
+                    Request.response_status_code.is_(None),  # type: ignore[union-attr]
+                )
             )
 
             count_result = await session.execute(orphaned_req_count_stmt)
@@ -56,29 +59,12 @@ class IntegrityMixin:
             ids_result = await session.execute(orphaned_req_stmt)
             orphaned_request_ids = [row[0] for row in ids_result.all()]
 
-            # Orphaned responses: responses with no matching request
-            orphaned_resp_stmt = (
-                select(Response.id)
-                .outerjoin(Request, Response.request_id == Request.id)
-                .where(Request.id.is_(None))  # type: ignore[union-attr]
-                .order_by(Response.id)
-            )
-            orphaned_resp_count_stmt = (
-                select(sa.func.count())
-                .select_from(Response)
-                .outerjoin(Request, Response.request_id == Request.id)
-                .where(Request.id.is_(None))  # type: ignore[union-attr]
-            )
+            # Orphaned responses: impossible in the merged model since
+            # response columns live on the Request row.
+            orphaned_responses_count = 0
+            orphaned_response_ids: list[int] = []
 
-            count_result = await session.execute(orphaned_resp_count_stmt)
-            orphaned_responses_count = count_result.scalar() or 0
-
-            ids_result = await session.execute(orphaned_resp_stmt)
-            orphaned_response_ids = [row[0] for row in ids_result.all()]
-
-        has_issues = (
-            orphaned_requests_count > 0 or orphaned_responses_count > 0
-        )
+        has_issues = orphaned_requests_count > 0
 
         return {
             "orphaned_requests": {
@@ -112,8 +98,10 @@ class IntegrityMixin:
                     Request.continuation,
                     Request.completed_at,
                 )
-                .outerjoin(Response, Request.id == Response.request_id)
-                .where(Request.status == "completed", Response.id.is_(None))  # type: ignore[union-attr]
+                .where(
+                    Request.status == "completed",
+                    Request.response_status_code.is_(None),  # type: ignore[union-attr]
+                )
                 .order_by(Request.id)
             )
             orphaned_requests = [
@@ -126,27 +114,9 @@ class IntegrityMixin:
                 for row in orphaned_req_result.all()
             ]
 
-            # Get orphaned response details
-            orphaned_resp_result = await session.execute(
-                select(
-                    Response.id,
-                    Response.request_id,
-                    Response.url,
-                    Response.created_at,
-                )
-                .outerjoin(Request, Response.request_id == Request.id)
-                .where(Request.id.is_(None))  # type: ignore[union-attr]
-                .order_by(Response.id)
-            )
-            orphaned_responses = [
-                {
-                    "id": row[0],
-                    "request_id": row[1],
-                    "url": row[2],
-                    "created_at": row[3],
-                }
-                for row in orphaned_resp_result.all()
-            ]
+            # Orphaned responses: impossible in the merged model since
+            # response columns live on the Request row.
+            orphaned_responses: list[dict[str, Any]] = []
 
         return {
             "orphaned_requests": orphaned_requests,

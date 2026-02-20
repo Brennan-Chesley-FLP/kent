@@ -47,7 +47,6 @@ class TestRecordSerialization:
         """Test ResponseRecord.to_dict() with compression_ratio."""
         record = ResponseRecord(
             id=1,
-            request_id=1,
             status_code=200,
             url="https://example.com",
             content_size_original=1000,
