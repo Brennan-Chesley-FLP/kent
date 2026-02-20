@@ -27,7 +27,7 @@ from kent.common.exceptions import (
 from kent.data_types import BaseRequest, Response
 
 if TYPE_CHECKING:
-    from kent.driver.dev_driver.sql_manager import (
+    from kent.driver.persistent_driver.sql_manager import (
         SQLManager,
     )
 

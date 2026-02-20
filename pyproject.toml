@@ -24,7 +24,7 @@ playwright = [
     "playwright>=1.57.0",
     "pyrate-limiter>=3.9.0",
 ]
-dev-driver = [
+persistent-driver = [
     "aiosqlite>=0.22.1",
     "sqlalchemy[asyncio]>=2.0",
     "alembic>=1.13",
@@ -38,11 +38,11 @@ web = [
 ]
 
 [project.scripts]
-ldd-debug = "kent.driver.dev_driver.cli:main"
+ldd-debug = "kent.driver.persistent_driver.cli:main"
 
 [dependency-groups]
 dev = [
-    "kent[playwright,dev-driver,web]",
+    "kent[playwright,persistent-driver,web]",
     "pytest",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=7.0.0",
@@ -98,7 +98,7 @@ lint.select = [
   # Pyflakes warnings
   "W",
 ]
-lint.per-file-ignores."kent/driver/dev_driver/cli/__init__.py" = [
+lint.per-file-ignores."kent/driver/persistent_driver/cli/__init__.py" = [
   "E402",
   "F401",
 ]

@@ -10,11 +10,11 @@ from tempfile import TemporaryDirectory
 import pytest
 import sqlalchemy as sa
 
-from kent.driver.dev_driver.database import (
+from kent.driver.persistent_driver.database import (
     SCHEMA_VERSION,
     init_database,
 )
-from kent.driver.dev_driver.sql_manager import SQLManager
+from kent.driver.persistent_driver.sql_manager import SQLManager
 
 
 @pytest.mark.asyncio

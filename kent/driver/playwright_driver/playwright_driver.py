@@ -61,16 +61,16 @@ from kent.data_types import (
     WaitForTimeout,
     WaitForURL,
 )
-from kent.driver.dev_driver.compression import (
+from kent.driver.persistent_driver.compression import (
     compress,
 )
-from kent.driver.dev_driver.dev_driver import (
-    LocalDevDriver,
+from kent.driver.persistent_driver.persistent_driver import (
+    PersistentDriver,
 )
-from kent.driver.dev_driver.rate_limiter import (
+from kent.driver.persistent_driver.rate_limiter import (
     AioSQLiteBucket,
 )
-from kent.driver.dev_driver.sql_manager import (
+from kent.driver.persistent_driver.sql_manager import (
     SQLManager,
 )
 
@@ -85,7 +85,7 @@ ScraperReturnDatatype = TypeVar("ScraperReturnDatatype")
 
 
 class PlaywrightDriver(
-    LocalDevDriver[ScraperReturnDatatype], Generic[ScraperReturnDatatype]
+    PersistentDriver[ScraperReturnDatatype], Generic[ScraperReturnDatatype]
 ):
     """Playwright-based driver for JavaScript-heavy court websites.
 
@@ -263,7 +263,7 @@ class PlaywrightDriver(
             }
 
         # Initialize database and SQLManager
-        from kent.driver.dev_driver.database import (
+        from kent.driver.persistent_driver.database import (
             init_database,
         )
 

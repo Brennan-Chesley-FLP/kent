@@ -251,7 +251,7 @@ class TestPlaywrightIntegration:
                 await driver.run(setup_signal_handlers=False)
 
                 # Check browser config in database
-                from kent.driver.dev_driver.sql_manager import (
+                from kent.driver.persistent_driver.sql_manager import (
                     SQLManager,
                 )
 
