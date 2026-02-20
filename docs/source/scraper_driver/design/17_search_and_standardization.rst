@@ -23,9 +23,9 @@ This step introduces:
 
 1. **BaseScraper ClassVars** - Standardized metadata fields for autodoc
 2. **@entry decorator** - Typed entry points replacing the old params system
-4. **initial_seed() interface** - JSON-serializable dispatch for entry invocation
-5. **schema() generation** - JSON Schema from entry point metadata
-6. **Registry builder** - Auto-generates documentation from metadata
+3. **initial_seed() interface** - JSON-serializable dispatch for entry invocation
+4. **schema() generation** - JSON Schema from entry point metadata
+5. **Registry builder** - Auto-generates documentation from metadata
 
 
 BaseScraper Metadata

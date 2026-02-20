@@ -54,7 +54,8 @@ The architecture has two main components:
 4. Handle errors, retries, rate limiting
 5. Manage file archival, deduplication, persistence
 
-.. mermaid::
+.. md-mermaid::
+    :class: align-center
 
     flowchart TB
         subgraph Driver["Driver (Side Effects)"]

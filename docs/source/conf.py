@@ -21,23 +21,28 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "sphinxcontrib.mermaid",
+    "sphinx_immaterial",
 ]
 
 templates_path = ["_templates"]
 exclude_patterns: list[str] = []
 
 # -- Options for HTML output -------------------------------------------------
-html_theme = "alabaster"
-html_static_path = ["_static"]
+html_theme = "sphinx_immaterial"
+html_static_path = []
 
-# Alabaster theme options
+# sphinx-immaterial theme options
 html_theme_options = {
-    "description": "Scraper-driver framework for structured web scraping",
-    "github_user": "freelawproject",
-    "github_repo": "kent",
-    "github_button": True,
-    "github_type": "star",
-    "fixed_sidebar": True,
+    "repo_url": "https://github.com/freelawproject/kent",
+    "repo_name": "freelawproject/kent",
+    "features": [
+        "search.suggest",
+        "search.highlight",
+        "search.share",
+        "navigation.expand",
+        "navigation.top",
+        "toc.follow",
+    ],
 }
 
 # -- Extension configuration -------------------------------------------------
@@ -67,6 +72,7 @@ intersphinx_mapping = {
 
 # RST prolog - substitutions available in all documents
 rst_prolog = """
-.. |check| unicode:: U+2714 .. CHECK MARK
-.. |x| unicode:: U+2718 .. CROSS MARK
+.. |check| unicode:: U+2714
+
+.. |x| unicode:: U+2718
 """

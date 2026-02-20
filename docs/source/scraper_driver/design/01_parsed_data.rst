@@ -1,5 +1,5 @@
- Step 1: Parsing Data - Basic Scraper Function
-=============================================
+Step 1: Parsing Data - Basic Scraper Function
+==============================================
 
 This is the foundation of the scraper-driver architecture. We start with the
 simplest possible implementation: a function that parses HTML and yields data.
