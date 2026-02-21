@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlencode, urlparse, urlunparse
 
 from kent.data_types import (
     BaseRequest,
@@ -145,10 +146,22 @@ class QueueMixin:
         if request.speculation_id is not None:
             speculation_id_json = json.dumps(list(request.speculation_id))
 
+        # Encode query params into the URL if present
+        url = http_request.url
+        if http_request.params:
+            parsed = urlparse(url)
+            if isinstance(http_request.params, bytes):
+                query = http_request.params.decode()
+            else:
+                query = urlencode(http_request.params)
+            if parsed.query:
+                query = parsed.query + "&" + query
+            url = urlunparse(parsed._replace(query=query))
+
         return {
             "request_type": request_type,
             "method": http_request.method.value,
-            "url": http_request.url,
+            "url": url,
             "headers_json": json.dumps(http_request.headers)
             if http_request.headers
             else None,

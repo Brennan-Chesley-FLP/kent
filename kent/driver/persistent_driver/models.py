@@ -351,22 +351,6 @@ class Error(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
 
-class RateBucket(SQLModel, table=True):  # type: ignore[call-arg]
-    """Token bucket state for pyrate_limiter (legacy)."""
-
-    __tablename__ = "rate_bucket"
-    __table_args__ = (
-        sa.CheckConstraint("id = 1", name="rate_bucket_single_row"),
-    )
-
-    id: int | None = Field(default=None, primary_key=True)
-    tokens: float = Field(
-        default=0,
-        sa_column_kwargs={"server_default": sa.text("0")},
-    )
-    last_leak_at: float
-
-
 class RateItem(SQLModel, table=True):  # type: ignore[call-arg]
     """Rate limiting items."""
 

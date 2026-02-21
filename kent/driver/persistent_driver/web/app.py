@@ -196,6 +196,7 @@ class RunManager:
             num_workers = driver_kwargs.get("num_workers", 1)
             max_backoff_time = driver_kwargs.get("max_backoff_time", 3600.0)
             speculation_config = driver_kwargs.pop("speculation_config", None)
+            seed_params = driver_kwargs.pop("seed_params", None)
 
             # Initialize database and SQLManager
             engine, session_factory = await init_database(db_path)
@@ -212,6 +213,7 @@ class RunManager:
                 num_workers=num_workers,
                 max_backoff_time=max_backoff_time,
                 speculation_config=speculation_config,
+                seed_params=seed_params,
             )
 
             # Set up rate-limited request manager

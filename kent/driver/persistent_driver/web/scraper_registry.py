@@ -266,6 +266,19 @@ class ScraperRegistry:
 
         return scraper_class()
 
+    def register_module(self, module_path: str) -> int:
+        """Register scrapers from a specific module path.
+
+        Args:
+            module_path: Full dotted module path
+                (e.g., ``"kent.demo.scraper"``).
+
+        Returns:
+            Number of scrapers discovered in the module.
+        """
+        scrapers = self._scan_module(module_path)
+        return len(scrapers)
+
     def build_seed_from_web_data(
         self,
         full_path: str,
@@ -322,12 +335,17 @@ def get_registry() -> ScraperRegistry:
     return _registry
 
 
-def init_registry(sd_directory: Path | None = None) -> ScraperRegistry:
+def init_registry(
+    sd_directory: Path | None = None,
+    extra_modules: list[str] | None = None,
+) -> ScraperRegistry:
     """Initialize the global scraper registry.
 
     Args:
         sd_directory: Directory to scan for scrapers.
             Defaults to juriscraper/sd relative to this package.
+        extra_modules: Additional module paths to scan for scrapers
+            (e.g., ``["kent.demo.scraper"]``).
 
     Returns:
         The initialized registry.
@@ -348,5 +366,23 @@ def init_registry(sd_directory: Path | None = None) -> ScraperRegistry:
         logger.info(f"Initialized scraper registry with {count} scrapers")
     else:
         logger.warning(f"Scraper directory not found: {sd_directory}")
+
+    # Register extra modules
+    for module_path in extra_modules or []:
+        try:
+            n = _registry.register_module(module_path)
+            logger.info(f"Registered {n} scrapers from {module_path}")
+        except Exception as e:
+            logger.warning(f"Could not register {module_path}: {e}")
+
+    # Auto-discover the demo scraper if the demo extra is installed
+    if not extra_modules or "kent.demo.scraper" not in extra_modules:
+        try:
+            import kent.demo  # noqa: F401
+
+            n = _registry.register_module("kent.demo.scraper")
+            logger.info(f"Registered {n} demo scrapers")
+        except ImportError:
+            pass  # demo extra not installed
 
     return _registry

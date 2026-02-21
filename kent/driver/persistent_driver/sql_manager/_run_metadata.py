@@ -74,7 +74,9 @@ class RunMetadataMixin:
                     json.dumps(browser_config) if browser_config else None
                 ),
                 seed_params_json=(
-                    json.dumps(seed_params) if seed_params else None
+                    json.dumps(seed_params)
+                    if seed_params is not None
+                    else None
                 ),
             )
             session.add(run)

@@ -14,11 +14,10 @@ from __future__ import annotations
 import json
 import logging
 import ssl
-import time
 from typing import TYPE_CHECKING, Any
 
 import zstandard as zstd
-from pyrate_limiter import Limiter, Rate, RateItem
+from pyrate_limiter import Limiter, Rate
 
 from kent.common.request_manager import (
     AsyncRequestManager,
@@ -130,12 +129,7 @@ class RateLimitedRequestManager(AsyncRequestManager):
 
         # Cache miss - acquire rate limiter token if configured
         if self._limiter:
-            item = RateItem(
-                name="request",
-                timestamp=time.time_ns(),
-                weight=1,
-            )
-            await self._limiter.try_acquire_async(item)
+            await self._limiter.try_acquire_async(name="request", weight=1)
 
         # Make the actual request via parent class
         response = await super().resolve_request(request)

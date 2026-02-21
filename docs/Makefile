@@ -22,5 +22,6 @@ help:
 clean:
 	rm -rf $(BUILDDIR)/*
 
+
 livehtml:
-	uv run sphinx-autobuild --host 0.0.0.0 "$(SOURCEDIR)" "$(BUILDDIR)/html" $(SPHINXOPTS) $(O)
+	uv run sphinx-autobuild --port 8001 --host 0.0.0.0 "$(SOURCEDIR)" "$(BUILDDIR)/html" $(SPHINXOPTS) $(O)

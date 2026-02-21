@@ -6,7 +6,7 @@ storage in SQLite.
 
 from __future__ import annotations
 
-import asyncio
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -50,27 +50,47 @@ class AioSQLiteBucket(AbstractBucket):
         """
         self._session_factory = session_factory
         self._rates = rates
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()
 
     @property
     def rates(self) -> list[Rate]:
         """Get the rate limits for this bucket."""
         return self._rates
 
-    def limiter_lock(self) -> asyncio.Lock:
+    def limiter_lock(self) -> threading.Lock:
         """Get the lock for thread-safe operations."""
         return self._lock
 
     async def put(self, item: RateItem) -> bool:
-        """Add a rate item to the bucket.
+        """Add a rate item to the bucket if within rate limits.
+
+        Checks all rate windows before inserting.  Returns False when
+        the item would exceed any configured rate, signalling pyrate_limiter
+        to call ``waiting()`` and delay the request.
 
         Args:
             item: The rate item to add.
 
         Returns:
-            True if item was added successfully.
+            True if item was added, False if a rate limit would be exceeded.
         """
+        if item.weight == 0:
+            return True
+
         async with self._session_factory() as session:
+            for rate in self._rates:
+                window_start = item.timestamp - rate.interval
+                result = await session.execute(
+                    select(
+                        sa.func.coalesce(sa.func.sum(RateItemModel.weight), 0)
+                    ).where(RateItemModel.timestamp >= window_start)
+                )
+                current_count = result.scalar_one()
+                if current_count + item.weight > rate.limit:
+                    self.failing_rate = rate
+                    return False
+
+            self.failing_rate = None
             rate_item = RateItemModel(
                 name=item.name,
                 timestamp=item.timestamp,

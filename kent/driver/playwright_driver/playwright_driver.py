@@ -37,7 +37,7 @@ from playwright.async_api import (
 from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
-from pyrate_limiter import Limiter, RateItem
+from pyrate_limiter import Limiter
 
 from kent.common.decorators import get_step_metadata
 from kent.common.exceptions import (
@@ -309,7 +309,9 @@ class PlaywrightDriver(
                         rate_limiter = None
                         effective_rates = rates or scraper.rate_limits
                         if effective_rates:
-                            bucket = AioSQLiteBucket(db._db, effective_rates)  # type: ignore[attr-defined]
+                            bucket = AioSQLiteBucket(
+                                db._session_factory, effective_rates
+                            )
                             rate_limiter = Limiter(bucket)
 
                         # Create driver instance (no request manager needed for Playwright)
@@ -369,10 +371,9 @@ class PlaywrightDriver(
         try:
             # Acquire rate limiter token before navigation
             if self.rate_limiter:
-                item = RateItem(
-                    name="navigation", timestamp=time.time_ns(), weight=1
+                await self.rate_limiter.try_acquire_async(
+                    name="navigation", weight=1
                 )
-                await self.rate_limiter.try_acquire_async(item)
 
             # Get or create page
             if self._page is None:

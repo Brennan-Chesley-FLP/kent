@@ -1022,6 +1022,7 @@ class BaseRequest:
                 url=self.resolve_url(resolved_location),
                 method=self.request.method,
                 headers=self.request.headers,
+                params=self.request.params,
                 data=self.request.data,
             ),
             resolved_location,

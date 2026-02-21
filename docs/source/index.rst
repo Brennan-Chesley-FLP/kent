@@ -9,6 +9,7 @@ parsing logic from I/O orchestration.
    :caption: Contents:
 
    scraper_driver/index
+   demo/index
 
 
 Indices and tables

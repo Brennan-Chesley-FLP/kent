@@ -33,6 +33,7 @@ html_static_path: list[str] = []
 
 # sphinx-immaterial theme options
 html_theme_options = {
+    "font": False,
     "repo_url": "https://github.com/freelawproject/kent",
     "repo_name": "freelawproject/kent",
     "features": [

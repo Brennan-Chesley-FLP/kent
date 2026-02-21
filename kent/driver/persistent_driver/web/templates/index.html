@@ -216,8 +216,17 @@ function buildSpeculativeForm(scraper) {
         stepDiv.className = 'speculative-step';
         const highestInfo = step.highest_observed ? ` (highest observed: ${step.highest_observed})` : '';
         stepDiv.innerHTML = `
-            <h4>${step.name}${highestInfo}</h4>
-            <div class="form-row">
+            <div class="model-header">
+                <label class="checkbox-label">
+                    <input type="checkbox"
+                           id="speculative-${step.name}-enabled"
+                           name="speculative.${step.name}.enabled"
+                           checked>
+                    <strong>${step.name}</strong>${highestInfo}
+                    <small class="entry-return-type">speculative</small>
+                </label>
+            </div>
+            <div class="form-row" id="speculative-${step.name}-fields">
                 <div class="form-group">
                     <label for="speculative-${step.name}-start">Starting ID</label>
                     <input type="number"
@@ -250,6 +259,14 @@ function buildSpeculativeForm(scraper) {
                 </div>
             </div>
         `;
+
+        // Toggle fields when checkbox changes
+        const checkbox = stepDiv.querySelector(`#speculative-${step.name}-enabled`);
+        const fieldsDiv = stepDiv.querySelector(`#speculative-${step.name}-fields`);
+        checkbox.addEventListener('change', () => {
+            fieldsDiv.style.display = checkbox.checked ? '' : 'none';
+        });
+
         container.appendChild(stepDiv);
     }
 }
@@ -353,9 +370,10 @@ function buildEntrySchemaForm(entrySchema, container, section) {
     const entries = entrySchema.entries;
     const defs = entrySchema.$defs || {};
 
-    // Filter to non-speculative entries with parameters
+    // Filter to non-speculative entries (show even if no parameters,
+    // so users can enable/disable them)
     const paramEntries = Object.entries(entries).filter(([name, entry]) =>
-        !entry.speculative && Object.keys(entry.parameters.properties || {}).length > 0
+        !entry.speculative
     );
 
     if (paramEntries.length === 0) {
@@ -500,25 +518,39 @@ document.getElementById('new-run-form').addEventListener('submit', async (e) => 
     if (usesEntrySchema) {
         body.seed_params = [];
 
-        // Collect entry params from form
+        // Collect entry params from form, unflattening dotted keys
+        // into nested objects (e.g. "date_range.start" -> {date_range: {start: val}})
         const entryParams = {};
         for (const [key, value] of formData.entries()) {
             if (key.startsWith('entry.')) {
                 const parts = key.split('.');
-                // entry.<entryName>.params.<paramName>
+                // entry.<entryName>.params.<paramName>[.<nested>...]
                 const entryName = parts[1];
                 if (parts[2] === 'params' && value) {
                     if (!entryParams[entryName]) entryParams[entryName] = {};
-                    const paramName = parts.slice(3).join('.');
-                    entryParams[entryName][paramName] = value;
+                    const paramParts = parts.slice(3);
+                    let target = entryParams[entryName];
+                    for (let i = 0; i < paramParts.length - 1; i++) {
+                        if (!target[paramParts[i]]) target[paramParts[i]] = {};
+                        target = target[paramParts[i]];
+                    }
+                    target[paramParts[paramParts.length - 1]] = value;
                 }
             }
         }
 
-        // Check which entries are enabled
+        // Check which entries are enabled (non-speculative and speculative)
         const entries = scraperData.entry_schema.entries;
         for (const [entryName, entry] of Object.entries(entries)) {
-            if (entry.speculative) continue; // Speculative entries handled separately
+            if (entry.speculative) {
+                // Include enabled speculative entries in seed_params
+                // so the driver knows which speculative entries to run
+                const specCheckbox = document.getElementById(`speculative-${entryName}-enabled`);
+                if (specCheckbox && specCheckbox.checked) {
+                    body.seed_params.push({[entryName]: {}});
+                }
+                continue;
+            }
 
             // Check if entry is enabled (checkbox)
             const checkbox = e.target.querySelector(`#entry-${entryName}-enabled`);
@@ -537,6 +569,16 @@ document.getElementById('new-run-form').addEventListener('submit', async (e) => 
         }
     }
 
+    // Collect which speculative steps are disabled
+    const disabledSpecSteps = new Set();
+    document.querySelectorAll('[id^="speculative-"][id$="-enabled"]').forEach(cb => {
+        if (!cb.checked) {
+            // Extract step name from id: speculative-<name>-enabled
+            const name = cb.id.replace('speculative-', '').replace('-enabled', '');
+            disabledSpecSteps.add(name);
+        }
+    });
+
     // Process params from form (old system and speculative config)
     for (const [key, value] of formData.entries()) {
         // Handle speculative step configuration
@@ -545,6 +587,10 @@ document.getElementById('new-run-form').addEventListener('submit', async (e) => 
             const parts = key.split('.');
             const stepName = parts[1];
             const prop = parts[2];
+
+            // Skip disabled speculative steps
+            if (prop === 'enabled') continue;
+            if (disabledSpecSteps.has(stepName)) continue;
 
             if (value) {
                 if (prop === 'start') {

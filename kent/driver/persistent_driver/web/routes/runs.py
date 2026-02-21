@@ -249,6 +249,7 @@ async def create_run(
             num_workers=request.num_workers,
             max_backoff_time=request.max_backoff_time,
             speculation_config=speculation_config_dict,
+            seed_params=request.seed_params,
         )
     except ValueError as e:
         raise HTTPException(

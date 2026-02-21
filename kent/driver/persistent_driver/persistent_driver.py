@@ -386,9 +386,34 @@ class PersistentDriver(
             # Check if we need to seed the queue with entry point
             has_requests = await self.db.has_any_requests()
 
+            # Load seed_params once (used for both entry and speculation filtering)
+            seed_params = await self.db.get_seed_params()
+
             if not has_requests:
                 # Seed queue with entry points.
-                for entry_request in self._get_entry_requests():
+                # If seed_params were stored (from web UI selection),
+                # use them to run only the selected entries.
+                if seed_params is not None:
+                    # Filter out speculative entries — they're handled
+                    # separately by the speculation system below.
+                    non_spec = [
+                        inv
+                        for inv in seed_params
+                        if not any(
+                            e.speculative
+                            for e in self.scraper.list_entries()
+                            if e.name in inv
+                        )
+                    ]
+                    if non_spec:
+                        entry_requests = self.scraper.initial_seed(non_spec)
+                    else:
+                        # Only speculative entries selected; skip
+                        # initial_seed() which requires ≥1 invocation.
+                        entry_requests = iter(())  # type: ignore[assignment]
+                else:
+                    entry_requests = self._get_entry_requests()
+                for entry_request in entry_requests:
                     request_data = self._serialize_request(entry_request)
                     dedup_key = (
                         entry_request.deduplication_key
@@ -415,6 +440,21 @@ class PersistentDriver(
 
             # Discover @speculate functions and seed the queue
             self._speculation_state = self._discover_speculate_functions()
+
+            # If seed_params specified, remove speculative entries
+            # that weren't selected in the web UI.
+            if seed_params is not None and self._speculation_state:
+                selected_entries = {
+                    name for inv in seed_params for name in inv
+                }
+                to_remove = [
+                    key
+                    for key, state in self._speculation_state.items()
+                    if state.base_func_name not in selected_entries
+                ]
+                for key in to_remove:
+                    del self._speculation_state[key]
+
             if self._speculation_state:
                 # Load any persisted state from previous run
                 await self._load_speculation_state_from_db()
