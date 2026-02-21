@@ -1,4 +1,4 @@
-Step 15: Priority Queue
+Step 13: Priority Queue
 ========================
 
 In the previous steps, the SyncDriver used a simple list to manage the request queue,

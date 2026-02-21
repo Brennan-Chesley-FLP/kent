@@ -1,4 +1,4 @@
-Step 14: Lifecycle Hooks
+Step 12: Lifecycle Hooks
 ==========================
 
 In previous steps, we introduced various callbacks for handling specific events:

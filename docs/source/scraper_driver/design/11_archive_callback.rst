@@ -1,4 +1,4 @@
-Step 13: Archive Event Hook
+Step 11: Archive Event Hook
 =============================
 
 In Step 4, we introduced the archive request pattern (``Request`` with ``archive=True``) for downloading and saving

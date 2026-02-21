@@ -1,4 +1,4 @@
-Step 18: Permanent Request Data
+Step 15: Permanent Request Data
 =================================
 
 In previous steps, each request was independent - cookies and headers had to be

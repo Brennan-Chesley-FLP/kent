@@ -1,4 +1,4 @@
-Step 16: Request Deduplication
+Step 14: Request Deduplication
 ================================
 
 In the previous steps, the driver processed all yielded requests without checking
