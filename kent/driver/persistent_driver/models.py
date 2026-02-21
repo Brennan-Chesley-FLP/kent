@@ -12,9 +12,7 @@ Tables:
 - archived_files: Downloaded file metadata
 - run_metadata: Single-row configuration and state
 - errors: Detailed error tracking with type-specific fields
-- rate_bucket: Token bucket state (legacy)
 - rate_items: Rate limiting items
-- rate_limiter_state: Adaptive rate limiter state
 - speculative_start_ids: Starting IDs for speculative steps
 - speculation_tracking: @speculate function state
 - incidental_requests: Browser-initiated network requests (Playwright)
