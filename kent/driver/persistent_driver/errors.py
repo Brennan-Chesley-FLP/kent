@@ -235,10 +235,11 @@ async def store_error(
 
     async with session_factory() as session:
         session.add(error)
+        await session.flush()
+        error_id = error.id
         await session.commit()
-        await session.refresh(error)
 
-    return error.id if error.id else 0
+    return error_id if error_id else 0
 
 
 def _error_model_to_record(error: Error) -> ErrorRecord:
