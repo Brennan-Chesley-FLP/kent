@@ -233,6 +233,8 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
             )
             self._owns_request_manager = True
 
+        self.seed_params: list[dict[str, dict[str, Any]]] | None = None
+
         self.on_data = on_data
         self.on_structural_error = on_structural_error
         self.on_invalid_data = on_invalid_data
@@ -492,13 +494,17 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
     ) -> Generator[Request, None, None]:
         """Get initial entry requests from the scraper.
 
-        Builds default invocations from @entry-decorated methods and
-        dispatches them via initial_seed(). Falls back to calling
-        get_entry() directly for scrapers without @entry decorators.
+        If ``seed_params`` is set, dispatches those via
+        ``initial_seed()``.  Otherwise builds default invocations from
+        @entry-decorated methods.  Falls back to ``get_entry()`` for
+        scrapers without @entry decorators.
 
         Yields:
             Request instances for queue initialization.
         """
+        if self.seed_params is not None:
+            yield from self.scraper.initial_seed(self.seed_params)
+            return
         entries = self.scraper.list_entries()
         if entries:
             # Build default invocation: call each non-speculative @entry

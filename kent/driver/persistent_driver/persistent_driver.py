@@ -210,6 +210,7 @@ class PersistentDriver(
         resume = kwargs.pop("resume", True)
         timeout = kwargs.pop("timeout", None)  # Request timeout in seconds
         custom_request_manager = kwargs.pop("request_manager", None)
+        seed_params = kwargs.pop("seed_params", None)
 
         # Initialize database and SQLManager
         engine, session_factory = await init_database(db_path)
@@ -227,6 +228,7 @@ class PersistentDriver(
             scraper_version=scraper_version,
             num_workers=num_workers,
             max_backoff_time=max_backoff_time,
+            seed_params=seed_params,
         )
 
         # Restore queue if resuming
