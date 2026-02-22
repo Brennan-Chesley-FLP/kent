@@ -7,6 +7,7 @@ that the elapsed wall-clock time is consistent with the declared rate.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
@@ -224,7 +225,7 @@ class TestAioSQLiteBucketPut:
         engine, session_factory = await init_database(db_path)
         # 2 requests per second
         rates = [Rate(2, Duration.SECOND)]
-        bucket = AioSQLiteBucket(session_factory, rates)
+        bucket = AioSQLiteBucket(session_factory, rates, asyncio.Lock())
         yield bucket  # type: ignore[misc]
         await engine.dispose()
 

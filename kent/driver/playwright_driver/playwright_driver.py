@@ -310,7 +310,9 @@ class PlaywrightDriver(
                         effective_rates = rates or scraper.rate_limits
                         if effective_rates:
                             bucket = AioSQLiteBucket(
-                                db._session_factory, effective_rates
+                                db._session_factory,
+                                effective_rates,
+                                db._lock,
                             )
                             rate_limiter = Limiter(bucket)
 

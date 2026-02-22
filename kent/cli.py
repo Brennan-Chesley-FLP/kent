@@ -18,12 +18,15 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
 
+if TYPE_CHECKING:
+    from kent.data_types import BaseScraper
 
-def import_scraper(scraper_path: str) -> type:
+
+def import_scraper(scraper_path: str) -> type[BaseScraper]:
     """Import a scraper class from a dotted path.
 
     Args:
@@ -73,8 +76,9 @@ def _example_value(param_type: type) -> Any:
         param_type, PydanticBaseModel
     ):
         # Build example from the model's field info
+        pydantic_model: type[PydanticBaseModel] = param_type
         example: dict[str, Any] = {}
-        for field_name, field_info in param_type.model_fields.items():
+        for field_name, field_info in pydantic_model.model_fields.items():
             annotation = field_info.annotation
             if annotation is int:
                 example[field_name] = 1
@@ -117,7 +121,7 @@ _SKIP_DIRS = {
 
 def _discover_scrapers(
     root: Path, verbose: bool = False
-) -> list[tuple[str, type]]:
+) -> list[tuple[str, type[BaseScraper]]]:
     """Discover BaseScraper subclasses in ``.py`` files under *root*.
 
     Walks the directory tree, skipping virtual-env and cache
@@ -137,7 +141,7 @@ def _discover_scrapers(
     if root_str not in sys.path:
         sys.path.insert(0, root_str)
 
-    found: list[tuple[str, type]] = []
+    found: list[tuple[str, type[BaseScraper]]] = []
 
     for py_file in root.rglob("*.py"):
         # Skip hidden / non-project directories
@@ -166,8 +170,7 @@ def _discover_scrapers(
         except Exception as exc:
             if verbose:
                 click.echo(
-                    f"  skip {module_path}: "
-                    f"{type(exc).__name__}: {exc}",
+                    f"  skip {module_path}: {type(exc).__name__}: {exc}",
                     err=True,
                 )
             continue
@@ -246,9 +249,7 @@ def inspect(scraper: str, seed_params: bool) -> None:
     # -- Human-readable output ----------------------------------------
 
     click.echo(f"Class:     {scraper_class.__name__}")
-    click.echo(
-        f"Module:    {scraper_class.__module__}"
-    )
+    click.echo(f"Module:    {scraper_class.__module__}")
 
     status = getattr(scraper_class, "status", None)
     if status is not None:
@@ -262,11 +263,11 @@ def inspect(scraper: str, seed_params: bool) -> None:
     if court_url:
         click.echo(f"Court URL: {court_url}")
 
-    court_ids = getattr(scraper_class, "court_ids", set())
+    court_ids: set[str] = getattr(scraper_class, "court_ids", set())
     if court_ids:
         click.echo(f"Court IDs: {', '.join(sorted(court_ids))}")
 
-    data_types = getattr(scraper_class, "data_types", set())
+    data_types: set[str] = getattr(scraper_class, "data_types", set())
     if data_types:
         click.echo(f"Data types: {', '.join(sorted(data_types))}")
 
@@ -294,9 +295,7 @@ def inspect(scraper: str, seed_params: bool) -> None:
         for entry_info in entries:
             spec_tag = " [speculative]" if entry_info.speculative else ""
             returns = entry_info.return_type.__name__
-            click.echo(
-                f"  {entry_info.name}{spec_tag} -> {returns}"
-            )
+            click.echo(f"  {entry_info.name}{spec_tag} -> {returns}")
             if entry_info.param_types:
                 for pname, ptype in entry_info.param_types.items():
                     click.echo(f"    {pname}: {ptype.__name__}")
@@ -421,7 +420,7 @@ def serve(runs_dir: str, host: str, port: int, verbose: bool) -> None:
     default=None,
     help=(
         "JSON list of seed parameters for initial_seed(). "
-        'Example: \'[{"get_oral_arguments": {}}]\'. '
+        "Example: '[{\"get_oral_arguments\": {}}]'. "
         "Use ``kent inspect --seed-params`` to generate a template."
     ),
 )
@@ -466,13 +465,9 @@ def run(
         try:
             seed_params = json.loads(params_json)
         except json.JSONDecodeError as e:
-            raise click.BadParameter(
-                f"Invalid JSON for --params: {e}"
-            ) from e
+            raise click.BadParameter(f"Invalid JSON for --params: {e}") from e
         if not isinstance(seed_params, list):
-            raise click.BadParameter(
-                "--params must be a JSON list"
-            )
+            raise click.BadParameter("--params must be a JSON list")
 
     click.echo(f"Scraper: {scraper_name}")
     click.echo(f"Driver:  {driver_name}")

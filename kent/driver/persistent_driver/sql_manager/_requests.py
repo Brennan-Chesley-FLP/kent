@@ -486,7 +486,7 @@ class RequestQueueMixin:
         """
         subq = (
             select(
-                (Request.completed_at_ns - Request.started_at_ns).label(
+                (Request.completed_at_ns - Request.started_at_ns).label(  # type: ignore[union-attr, operator]
                     "duration_ns"
                 )
             )

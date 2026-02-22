@@ -12,6 +12,7 @@ Error Types:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import traceback as tb
 from dataclasses import dataclass
@@ -143,6 +144,7 @@ async def store_error(
     exc: Exception,
     request_id: int | None = None,
     request_url: str | None = None,
+    db_lock: asyncio.Lock | None = None,
 ) -> int:
     """Store an error in the database.
 
@@ -154,6 +156,7 @@ async def store_error(
         exc: The exception to store.
         request_id: ID of the request that caused this error (if known).
         request_url: URL that triggered the error (fallback if not in exception).
+        db_lock: Shared asyncio lock for serializing SQLite access.
 
     Returns:
         The database ID of the stored error.
@@ -233,7 +236,8 @@ async def store_error(
         traceback=traceback_str,
     )
 
-    async with session_factory() as session:
+    lock: asyncio.Lock = db_lock or asyncio.Lock()
+    async with lock, session_factory() as session:
         session.add(error)
         await session.flush()
         error_id = error.id

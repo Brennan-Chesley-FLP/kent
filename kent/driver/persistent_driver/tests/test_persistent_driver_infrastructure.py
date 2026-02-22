@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Generator
 from pathlib import Path
@@ -536,7 +537,7 @@ class TestAioSQLiteBucket:
 
         rates = [Rate(5, Duration.SECOND)]
         _, session_factory = initialized_db
-        bucket = AioSQLiteBucket(session_factory, rates)
+        bucket = AioSQLiteBucket(session_factory, rates, asyncio.Lock())
 
         # Initially empty
         count = await bucket.count()
@@ -563,7 +564,7 @@ class TestAioSQLiteBucket:
 
         rates = [Rate(5, Duration.SECOND)]
         _, session_factory = initialized_db
-        bucket = AioSQLiteBucket(session_factory, rates)
+        bucket = AioSQLiteBucket(session_factory, rates, asyncio.Lock())
 
         # Add items with different timestamps
         item1 = RateItem(name="old", timestamp=1000, weight=1)
@@ -598,7 +599,7 @@ class TestAioSQLiteBucket:
         # Rate with 1 second interval (1000ms)
         rates = [Rate(5, Duration.SECOND)]
         _, session_factory = initialized_db
-        bucket = AioSQLiteBucket(session_factory, rates)
+        bucket = AioSQLiteBucket(session_factory, rates, asyncio.Lock())
 
         # Add old and new items
         old_item = RateItem(name="old", timestamp=1000, weight=1)
@@ -626,7 +627,7 @@ class TestAioSQLiteBucket:
 
         rates = [Rate(5, Duration.SECOND)]
         _, session_factory = initialized_db
-        bucket = AioSQLiteBucket(session_factory, rates)
+        bucket = AioSQLiteBucket(session_factory, rates, asyncio.Lock())
 
         # Add items
         for i in range(5):
@@ -650,7 +651,7 @@ class TestAioSQLiteBucket:
         # Rate: 2 requests per second (1000ms)
         rates = [Rate(2, Duration.SECOND)]
         _, session_factory = initialized_db
-        bucket = AioSQLiteBucket(session_factory, rates)
+        bucket = AioSQLiteBucket(session_factory, rates, asyncio.Lock())
 
         # Add 2 items at timestamp 1000
         item1 = RateItem(name="test1", timestamp=1000, weight=1)
@@ -680,7 +681,7 @@ class TestAioSQLiteBucket:
         # Rate: 5 requests per second
         rates = [Rate(5, Duration.SECOND)]
         _, session_factory = initialized_db
-        bucket = AioSQLiteBucket(session_factory, rates)
+        bucket = AioSQLiteBucket(session_factory, rates, asyncio.Lock())
 
         # Add 1 item
         item = RateItem(name="test", timestamp=1000, weight=1)

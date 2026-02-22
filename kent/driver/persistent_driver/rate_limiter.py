@@ -6,6 +6,7 @@ storage in SQLite.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -41,16 +42,19 @@ class AioSQLiteBucket(AbstractBucket):
         self,
         session_factory: async_sessionmaker,
         rates: list[Rate],
+        db_lock: asyncio.Lock,
     ) -> None:
         """Initialize the bucket.
 
         Args:
             session_factory: Async session factory.
             rates: List of Rate objects defining rate limits.
+            db_lock: Shared asyncio lock for serializing SQLite access.
         """
         self._session_factory = session_factory
         self._rates = rates
         self._lock = threading.Lock()
+        self._db_lock = db_lock
 
     @property
     def rates(self) -> list[Rate]:
@@ -77,7 +81,7 @@ class AioSQLiteBucket(AbstractBucket):
         if item.weight == 0:
             return True
 
-        async with self._session_factory() as session:
+        async with self._db_lock, self._session_factory() as session:
             for rate in self._rates:
                 window_start = item.timestamp - rate.interval
                 result = await session.execute(
@@ -121,7 +125,7 @@ class AioSQLiteBucket(AbstractBucket):
         # Remove items older than the longest interval
         cutoff = current_timestamp - max_interval
 
-        async with self._session_factory() as session:
+        async with self._db_lock, self._session_factory() as session:
             result = await session.execute(
                 sa.delete(RateItemModel).where(
                     RateItemModel.timestamp < cutoff
@@ -132,7 +136,7 @@ class AioSQLiteBucket(AbstractBucket):
 
     async def flush(self) -> None:
         """Remove all items from the bucket."""
-        async with self._session_factory() as session:
+        async with self._db_lock, self._session_factory() as session:
             await session.execute(sa.delete(RateItemModel))
             await session.commit()
 
@@ -142,7 +146,7 @@ class AioSQLiteBucket(AbstractBucket):
         Returns:
             Sum of weights of all items.
         """
-        async with self._session_factory() as session:
+        async with self._db_lock, self._session_factory() as session:
             result = await session.execute(
                 select(sa.func.coalesce(sa.func.sum(RateItemModel.weight), 0))
             )
@@ -157,7 +161,7 @@ class AioSQLiteBucket(AbstractBucket):
         Returns:
             RateItem at the index, or None if not found.
         """
-        async with self._session_factory() as session:
+        async with self._db_lock, self._session_factory() as session:
             result = await session.execute(
                 select(
                     RateItemModel.name,
@@ -189,7 +193,7 @@ class AioSQLiteBucket(AbstractBucket):
         current_timestamp = item.timestamp
         max_wait = 0
 
-        async with self._session_factory() as session:
+        async with self._db_lock, self._session_factory() as session:
             for rate in self._rates:
                 # Count items in the rate window
                 window_start = current_timestamp - rate.interval

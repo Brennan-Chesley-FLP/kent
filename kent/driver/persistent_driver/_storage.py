@@ -153,7 +153,10 @@ class StorageMixin:
 
             if content_size_original > 0:
                 compressed, dict_id = await compress_response(
-                    self.db._session_factory, content, continuation
+                    self.db._session_factory,
+                    content,
+                    continuation,
+                    db_lock=self.db._lock,
                 )
                 content_size_compressed = len(compressed)
             else:

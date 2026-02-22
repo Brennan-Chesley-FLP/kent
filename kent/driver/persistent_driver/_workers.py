@@ -285,9 +285,13 @@ class WorkerMixin:
                         self.db._session_factory,
                         cont,
                         sample_limit=1000,
+                        db_lock=self.db._lock,
                     )
                     count, orig, compressed = await recompress_responses(
-                        self.db._session_factory, cont, dict_id=dict_id
+                        self.db._session_factory,
+                        cont,
+                        dict_id=dict_id,
+                        db_lock=self.db._lock,
                     )
                     logger.info(
                         f"Worker monitor: trained dict {dict_id} and "
@@ -511,6 +515,7 @@ class WorkerMixin:
                         e,
                         request_id=request_id,
                         request_url=request.request.url,
+                        db_lock=self.db._lock,
                     )
 
                     await self._emit_progress(
@@ -543,6 +548,7 @@ class WorkerMixin:
                     e,
                     request_id=request_id,
                     request_url=request.request.url,
+                    db_lock=self.db._lock,
                 )
 
                 await self._emit_progress(

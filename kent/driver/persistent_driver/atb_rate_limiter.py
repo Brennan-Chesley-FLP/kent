@@ -97,7 +97,9 @@ class RateLimitedRequestManager(AsyncRequestManager):
         """
         if self._rates:
             bucket = AioSQLiteBucket(
-                self.sql_manager._session_factory, self._rates
+                self.sql_manager._session_factory,
+                self._rates,
+                self.sql_manager._lock,
             )
             self._limiter = Limiter(bucket)
             logger.info(
