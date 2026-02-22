@@ -472,6 +472,71 @@ class RequestQueueMixin:
             )
             return result.scalar() or 0
 
+    async def avg_completed_request_duration_s(
+        self, sample_size: int = 20
+    ) -> float | None:
+        """Average duration of recently completed requests, in seconds.
+
+        Uses the high-precision monotonic timestamps (started_at_ns,
+        completed_at_ns) from the last *sample_size* completed requests.
+
+        Returns:
+            Average duration in seconds, or None if no completed
+            requests with timing data exist.
+        """
+        subq = (
+            select(
+                (Request.completed_at_ns - Request.started_at_ns).label(
+                    "duration_ns"
+                )
+            )
+            .where(
+                Request.status == "completed",
+                Request.started_at_ns.isnot(None),  # type: ignore[union-attr]
+                Request.completed_at_ns.isnot(None),  # type: ignore[union-attr]
+            )
+            .order_by(Request.id.desc())  # type: ignore[union-attr]
+            .limit(sample_size)
+            .subquery()
+        )
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(func.avg(subq.c.duration_ns))
+            )
+            avg_ns = result.scalar()
+            if avg_ns is None or avg_ns <= 0:
+                return None
+            return avg_ns / 1_000_000_000
+
+    async def continuations_needing_compression_dict(
+        self, threshold: int = 1000
+    ) -> list[str]:
+        """Find continuations with enough responses to train a dictionary.
+
+        Returns continuations that have at least *threshold* responses
+        whose ``compression_dict_id`` is NULL (i.e. not yet compressed
+        with a trained dictionary).
+
+        Args:
+            threshold: Minimum number of undict-compressed responses
+                required before a continuation is returned.
+
+        Returns:
+            List of continuation names meeting the threshold.
+        """
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(Request.continuation)
+                .where(
+                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                    Request.content_compressed.isnot(None),  # type: ignore[union-attr]
+                    Request.compression_dict_id.is_(None),  # type: ignore[union-attr]
+                )
+                .group_by(Request.continuation)
+                .having(func.count() >= threshold)
+            )
+            return [row[0] for row in result.all()]
+
     async def get_next_scheduled_retry_delay(
         self,
     ) -> float | None:

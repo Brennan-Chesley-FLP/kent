@@ -147,12 +147,23 @@ class WorkerMixin:
         return worker_id
 
     async def _worker_monitor(self) -> None:
-        """Monitor task that dynamically scales workers based on conditions.
+        """Monitor task that dynamically scales workers and manages compression.
 
-        Adds a worker if:
+        Each 60 s cycle performs two checks:
+
+        **Worker scaling** — adds a worker if:
         - There are pending requests
-        - The rate limit > 2 * active_worker_count
+        - active_worker_count < workers_needed (based on rate limit headroom)
         - active_worker_count < max_workers
+
+        workers_needed is ``ceil(max_allowed_rate * avg_request_duration)``.
+        If a single request takes 2 s on average and the rate limit allows
+        5 req/s, then 10 workers are needed to saturate the rate limit.
+
+        **Compression dict training** — for any continuation with 1000+
+        responses that lack a compression dictionary, trains a new zstd
+        dictionary from 1000 sample responses and recompresses all
+        existing responses for that continuation.
 
         Exits when:
         - stop_event is set, OR
@@ -183,45 +194,120 @@ class WorkerMixin:
                 )
                 break
 
-            # Check scaling conditions
+            # --- Worker scaling ---
             if pending_count == 0:
                 logger.debug(
                     f"Worker monitor: no pending requests "
                     f"(active_workers={active_count})"
                 )
-                continue
-
-            if active_count >= self.max_workers:
+            elif active_count >= self.max_workers:
                 logger.debug(
                     f"Worker monitor: at max workers "
                     f"({active_count}/{self.max_workers})"
                 )
-                continue
-
-            # Get current rate from the ATB rate limiter
-            current_rate = getattr(self.request_manager, "_rate", 0.0)
-
-            # Scale if rate > 2 * active_workers
-            if current_rate > 2 * active_count:
-                new_worker_id = self._spawn_worker()
-                logger.info(
-                    f"Worker monitor: scaled up to {self.active_worker_count} workers "
-                    f"(rate={current_rate:.2f}/s, pending={pending_count})"
-                )
-
-                await self._emit_progress(
-                    "worker_scaled",
-                    {
-                        "worker_id": new_worker_id,
-                        "active_workers": self.active_worker_count,
-                        "current_rate": current_rate,
-                        "pending_requests": pending_count,
-                    },
-                )
             else:
-                logger.debug(
-                    f"Worker monitor: rate ({current_rate:.2f}/s) <= "
-                    f"2 * workers ({2 * active_count}), no scale-up"
+                # Determine how many workers are needed to saturate the
+                # configured rate limit given observed request durations.
+                rates = getattr(self.request_manager, "_rates", None)
+
+                if rates:
+                    # Most restrictive rate expressed as requests/second.
+                    max_rate_per_sec: float | None = min(
+                        r.limit / (r.interval / 1000) for r in rates
+                    )
+                else:
+                    max_rate_per_sec = None
+
+                avg_duration_s = (
+                    await self.db.avg_completed_request_duration_s()
+                )
+
+                if max_rate_per_sec is None:
+                    # No rate limits — scale to max_workers if pending.
+                    workers_needed = self.max_workers
+                elif avg_duration_s is None:
+                    # No timing data yet — be conservative.
+                    workers_needed = active_count + 1
+                else:
+                    import math
+
+                    workers_needed = max(
+                        math.ceil(max_rate_per_sec * avg_duration_s), 1
+                    )
+
+                if active_count < workers_needed:
+                    new_worker_id = self._spawn_worker()
+                    logger.info(
+                        f"Worker monitor: scaled up to "
+                        f"{self.active_worker_count} workers "
+                        f"(workers_needed={workers_needed}, "
+                        f"avg_duration={avg_duration_s}, "
+                        f"max_rate={max_rate_per_sec}, "
+                        f"pending={pending_count})"
+                    )
+
+                    await self._emit_progress(
+                        "worker_scaled",
+                        {
+                            "worker_id": new_worker_id,
+                            "active_workers": self.active_worker_count,
+                            "max_rate_per_sec": max_rate_per_sec,
+                            "avg_duration_s": avg_duration_s,
+                            "workers_needed": workers_needed,
+                            "pending_requests": pending_count,
+                        },
+                    )
+                else:
+                    logger.debug(
+                        f"Worker monitor: no scale-up needed "
+                        f"(active={active_count}, needed={workers_needed}, "
+                        f"max_workers={self.max_workers}, "
+                        f"avg_duration={avg_duration_s}, "
+                        f"max_rate={max_rate_per_sec})"
+                    )
+
+            # --- Auto-train compression dictionaries ---
+            try:
+                continuations = (
+                    await self.db.continuations_needing_compression_dict()
+                )
+                for cont in continuations:
+                    from kent.driver.persistent_driver.compression import (
+                        recompress_responses,
+                        train_compression_dict,
+                    )
+
+                    logger.info(
+                        f"Worker monitor: training compression dict "
+                        f"for continuation '{cont}'"
+                    )
+                    dict_id = await train_compression_dict(
+                        self.db._session_factory,
+                        cont,
+                        sample_limit=1000,
+                    )
+                    count, orig, compressed = await recompress_responses(
+                        self.db._session_factory, cont, dict_id=dict_id
+                    )
+                    logger.info(
+                        f"Worker monitor: trained dict {dict_id} and "
+                        f"recompressed {count} responses for '{cont}' "
+                        f"({orig} -> {compressed} bytes)"
+                    )
+
+                    await self._emit_progress(
+                        "compression_dict_trained",
+                        {
+                            "continuation": cont,
+                            "dict_id": dict_id,
+                            "recompressed_count": count,
+                            "original_bytes": orig,
+                            "compressed_bytes": compressed,
+                        },
+                    )
+            except Exception:
+                logger.exception(
+                    "Worker monitor: error during compression dict training"
                 )
 
         logger.info("Worker monitor stopped")

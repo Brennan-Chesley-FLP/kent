@@ -548,3 +548,194 @@ class TestCancelRequests:
             )
             row = result.first()
         assert row[0] == "pending"
+
+
+class TestAvgCompletedRequestDuration:
+    """Tests for avg_completed_request_duration_s()."""
+
+    async def test_no_completed_requests(
+        self, sql_manager: SQLManager
+    ) -> None:
+        """Returns None when no completed requests exist."""
+        result = await sql_manager.avg_completed_request_duration_s()
+        assert result is None
+
+    async def test_completed_requests_with_timestamps(
+        self, sql_manager: SQLManager
+    ) -> None:
+        """Returns a positive float when completed requests have ns timestamps."""
+        request_id = await sql_manager.insert_request(
+            priority=5,
+            request_type="navigating",
+            method="GET",
+            url="https://example.com/test",
+            headers_json=None,
+            cookies_json=None,
+            body=None,
+            continuation="parse",
+            current_location="",
+            accumulated_data_json=None,
+            aux_data_json=None,
+            permanent_json=None,
+            expected_type=None,
+            dedup_key=None,
+            parent_id=None,
+        )
+
+        # dequeue sets started_at_ns, mark_completed sets completed_at_ns
+        await sql_manager.dequeue_next_request()
+        await sql_manager.mark_request_completed(request_id)
+
+        result = await sql_manager.avg_completed_request_duration_s()
+        assert result is not None
+        assert result >= 0
+
+    async def test_sample_size_limits_rows(
+        self, sql_manager: SQLManager
+    ) -> None:
+        """sample_size parameter limits which rows are averaged."""
+        for i in range(5):
+            req_id = await sql_manager.insert_request(
+                priority=5,
+                request_type="navigating",
+                method="GET",
+                url=f"https://example.com/{i}",
+                headers_json=None,
+                cookies_json=None,
+                body=None,
+                continuation="parse",
+                current_location="",
+                accumulated_data_json=None,
+                aux_data_json=None,
+                permanent_json=None,
+                expected_type=None,
+                dedup_key=f"key-{i}",
+                parent_id=None,
+            )
+            await sql_manager.dequeue_next_request()
+            await sql_manager.mark_request_completed(req_id)
+
+        # Should work with a smaller sample size
+        result = await sql_manager.avg_completed_request_duration_s(
+            sample_size=2
+        )
+        assert result is not None
+        assert result >= 0
+
+
+class TestContinuationsNeedingCompressionDict:
+    """Tests for continuations_needing_compression_dict()."""
+
+    async def _insert_with_response(
+        self,
+        sql_manager: SQLManager,
+        url: str,
+        continuation: str,
+        dedup_key: str,
+        *,
+        dict_id: int | None = None,
+    ) -> int:
+        """Helper: insert a request and stamp it with a response."""
+        req_id = await sql_manager.insert_request(
+            priority=5,
+            request_type="navigating",
+            method="GET",
+            url=url,
+            headers_json=None,
+            cookies_json=None,
+            body=None,
+            continuation=continuation,
+            current_location="",
+            accumulated_data_json=None,
+            aux_data_json=None,
+            permanent_json=None,
+            expected_type=None,
+            dedup_key=dedup_key,
+            parent_id=None,
+        )
+        async with sql_manager._session_factory() as session:
+            await session.execute(
+                sa.text(
+                    "UPDATE requests SET "
+                    "  response_status_code = 200, "
+                    "  content_compressed = X'00', "
+                    "  compression_dict_id = :dict_id "
+                    "WHERE id = :id"
+                ),
+                {"id": req_id, "dict_id": dict_id},
+            )
+            await session.commit()
+        return req_id
+
+    async def test_empty_db(self, sql_manager: SQLManager) -> None:
+        """Returns empty list when no requests exist."""
+        result = await sql_manager.continuations_needing_compression_dict()
+        assert result == []
+
+    async def test_below_threshold(self, sql_manager: SQLManager) -> None:
+        """Continuation with fewer than threshold responses is not returned."""
+        for i in range(5):
+            await self._insert_with_response(
+                sql_manager,
+                f"https://example.com/{i}",
+                "parse",
+                f"k-{i}",
+            )
+        result = await sql_manager.continuations_needing_compression_dict(
+            threshold=10
+        )
+        assert result == []
+
+    async def test_at_threshold(self, sql_manager: SQLManager) -> None:
+        """Continuation at threshold is returned."""
+        for i in range(10):
+            await self._insert_with_response(
+                sql_manager,
+                f"https://example.com/{i}",
+                "parse",
+                f"k-{i}",
+            )
+        result = await sql_manager.continuations_needing_compression_dict(
+            threshold=10
+        )
+        assert result == ["parse"]
+
+    async def test_dict_compressed_not_counted(
+        self, sql_manager: SQLManager
+    ) -> None:
+        """Responses with a compression_dict_id are excluded."""
+        # Create a real compression dict row to satisfy the FK constraint.
+        async with sql_manager._session_factory() as session:
+            await session.execute(
+                sa.text(
+                    "INSERT INTO compression_dicts "
+                    "(continuation, version, dictionary_data, sample_count) "
+                    "VALUES ('parse', 1, X'00', 0)"
+                )
+            )
+            await session.commit()
+            result = await session.execute(
+                sa.text("SELECT id FROM compression_dicts LIMIT 1")
+            )
+            real_dict_id = result.scalar_one()
+
+        # 8 without dict, 5 with dict — only 8 count toward threshold
+        for i in range(8):
+            await self._insert_with_response(
+                sql_manager,
+                f"https://example.com/a{i}",
+                "parse",
+                f"a-{i}",
+            )
+        for i in range(5):
+            await self._insert_with_response(
+                sql_manager,
+                f"https://example.com/b{i}",
+                "parse",
+                f"b-{i}",
+                dict_id=real_dict_id,
+            )
+        result = await sql_manager.continuations_needing_compression_dict(
+            threshold=10
+        )
+        assert result == []
