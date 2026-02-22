@@ -44,7 +44,7 @@ demo = [
 
 [project.scripts]
 kent = "kent.cli:main"
-ldd-debug = "kent.driver.persistent_driver.cli:main"
+pdd = "kent.driver.persistent_driver.cli:main"
 kent-demo = "kent.demo.run_demo:main"
 
 [dependency-groups]
