@@ -192,6 +192,39 @@ class TestVerifyThroughPersistentDriverQueue:
         serialized = driver._serialize_request(req)
         assert serialized["verify"] is None
 
+    async def test_verify_false_survives_resolve_from(self) -> None:
+        """verify=False survives resolve_from (the enqueue_request path)."""
+        from kent.data_types import HttpMethod, HTTPRequestParams, Request, Response
+
+        parent = Request(
+            request=HTTPRequestParams(
+                method=HttpMethod.GET,
+                url="https://judicial.alabama.gov/decision/supremecourtdecisions",
+            ),
+            continuation="parse_historical_decisions_list",
+        )
+        parent_response = Response(
+            status_code=200,
+            headers={},
+            content=b"",
+            text="",
+            url="https://judicial.alabama.gov/decision/supremecourtdecisions",
+            request=parent,
+        )
+
+        child = Request(
+            archive=True,
+            request=HTTPRequestParams(
+                method=HttpMethod.GET,
+                url=ALABAMA_URL,
+                verify=False,
+            ),
+            continuation="handle_historical_pdf_download",
+        )
+
+        resolved = child.resolve_from(parent_response)
+        assert resolved.request.verify is False
+
     @pytest.mark.slow
     async def test_verify_false_end_to_end(self, db_path: Path) -> None:
         """Full end-to-end: insert verify=False request, dequeue, fetch via AsyncRequestManager."""

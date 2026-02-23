@@ -340,7 +340,6 @@ async def cmd_requeue_error(args: argparse.Namespace) -> int:
         )
         session.add(new_request)
         await session.commit()
-        await session.refresh(new_request)
         new_request_id = new_request.id
 
     await resolve_error(

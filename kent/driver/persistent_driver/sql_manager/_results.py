@@ -48,5 +48,4 @@ class ResultStorageMixin:
             )
             session.add(res)
             await session.commit()
-            await session.refresh(res)
             return res.id  # type: ignore[return-value]

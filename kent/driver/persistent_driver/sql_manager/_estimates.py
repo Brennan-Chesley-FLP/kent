@@ -45,5 +45,4 @@ class EstimateStorageMixin:
             )
             session.add(estimate)
             await session.commit()
-            await session.refresh(estimate)
             return estimate.id  # type: ignore[return-value]

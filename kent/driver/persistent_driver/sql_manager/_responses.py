@@ -113,7 +113,6 @@ class ResponseStorageMixin:
             )
             session.add(af)
             await session.commit()
-            await session.refresh(af)
             return af.id  # type: ignore[return-value]
 
     # --- Incidental Requests (Playwright driver) ---
@@ -181,7 +180,6 @@ class ResponseStorageMixin:
             )
             session.add(ir)
             await session.commit()
-            await session.refresh(ir)
             return ir.id  # type: ignore[return-value]
 
     async def get_incidental_requests(

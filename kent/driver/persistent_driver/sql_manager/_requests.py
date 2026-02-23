@@ -140,7 +140,6 @@ class RequestQueueMixin:
                 )
                 session.add(req)
                 await session.commit()
-                await session.refresh(req)
                 return req.id  # type: ignore[return-value]
 
     async def insert_entry_request(
@@ -203,7 +202,6 @@ class RequestQueueMixin:
                 )
                 session.add(req)
                 await session.commit()
-                await session.refresh(req)
                 return req.id  # type: ignore[return-value]
 
     async def get_next_pending_request(
@@ -765,7 +763,6 @@ class RequestQueueMixin:
             )
             session.add(req)
             await session.commit()
-            await session.refresh(req)
             return req.id  # type: ignore[return-value]
 
     async def insert_resume_request(
@@ -808,7 +805,6 @@ class RequestQueueMixin:
                 )
                 session.add(req)
                 await session.commit()
-                await session.refresh(req)
                 return req.id  # type: ignore[return-value]
 
     # --- Request Cancellation ---
