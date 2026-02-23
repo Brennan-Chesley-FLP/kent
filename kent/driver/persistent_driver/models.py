@@ -168,6 +168,9 @@ class Request(SQLModel, table=True):  # type: ignore[call-arg]
     # Speculative request outcome tracking
     speculation_outcome: str | None = None
 
+    # TLS verification override
+    verify: str | None = None
+
 
 class CompressionDict(SQLModel, table=True):  # type: ignore[call-arg]
     """Versioned zstd compression dictionaries per-continuation."""

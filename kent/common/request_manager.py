@@ -26,7 +26,7 @@ from kent.common.exceptions import (
 from kent.data_types import BaseRequest, Response
 
 if TYPE_CHECKING:
-    from pyrate_limiter import Rate
+    from pyrate_limiter import Limiter, Rate
 
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,10 @@ class SyncRequestManager:
                 requests are throttled at the httpx transport layer.
         """
         self.timeout = timeout
+        self._ssl_context = ssl_context
+        self._rates = rates
+        self._limiter: Limiter | None = None
+        self._alt_clients: dict[str, httpx.Client] = {}
 
         # Initialize httpx client, with rate-limited transport if rates given
         if rates:
@@ -74,12 +78,12 @@ class SyncRequestManager:
                 RateLimiterTransport,
             )
 
-            limiter = Limiter(rates)
+            self._limiter = Limiter(rates)
             transport_kwargs: dict[str, Any] = {}
             if ssl_context:
                 transport_kwargs["verify"] = ssl_context
             transport = RateLimiterTransport(
-                limiter=limiter, **transport_kwargs
+                limiter=self._limiter, **transport_kwargs
             )
             self._client = httpx.Client(transport=transport, timeout=timeout)
         elif ssl_context:
@@ -87,9 +91,43 @@ class SyncRequestManager:
         else:
             self._client = httpx.Client(timeout=timeout)
 
+    def _make_client(self, verify: bool | str) -> httpx.Client:
+        """Create a new httpx.Client with the given verify setting.
+
+        Shares the same Limiter instance (if rate-limited) so that
+        alternate-verify clients are still rate-limited together.
+        """
+        if self._limiter is not None:
+            from pyrate_limiter.extras.httpx_limiter import (
+                RateLimiterTransport,
+            )
+
+            transport_kwargs: dict[str, Any] = {"verify": verify}
+            transport = RateLimiterTransport(
+                limiter=self._limiter, **transport_kwargs
+            )
+            return httpx.Client(transport=transport, timeout=self.timeout)
+        return httpx.Client(verify=verify, timeout=self.timeout)
+
+    def _client_for(self, verify: bool | str) -> httpx.Client:
+        """Return the appropriate httpx.Client for the given verify value.
+
+        Returns the default client when verify is True (the default).
+        Otherwise returns a lazily-created cached alternate client.
+        """
+        if verify is True:
+            return self._client
+        key = str(verify)
+        if key not in self._alt_clients:
+            self._alt_clients[key] = self._make_client(verify)
+        return self._alt_clients[key]
+
     def close(self) -> None:
         """Close the HTTP client and release resources."""
         self._client.close()
+        for client in self._alt_clients.values():
+            client.close()
+        self._alt_clients.clear()
 
     def __enter__(self) -> SyncRequestManager:
         """Context manager entry."""
@@ -114,9 +152,10 @@ class SyncRequestManager:
         """
         # Use the modified request for HTTP
         http_params = request.request
+        client = self._client_for(http_params.verify)
 
         try:
-            http_response = self._client.request(
+            http_response = client.request(
                 method=http_params.method.value,
                 url=http_params.url,
                 headers=http_params.headers,
@@ -187,6 +226,10 @@ class AsyncRequestManager:
                 requests are throttled at the httpx transport layer.
         """
         self.timeout = timeout
+        self._ssl_context = ssl_context
+        self._rates = rates
+        self._limiter: Limiter | None = None
+        self._alt_clients: dict[str, httpx.AsyncClient] = {}
 
         # Initialize httpx async client, with rate-limited transport if rates given
         if rates:
@@ -195,12 +238,12 @@ class AsyncRequestManager:
                 AsyncRateLimiterTransport,
             )
 
-            limiter = Limiter(rates)
+            self._limiter = Limiter(rates)
             transport_kwargs: dict[str, Any] = {}
             if ssl_context:
                 transport_kwargs["verify"] = ssl_context
             transport = AsyncRateLimiterTransport(
-                limiter=limiter, **transport_kwargs
+                limiter=self._limiter, **transport_kwargs
             )
             self._client = httpx.AsyncClient(
                 transport=transport, timeout=timeout
@@ -212,9 +255,43 @@ class AsyncRequestManager:
         else:
             self._client = httpx.AsyncClient(timeout=timeout)
 
+    def _make_client(self, verify: bool | str) -> httpx.AsyncClient:
+        """Create a new httpx.AsyncClient with the given verify setting.
+
+        Shares the same Limiter instance (if rate-limited) so that
+        alternate-verify clients are still rate-limited together.
+        """
+        if self._limiter is not None:
+            from pyrate_limiter.extras.httpx_limiter import (
+                AsyncRateLimiterTransport,
+            )
+
+            transport_kwargs: dict[str, Any] = {"verify": verify}
+            transport = AsyncRateLimiterTransport(
+                limiter=self._limiter, **transport_kwargs
+            )
+            return httpx.AsyncClient(transport=transport, timeout=self.timeout)
+        return httpx.AsyncClient(verify=verify, timeout=self.timeout)
+
+    def _client_for(self, verify: bool | str) -> httpx.AsyncClient:
+        """Return the appropriate httpx.AsyncClient for the given verify value.
+
+        Returns the default client when verify is True (the default).
+        Otherwise returns a lazily-created cached alternate client.
+        """
+        if verify is True:
+            return self._client
+        key = str(verify)
+        if key not in self._alt_clients:
+            self._alt_clients[key] = self._make_client(verify)
+        return self._alt_clients[key]
+
     async def close(self) -> None:
         """Close the HTTP client and release resources."""
         await self._client.aclose()
+        for client in self._alt_clients.values():
+            await client.aclose()
+        self._alt_clients.clear()
 
     async def __aenter__(self) -> AsyncRequestManager:
         """Async context manager entry."""
@@ -240,6 +317,7 @@ class AsyncRequestManager:
 
         # Use the modified request for HTTP
         http_params = request.request
+        client = self._client_for(http_params.verify)
 
         # Prepare content and data parameters for httpx
         request_data = http_params.data
@@ -254,7 +332,7 @@ class AsyncRequestManager:
 
         # Make the HTTP request
         try:
-            http_response = await self._client.request(
+            http_response = await client.request(
                 method=http_params.method.value,
                 url=http_params.url,
                 headers=http_params.headers,

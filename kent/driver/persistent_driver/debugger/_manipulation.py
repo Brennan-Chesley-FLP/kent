@@ -116,6 +116,7 @@ class ManipulationMixin:
                 original_request_id=request_id,
                 request_type=req.request_type or "navigating",
                 expected_type=req.expected_type,
+                verify=req.verify,
             )
             return new_id
 
@@ -433,6 +434,14 @@ class ManipulationMixin:
             if request.speculation_id is not None:
                 speculation_id_json = json.dumps(list(request.speculation_id))
 
+            verify_db: str | None = None
+            if http_request.verify is not True:
+                verify_db = (
+                    "false"
+                    if http_request.verify is False
+                    else str(http_request.verify)
+                )
+
             await self.sql.insert_request(
                 priority=request.priority,
                 request_type=request_type,
@@ -467,6 +476,7 @@ class ManipulationMixin:
                 parent_id=None,
                 is_speculative=request.is_speculative,
                 speculation_id=speculation_id_json,
+                verify=verify_db,
             )
             seeded_count += 1
 

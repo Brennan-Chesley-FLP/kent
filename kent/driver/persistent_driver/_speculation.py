@@ -252,6 +252,7 @@ class SpeculationMixin:
                     parent_id=None,
                     is_speculative=request_data["is_speculative"],
                     speculation_id=request_data["speculation_id"],
+                    verify=request_data.get("verify"),
                 )
 
             spec_state.current_ceiling = end
@@ -323,6 +324,7 @@ class SpeculationMixin:
                     parent_id=None,
                     is_speculative=request_data["is_speculative"],
                     speculation_id=request_data["speculation_id"],
+                    verify=request_data.get("verify"),
                 )
 
             spec_state.current_ceiling = new_ceiling

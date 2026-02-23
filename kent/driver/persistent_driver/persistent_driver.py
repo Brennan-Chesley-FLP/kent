@@ -438,6 +438,7 @@ class PersistentDriver(
                         aux_data_json=request_data["aux_data_json"],
                         permanent_json=request_data["permanent_json"],
                         dedup_key=dedup_key,
+                        verify=request_data.get("verify"),
                     )
 
             # Discover @speculate functions and seed the queue

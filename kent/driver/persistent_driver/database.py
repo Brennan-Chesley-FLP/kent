@@ -23,7 +23,7 @@ from sqlmodel import SQLModel, select
 from kent.driver.persistent_driver.models import *  # noqa: F401, F403
 from kent.driver.persistent_driver.models import Request, SchemaInfo
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 async def create_engine_and_init(

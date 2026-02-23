@@ -96,6 +96,7 @@ class QueueMixin:
             parent_id=parent_id,
             is_speculative=request_data["is_speculative"],
             speculation_id=request_data["speculation_id"],
+            verify=request_data["verify"],
         )
 
         # Emit progress event
@@ -189,6 +190,13 @@ class QueueMixin:
             "expected_type": expected_type,
             "is_speculative": request.is_speculative,
             "speculation_id": speculation_id_json,
+            "verify": None
+            if http_request.verify is True
+            else (
+                "false"
+                if http_request.verify is False
+                else str(http_request.verify)
+            ),
         }
 
     async def _get_next_request(self) -> tuple[int, BaseRequest] | None:
@@ -244,6 +252,7 @@ class QueueMixin:
             priority,
             is_speculative,
             speculation_id_json,
+            verify_raw,
         ) = row
 
         # Parse JSON fields
@@ -275,6 +284,11 @@ class QueueMixin:
             else:
                 decoded_body = body
 
+        # Convert verify from DB representation
+        verify: bool | str = True
+        if verify_raw is not None:
+            verify = False if verify_raw == "false" else verify_raw
+
         # Create HTTP request params
         http_params = HTTPRequestParams(
             method=HttpMethod(method),
@@ -282,6 +296,7 @@ class QueueMixin:
             headers=headers,
             cookies=cookies,
             data=decoded_body,
+            verify=verify,
         )
 
         # Create the appropriate request type

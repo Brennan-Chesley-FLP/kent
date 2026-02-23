@@ -1024,6 +1024,8 @@ class BaseRequest:
                 headers=self.request.headers,
                 params=self.request.params,
                 data=self.request.data,
+                cookies=self.request.cookies,
+                verify=self.request.verify,
             ),
             resolved_location,
             parent_request,

@@ -82,6 +82,7 @@ class RequestQueueMixin:
         parent_id: int | None,
         is_speculative: bool = False,
         speculation_id: str | None = None,
+        verify: str | None = None,
     ) -> int:
         """Insert a new request into the queue.
 
@@ -135,6 +136,7 @@ class RequestQueueMixin:
                     cache_key=cache_key,
                     is_speculative=is_speculative,
                     speculation_id=speculation_id,
+                    verify=verify,
                 )
                 session.add(req)
                 await session.commit()
@@ -155,6 +157,7 @@ class RequestQueueMixin:
         aux_data_json: str | None,
         permanent_json: str | None,
         dedup_key: str | None,
+        verify: str | None = None,
     ) -> int:
         """Insert an entry point request.
 
@@ -196,6 +199,7 @@ class RequestQueueMixin:
                     permanent_json=permanent_json,
                     deduplication_key=dedup_key,
                     created_at_ns=created_at_ns,
+                    verify=verify,
                 )
                 session.add(req)
                 await session.commit()
@@ -232,6 +236,7 @@ class RequestQueueMixin:
                     Request.priority,
                     Request.is_speculative,
                     Request.speculation_id,
+                    Request.verify,
                 )
                 .where(
                     Request.status == "pending",
@@ -308,6 +313,7 @@ class RequestQueueMixin:
                     Request.priority,
                     Request.is_speculative,
                     Request.speculation_id,
+                    Request.verify,
                 )
             )
             result = await session.execute(stmt)
@@ -669,6 +675,7 @@ class RequestQueueMixin:
         original_request_id: int,
         request_type: str = "navigating",
         expected_type: str | None = None,
+        verify: str | None = None,
     ) -> int:
         """Insert a requeued request.
 
@@ -707,6 +714,7 @@ class RequestQueueMixin:
                 original_request_id=original_request_id,
                 request_type=request_type,
                 expected_type=expected_type,
+                verify=verify,
             )
 
     async def _insert_requeue_request_unlocked(
@@ -725,6 +733,7 @@ class RequestQueueMixin:
         original_request_id: int,
         request_type: str = "navigating",
         expected_type: str | None = None,
+        verify: str | None = None,
     ) -> int:
         """Internal unlocked version of insert_requeue_request.
 
@@ -752,6 +761,7 @@ class RequestQueueMixin:
                 permanent_json=permanent_json,
                 parent_request_id=original_request_id,
                 created_at_ns=created_at_ns,
+                verify=verify,
             )
             session.add(req)
             await session.commit()
@@ -886,6 +896,7 @@ class RequestQueueMixin:
                     Request.permanent_json,
                     Request.request_type,
                     Request.expected_type,
+                    Request.verify,
                 ).where(
                     Request.continuation == continuation,
                     Request.status == status,
@@ -913,6 +924,7 @@ class RequestQueueMixin:
                 original_request_id=row[0],
                 request_type=row[12] or "navigating",
                 expected_type=row[13],
+                verify=row[14],
             )
             requeued_count += 1
 

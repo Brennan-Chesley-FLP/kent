@@ -69,6 +69,7 @@ class RequeueMixin:
                     Request.permanent_json,
                     Request.request_type,
                     Request.expected_type,
+                    Request.verify,
                 ).where(Request.id.in_(request_ids))  # type: ignore[union-attr]
             )
             rows = result.all()
@@ -164,6 +165,7 @@ class RequeueMixin:
                     permanent_json,
                     request_type,
                     expected_type,
+                    verify,
                 ) = row
 
                 new_request_id = await self._insert_requeue_request_unlocked(  # type: ignore[attr-defined]
@@ -181,6 +183,7 @@ class RequeueMixin:
                     original_request_id=original_id,
                     request_type=request_type or "navigating",
                     expected_type=expected_type,
+                    verify=verify,
                 )
                 new_request_ids.append(new_request_id)
 

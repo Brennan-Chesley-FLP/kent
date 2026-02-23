@@ -49,6 +49,7 @@ class ErrorRequeueMixin:
                     Request.priority,
                     Request.request_type,
                     Request.expected_type,
+                    Request.verify,
                 )
                 .outerjoin(Request, Error.request_id == Request.id)
                 .where(Error.id == error_id)
@@ -87,6 +88,7 @@ class ErrorRequeueMixin:
                 Request.priority,
                 Request.request_type,
                 Request.expected_type,
+                Request.verify,
             ).join(Request, Error.request_id == Request.id)
 
             stmt = stmt.where(
@@ -156,6 +158,7 @@ class ErrorRequeueMixin:
                 priority,
                 request_type,
                 expected_type,
+                verify,
             ) = row
 
             new_request_id = await self.insert_requeue_request(  # type: ignore[attr-defined]
@@ -173,6 +176,7 @@ class ErrorRequeueMixin:
                 original_request_id=request_id,
                 request_type=request_type or "navigating",
                 expected_type=expected_type,
+                verify=verify,
             )
             new_request_ids.append(new_request_id)
             error_ids.append(error_id)
