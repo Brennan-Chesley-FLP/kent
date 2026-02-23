@@ -33,7 +33,9 @@ from kent.common.exceptions import (
 from kent.driver.persistent_driver.models import Error, Request
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
 
 
 @dataclass
@@ -140,7 +142,7 @@ def classify_error(exc: Exception) -> str:
 
 
 async def store_error(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     exc: Exception,
     request_id: int | None = None,
     request_url: str | None = None,
@@ -307,7 +309,7 @@ def _error_model_to_record(error: Error) -> ErrorRecord:
 
 
 async def get_error(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     error_id: int,
 ) -> ErrorRecord | None:
     """Get a single error by ID.
@@ -327,7 +329,7 @@ async def get_error(
 
 
 async def list_errors(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     error_type: str | None = None,
     continuation: str | None = None,
     unresolved_only: bool = True,
@@ -370,7 +372,7 @@ async def list_errors(
 
 
 async def count_errors(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     error_type: str | None = None,
     unresolved_only: bool = True,
 ) -> int:
@@ -398,7 +400,7 @@ async def count_errors(
 
 
 async def resolve_error(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     error_id: int,
     notes: str | None = None,
 ) -> bool:

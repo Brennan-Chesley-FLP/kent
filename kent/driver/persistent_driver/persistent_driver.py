@@ -290,6 +290,8 @@ class PersistentDriver(
             )
 
         if self.db:
+            # Safety net: close any remaining scoped sessions
+            await self.db._session_factory.remove_all()
             await self.db.close_run()
             await self.db.engine.dispose()
 

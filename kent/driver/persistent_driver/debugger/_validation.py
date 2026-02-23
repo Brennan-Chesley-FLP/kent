@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 
 from kent.driver.persistent_driver.models import (
     Request,
 )
+from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 from kent.driver.persistent_driver.sql_manager import (
     SQLManager,
 )
@@ -22,7 +22,7 @@ class ValidationMixin:
     """Structure validation: XSD/JSON model validation of stored responses."""
 
     sql: SQLManager
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     if TYPE_CHECKING:
         # Provided by DebuggerBase at runtime via multiple inheritance.

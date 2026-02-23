@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from kent.driver.persistent_driver.models import (
     ArchivedFile,
@@ -17,12 +16,16 @@ from kent.driver.persistent_driver.models import (
 if TYPE_CHECKING:
     import asyncio
 
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
+
 
 class ResponseStorageMixin:
     """Response, ArchivedFile, IncidentalRequest, and CompressionDict operations."""
 
     _lock: asyncio.Lock
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     # --- Response Storage ---
 

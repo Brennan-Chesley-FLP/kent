@@ -8,12 +8,15 @@ from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from sqlalchemy import func, select, update
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from kent.driver.persistent_driver.models import Request, RunMetadata
 
 if TYPE_CHECKING:
     import asyncio
+
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +25,7 @@ class RunMetadataMixin:
     """RunMetadata table database operations."""
 
     _lock: asyncio.Lock
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     async def init_run_metadata(
         self,

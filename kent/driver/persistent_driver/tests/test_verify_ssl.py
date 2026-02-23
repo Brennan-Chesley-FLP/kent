@@ -194,7 +194,12 @@ class TestVerifyThroughPersistentDriverQueue:
 
     async def test_verify_false_survives_resolve_from(self) -> None:
         """verify=False survives resolve_from (the enqueue_request path)."""
-        from kent.data_types import HttpMethod, HTTPRequestParams, Request, Response
+        from kent.data_types import (
+            HttpMethod,
+            HTTPRequestParams,
+            Request,
+            Response,
+        )
 
         parent = Request(
             request=HTTPRequestParams(

@@ -7,7 +7,12 @@ async SQLAlchemy engine creation and session factory configuration.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
 
 import sqlalchemy as sa
 from sqlalchemy import event
@@ -17,7 +22,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel, select
 
 from kent.driver.persistent_driver.models import *  # noqa: F401, F403
@@ -47,7 +52,7 @@ async def create_engine_and_init(
         url,
         echo=echo,
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        poolclass=NullPool,
     )
 
     @event.listens_for(engine.sync_engine, "connect")
@@ -80,8 +85,8 @@ def get_session_factory(
 async def init_database(
     db_path: Path,
     echo: bool = False,
-) -> tuple[AsyncEngine, async_sessionmaker]:
-    """Initialize database and return engine + session factory.
+) -> tuple[AsyncEngine, ScopedSessionFactory]:
+    """Initialize database and return engine + scoped session factory.
 
     This is the main entry point, replacing schema.init_database().
 
@@ -90,11 +95,15 @@ async def init_database(
         echo: Whether to echo SQL statements.
 
     Returns:
-        Tuple of (engine, session_factory).
+        Tuple of (engine, scoped_session_factory).
     """
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
+
     engine = await create_engine_and_init(db_path, echo=echo)
-    session_factory = get_session_factory(engine)
-    return engine, session_factory
+    raw_factory = get_session_factory(engine)
+    return engine, ScopedSessionFactory(raw_factory)
 
 
 async def get_schema_version(session: AsyncSession) -> int:

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from sqlalchemy import func, or_, select, update
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from kent.driver.persistent_driver.models import Request
 from kent.driver.persistent_driver.sql_manager._types import compute_cache_key
@@ -16,12 +15,16 @@ from kent.driver.persistent_driver.sql_manager._types import compute_cache_key
 if TYPE_CHECKING:
     import asyncio
 
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
+
 
 class RequestQueueMixin:
     """Request table database operations."""
 
     _lock: asyncio.Lock
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     async def check_dedup_key_exists(self, dedup_key: str) -> bool:
         """Check if a deduplication key already exists.

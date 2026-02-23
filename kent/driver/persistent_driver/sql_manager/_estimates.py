@@ -4,19 +4,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
 from kent.driver.persistent_driver.models import Estimate
 
 if TYPE_CHECKING:
     import asyncio
+
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
 
 
 class EstimateStorageMixin:
     """Estimate table database operations."""
 
     _lock: asyncio.Lock
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     async def store_estimate(
         self,

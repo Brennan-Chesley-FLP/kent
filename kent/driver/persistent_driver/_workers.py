@@ -169,6 +169,12 @@ class WorkerMixin:
         - stop_event is set, OR
         - active_worker_count == 0 and no pending requests
         """
+        from kent.driver.persistent_driver.scoped_session import (
+            clear_scope,
+            set_scope,
+        )
+
+        set_scope("monitor")
         logger.info(
             f"Worker monitor started (max_workers={self.max_workers}, "
             f"poll_interval=60s)"
@@ -314,6 +320,9 @@ class WorkerMixin:
                     "Worker monitor: error during compression dict training"
                 )
 
+        # Clean up all scoped sessions (monitor + any leaked worker sessions)
+        await self.db._session_factory.remove_all()
+        clear_scope()
         logger.info("Worker monitor stopped")
 
     # --- Request Processing ---
@@ -329,7 +338,14 @@ class WorkerMixin:
         """
         import time as time_module
 
-        logger.info(f"[W{worker_id}] Worker started")
+        from kent.driver.persistent_driver.scoped_session import (
+            clear_scope,
+            set_scope,
+        )
+
+        scope_key = f"worker-{worker_id}"
+        set_scope(scope_key)
+        logger.info(f"[W{worker_id}] Worker started (scope={scope_key})")
         requests_processed = 0
 
         while True:
@@ -560,6 +576,10 @@ class WorkerMixin:
                         "error_type": type(e).__name__,
                     },
                 )
+
+        # Worker exiting normally — clean up scoped session
+        await self.db._session_factory.remove(scope_key)
+        clear_scope()
 
     async def _process_regular_request(
         self,

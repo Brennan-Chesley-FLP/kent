@@ -18,7 +18,9 @@ from sqlmodel import select
 from kent.driver.persistent_driver.models import RateItem as RateItemModel
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
 
 
 class AioSQLiteBucket(AbstractBucket):
@@ -40,7 +42,7 @@ class AioSQLiteBucket(AbstractBucket):
 
     def __init__(
         self,
-        session_factory: async_sessionmaker,
+        session_factory: ScopedSessionFactory,
         rates: list[Rate],
         db_lock: asyncio.Lock,
     ) -> None:

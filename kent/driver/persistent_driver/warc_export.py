@@ -23,13 +23,15 @@ from kent.driver.persistent_driver.models import (
 )
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
 
 logger = logging.getLogger(__name__)
 
 
 async def export_warc(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     output_path: Path,
     compress: bool = True,
     continuation: str | None = None,
@@ -281,7 +283,7 @@ async def export_warc(
 
 
 async def export_warc_for_continuation(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     continuation: str,
     output_path: Path,
     compress: bool = True,

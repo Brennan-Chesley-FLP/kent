@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from kent.driver.persistent_driver.models import (
     SpeculationTracking,
@@ -16,12 +15,16 @@ from kent.driver.persistent_driver.models import (
 if TYPE_CHECKING:
     import asyncio
 
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
+
 
 class SpeculationMixin:
     """SpeculativeStartId and SpeculationTracking operations."""
 
     _lock: asyncio.Lock
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     # --- Speculative Start IDs (for restart-speculative feature) ---
 

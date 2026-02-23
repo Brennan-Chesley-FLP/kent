@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 
 from kent.driver.persistent_driver.models import (
     Request,
     RunMetadata,
 )
+from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 from kent.driver.persistent_driver.sql_manager import (
     SQLManager,
 )
@@ -36,7 +36,7 @@ class DebuggerBase:
     def __init__(
         self,
         sql: SQLManager,
-        session_factory: async_sessionmaker,
+        session_factory: ScopedSessionFactory,
         read_only: bool = True,
     ) -> None:
         """Initialize the debugger.
@@ -69,7 +69,7 @@ class DebuggerBase:
                 stats = await debugger.get_stats()
         """
         from sqlalchemy.ext.asyncio import create_async_engine
-        from sqlalchemy.pool import StaticPool
+        from sqlalchemy.pool import NullPool
 
         from kent.driver.persistent_driver.database import (
             create_engine_and_init,
@@ -85,16 +85,21 @@ class DebuggerBase:
             engine = create_async_engine(
                 url,
                 connect_args={"check_same_thread": False},
-                poolclass=StaticPool,
+                poolclass=NullPool,
             )
         else:
             engine = await create_engine_and_init(db_path)
 
-        session_factory = get_session_factory(engine)
+        from kent.driver.persistent_driver.scoped_session import (
+            ScopedSessionFactory,
+        )
+
+        session_factory = ScopedSessionFactory(get_session_factory(engine))
         sql = SQLManager(engine, session_factory)
         try:
             yield cls(sql, session_factory, read_only=read_only)
         finally:
+            await session_factory.remove_all()
             await engine.dispose()
 
     def _require_write_mode(self) -> None:

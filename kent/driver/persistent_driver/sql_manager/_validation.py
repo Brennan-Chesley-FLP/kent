@@ -7,19 +7,22 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from kent.driver.persistent_driver.models import Request
 
 if TYPE_CHECKING:
     import asyncio
 
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
+
 
 class ValidationMixin:
     """JSON and XML response validation operations."""
 
     _lock: asyncio.Lock
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     # --- JSON Response Validation ---
 

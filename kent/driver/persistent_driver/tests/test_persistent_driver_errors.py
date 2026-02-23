@@ -333,14 +333,13 @@ class TestRequeueFunction:
                     "parent_id": request_id,
                 },
             )
-            await session.commit()
-
-        async with session_factory() as session:
+            # Get the new row ID in the same session/connection
             result = await session.execute(
                 sa.text("SELECT last_insert_rowid()")
             )
             row = result.first()
-        new_request_id = row[0]
+            new_request_id = row[0]
+            await session.commit()
 
         await resolve_error(
             session_factory,

@@ -6,7 +6,6 @@ import json
 from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from kent.driver.persistent_driver.models import Request, Result
 from kent.driver.persistent_driver.sql_manager._types import (
@@ -19,12 +18,16 @@ from kent.driver.persistent_driver.sql_manager._types import (
 if TYPE_CHECKING:
     import asyncio
 
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
+
 
 class ListingMixin:
     """Cross-model read-only listing and retrieval operations."""
 
     _lock: asyncio.Lock
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     # --- Status ---
 

@@ -6,7 +6,6 @@ import json
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 
 from kent.driver.persistent_driver.models import (
@@ -14,12 +13,13 @@ from kent.driver.persistent_driver.models import (
     Request,
     Result,
 )
+from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 
 
 class IntegrityMixin:
     """Integrity checks: orphaned requests/responses, ghost requests, estimates."""
 
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     async def check_integrity(self) -> dict[str, Any]:
         """Check database integrity for orphaned requests and responses.

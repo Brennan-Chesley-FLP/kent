@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 
 from kent.driver.persistent_driver.models import (
@@ -15,6 +14,7 @@ from kent.driver.persistent_driver.models import (
     Request,
     Result,
 )
+from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 from kent.driver.persistent_driver.sql_manager import (
     Page,
     RequestRecord,
@@ -31,7 +31,7 @@ class InspectionMixin:
     """Read-only inspection methods for requests, responses, errors, results, and more."""
 
     sql: SQLManager
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
     read_only: bool
 
     # =========================================================================

@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine
 from typing_extensions import Self
 
 from kent.driver.persistent_driver.database import init_database
 from kent.driver.persistent_driver.models import Request
+from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -39,7 +40,7 @@ class SQLManagerBase:
     def __init__(
         self,
         engine: AsyncEngine,
-        session_factory: async_sessionmaker,
+        session_factory: ScopedSessionFactory,
     ) -> None:
         """Initialize with an engine and session factory.
 

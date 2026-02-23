@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 
 from kent.driver.persistent_driver.models import (
     Request,
     Result,
 )
+from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 from kent.driver.persistent_driver.sql_manager import (
     ResponseRecord,
     SQLManager,
@@ -24,7 +24,7 @@ class ExportSearchMixin:
     """Export (JSONL, WARC), response search, and error diagnosis."""
 
     sql: SQLManager
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
 
     if TYPE_CHECKING:
         # Provided by InspectionMixin / DebuggerBase at runtime.

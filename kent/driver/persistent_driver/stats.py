@@ -21,7 +21,9 @@ from kent.driver.persistent_driver.models import (
 )
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
 
 
 @dataclass
@@ -212,7 +214,7 @@ class DevDriverStats:
 
 
 async def get_queue_stats(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
 ) -> QueueStats:
     """Get statistics about the request queue.
 
@@ -269,7 +271,7 @@ async def get_queue_stats(
 
 
 async def get_throughput_stats(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
 ) -> ThroughputStats:
     """Get statistics about request throughput.
 
@@ -331,7 +333,7 @@ async def get_throughput_stats(
 
 
 async def get_compression_stats(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
 ) -> CompressionStats:
     """Get statistics about response compression.
 
@@ -389,7 +391,7 @@ async def get_compression_stats(
 
 
 async def get_result_stats(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
 ) -> ResultStats:
     """Get statistics about scraped results.
 
@@ -433,7 +435,7 @@ async def get_result_stats(
 
 
 async def get_error_stats(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
 ) -> ErrorStats:
     """Get statistics about errors.
 
@@ -487,7 +489,7 @@ async def get_error_stats(
 
 
 async def get_stats(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
 ) -> DevDriverStats:
     """Get all statistics for the LocalDevDriver.
 

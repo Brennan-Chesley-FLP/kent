@@ -6,13 +6,13 @@ import json
 from typing import TYPE_CHECKING, Literal
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 
 from kent.driver.persistent_driver.models import (
     Error,
     Request,
 )
+from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 from kent.driver.persistent_driver.sql_manager import (
     SQLManager,
 )
@@ -25,7 +25,7 @@ class ManipulationMixin:
     """Write operations: cancel, requeue, resolve, seed, train, recompress."""
 
     sql: SQLManager
-    _session_factory: async_sessionmaker
+    _session_factory: ScopedSessionFactory
     read_only: bool
 
     if TYPE_CHECKING:

@@ -22,7 +22,9 @@ from sqlmodel import select
 from kent.driver.persistent_driver.models import CompressionDict, Request
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from kent.driver.persistent_driver.scoped_session import (
+        ScopedSessionFactory,
+    )
 
 # Default compression level (3 is a good balance of speed/ratio)
 DEFAULT_COMPRESSION_LEVEL = 3
@@ -75,7 +77,7 @@ def decompress(
 
 
 async def get_compression_dict(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     continuation: str,
     db_lock: asyncio.Lock | None = None,
 ) -> tuple[int, bytes] | None:
@@ -104,7 +106,7 @@ async def get_compression_dict(
 
 
 async def get_dict_by_id(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     dict_id: int,
     db_lock: asyncio.Lock | None = None,
 ) -> bytes | None:
@@ -130,7 +132,7 @@ async def get_dict_by_id(
 
 
 async def compress_response(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     content: bytes,
     continuation: str,
     level: int = DEFAULT_COMPRESSION_LEVEL,
@@ -167,7 +169,7 @@ async def compress_response(
 
 
 async def decompress_response(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     compressed: bytes,
     dict_id: int | None,
     db_lock: asyncio.Lock | None = None,
@@ -199,7 +201,7 @@ DEFAULT_DICT_SIZE = 112640
 
 
 async def train_compression_dict(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     continuation: str,
     sample_limit: int = 100,
     dict_size: int = DEFAULT_DICT_SIZE,
@@ -294,7 +296,7 @@ async def train_compression_dict(
 
 
 async def recompress_responses(
-    session_factory: async_sessionmaker,
+    session_factory: ScopedSessionFactory,
     continuation: str,
     level: int = DEFAULT_COMPRESSION_LEVEL,
     dict_id: int | None = None,
