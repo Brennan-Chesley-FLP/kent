@@ -340,6 +340,36 @@ class ResponseStorageMixin:
                 "method": row[7],
             }
 
+    async def get_parent_response_for_tab(
+        self, parent_request_id: int
+    ) -> tuple[str, bytes, int | None, str | None, int] | None:
+        """Get parent's stored response for tab route interception.
+
+        Args:
+            parent_request_id: The database ID of the parent request.
+
+        Returns:
+            Tuple of (response_url, content_compressed, compression_dict_id,
+            response_headers_json, response_status_code) or None if no
+            stored response exists.
+        """
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(
+                    Request.response_url,
+                    Request.content_compressed,
+                    Request.compression_dict_id,
+                    Request.response_headers_json,
+                    Request.response_status_code,
+                )
+                .where(
+                    Request.id == parent_request_id,
+                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                )
+            )
+            row = result.first()
+            return tuple(row) if row else None  # type: ignore[return-value]
+
     async def get_compression_dict(self, dict_id: int) -> bytes | None:
         """Get compression dictionary data by ID.
 

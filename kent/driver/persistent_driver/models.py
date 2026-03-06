@@ -168,6 +168,9 @@ class Request(SQLModel, table=True):  # type: ignore[call-arg]
     # Speculative request outcome tracking
     speculation_outcome: str | None = None
 
+    # Playwright via field (ViaFormSubmit / ViaLink JSON)
+    via_json: str | None = None
+
     # TLS verification override
     verify: str | None = None
 
@@ -290,6 +293,9 @@ class RunMetadata(SQLModel, table=True):  # type: ignore[call-arg]
 
     # Browser configuration (Playwright driver)
     browser_config_json: str | None = None
+
+    # Browser cookie persistence (Playwright driver, for resume)
+    browser_cookies_json: str | None = None
 
 
 class Error(SQLModel, table=True):  # type: ignore[call-arg]

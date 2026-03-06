@@ -65,7 +65,7 @@ class WorkerMixin:
         # Provided by QueueMixin
         async def _get_next_request(
             self,
-        ) -> tuple[int, BaseRequest] | None: ...
+        ) -> tuple[int, BaseRequest, int | None] | None: ...
 
         async def enqueue_request(
             self,
@@ -441,7 +441,7 @@ class WorkerMixin:
                         )
                         break
 
-            request_id, request = result
+            request_id, request, parent_request_id = result
             logger.debug(f"[W{worker_id}] Dequeued request {request_id}")
 
             try:
@@ -467,6 +467,7 @@ class WorkerMixin:
                     request_id,
                     request,  # type: ignore[arg-type]
                     continuation_name,
+                    parent_request_id=parent_request_id,
                 )
                 req_time = time_module.time() - req_start
                 loop_time = time_module.time() - loop_start
@@ -586,6 +587,7 @@ class WorkerMixin:
         request_id: int,
         request: Request,
         continuation_name: str,
+        parent_request_id: int | None = None,
     ) -> None:
         """Process a regular (non-speculative, non-resume) request.
 
@@ -593,6 +595,7 @@ class WorkerMixin:
             request_id: Database ID of the request.
             request: The request to process.
             continuation_name: Name of the continuation method.
+            parent_request_id: Parent request ID for tab forking (Playwright).
         """
         # Process the request using parent class methods
         # For archive requests, resolve_archive_request returns ArchiveResponse

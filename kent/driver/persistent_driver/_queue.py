@@ -97,6 +97,7 @@ class QueueMixin:
             is_speculative=request_data["is_speculative"],
             speculation_id=request_data["speculation_id"],
             verify=request_data["verify"],
+            via_json=request_data["via_json"],
         )
 
         # Emit progress event
@@ -159,6 +160,26 @@ class QueueMixin:
                 query = parsed.query + "&" + query
             url = urlunparse(parsed._replace(query=query))
 
+        # Serialize via (ViaFormSubmit / ViaLink) as JSON
+        via_json: str | None = None
+        if request.via is not None:
+            from kent.common.page_element import ViaFormSubmit, ViaLink
+
+            if isinstance(request.via, ViaFormSubmit):
+                via_json = json.dumps({
+                    "type": "form_submit",
+                    "form_selector": request.via.form_selector,
+                    "submit_selector": request.via.submit_selector,
+                    "field_data": request.via.field_data,
+                    "description": request.via.description,
+                })
+            elif isinstance(request.via, ViaLink):
+                via_json = json.dumps({
+                    "type": "link",
+                    "selector": request.via.selector,
+                    "description": request.via.description,
+                })
+
         return {
             "request_type": request_type,
             "method": http_request.method.value,
@@ -197,13 +218,17 @@ class QueueMixin:
                 if http_request.verify is False
                 else str(http_request.verify)
             ),
+            "via_json": via_json,
         }
 
-    async def _get_next_request(self) -> tuple[int, BaseRequest] | None:
+    async def _get_next_request(
+        self,
+    ) -> tuple[int, BaseRequest, int | None] | None:
         """Get the next pending request from the database.
 
         Returns:
-            Tuple of (request_id, request) or None if queue is empty.
+            Tuple of (request_id, request, parent_request_id) or None
+            if queue is empty.
 
         Notes:
             - Skips 'held' status requests
@@ -220,10 +245,11 @@ class QueueMixin:
             return None
 
         request_id = row[0]
+        parent_request_id = row[18]  # Added at end of RETURNING clause
 
-        # Deserialize and return (already marked as in_progress by dequeue)
-        request = self._deserialize_request(row)
-        return (request_id, request)
+        # Deserialize using the first 18 columns (excluding parent_request_id)
+        request = self._deserialize_request(row[:18])
+        return (request_id, request, parent_request_id)
 
     def _deserialize_request(self, row: tuple[Any, ...]) -> BaseRequest:
         """Deserialize a database row to a BaseRequest.
@@ -253,6 +279,7 @@ class QueueMixin:
             is_speculative,
             speculation_id_json,
             verify_raw,
+            via_json_raw,
         ) = row
 
         # Parse JSON fields
@@ -299,6 +326,25 @@ class QueueMixin:
             verify=verify,
         )
 
+        # Deserialize via (ViaFormSubmit / ViaLink)
+        via: Any = None
+        if via_json_raw:
+            from kent.common.page_element import ViaFormSubmit, ViaLink
+
+            via_data = json.loads(via_json_raw)
+            if via_data["type"] == "form_submit":
+                via = ViaFormSubmit(
+                    form_selector=via_data["form_selector"],
+                    submit_selector=via_data.get("submit_selector"),
+                    field_data=via_data["field_data"],
+                    description=via_data["description"],
+                )
+            elif via_data["type"] == "link":
+                via = ViaLink(
+                    selector=via_data["selector"],
+                    description=via_data["description"],
+                )
+
         # Create the appropriate request type
         if request_type == "archive":
             return Request(
@@ -311,6 +357,7 @@ class QueueMixin:
                 priority=priority,
                 archive=True,
                 expected_type=expected_type,
+                via=via,
             )
         elif request_type == "non_navigating":
             return Request(
@@ -322,6 +369,7 @@ class QueueMixin:
                 permanent=permanent,
                 priority=priority,
                 nonnavigating=True,
+                via=via,
             )
         else:  # navigating (default)
             return Request(
@@ -334,4 +382,5 @@ class QueueMixin:
                 priority=priority,
                 is_speculative=bool(is_speculative),
                 speculation_id=speculation_id,
+                via=via,
             )

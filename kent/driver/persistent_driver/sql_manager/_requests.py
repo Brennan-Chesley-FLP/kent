@@ -86,6 +86,7 @@ class RequestQueueMixin:
         is_speculative: bool = False,
         speculation_id: str | None = None,
         verify: str | None = None,
+        via_json: str | None = None,
     ) -> int:
         """Insert a new request into the queue.
 
@@ -140,6 +141,7 @@ class RequestQueueMixin:
                     is_speculative=is_speculative,
                     speculation_id=speculation_id,
                     verify=verify,
+                    via_json=via_json,
                 )
                 session.add(req)
                 await session.commit()
@@ -238,6 +240,7 @@ class RequestQueueMixin:
                     Request.is_speculative,
                     Request.speculation_id,
                     Request.verify,
+                    Request.via_json,
                 )
                 .where(
                     Request.status == "pending",
@@ -315,6 +318,8 @@ class RequestQueueMixin:
                     Request.is_speculative,
                     Request.speculation_id,
                     Request.verify,
+                    Request.via_json,
+                    Request.parent_request_id,
                 )
             )
             result = await session.execute(stmt)

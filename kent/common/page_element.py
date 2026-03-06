@@ -11,7 +11,7 @@ Step: unified-page-interface
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from kent.data_types import Request
@@ -107,12 +107,16 @@ class Form:
         self,
         data: dict[str, str] | None = None,
         submit_selector: str | None = None,
+        **request_kwargs: Any,
     ) -> Request:
         """Submit the form as a request.
 
         Args:
             data: Optional field overrides (merged with defaults).
             submit_selector: Optional selector for submit element (relative to form).
+            **request_kwargs: Additional kwargs passed to Request constructor.
+                Common ones: continuation, accumulated_data, archive, expected_type,
+                priority, deduplication_key, aux_data, permanent.
 
         Returns:
             Request with the form's action as URL, method as HTTP method,
@@ -149,15 +153,18 @@ class Form:
                 data=field_data,  # type: ignore[arg-type]
             )
 
+        # Set defaults for continuation if not provided
+        request_kwargs.setdefault("continuation", "")
+
         return Request(
             request=http_params,
-            continuation="",  # Will be set by caller
             via=ViaFormSubmit(
                 form_selector=self.selector,
                 submit_selector=submit_selector,
                 field_data=field_data,
                 description=f"form at {self.selector}",
             ),
+            **request_kwargs,
         )
 
 

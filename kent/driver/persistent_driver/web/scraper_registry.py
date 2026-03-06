@@ -266,6 +266,30 @@ class ScraperRegistry:
 
         return scraper_class()
 
+    def scan_tree(self, root: Path) -> int:
+        """Discover BaseScraper subclasses in ``.py`` files under *root*.
+
+        Delegates to :func:`kent.discovery.discover_scrapers` for
+        file-system scanning and populates the registry with full
+        metadata for each discovered class.
+
+        Args:
+            root: Directory to scan.
+
+        Returns:
+            Number of scrapers discovered.
+        """
+        from kent.discovery import discover_scrapers
+
+        count = 0
+        for module_path, class_name, cls in discover_scrapers(root):
+            info = self._extract_scraper_info(cls, module_path, class_name)
+            self._scrapers[info.full_path] = info
+            self._classes[info.full_path] = cls
+            count += 1
+            logger.info(f"Discovered scraper: {info.full_path}")
+        return count
+
     def register_module(self, module_path: str) -> int:
         """Register scrapers from a specific module path.
 
@@ -343,7 +367,8 @@ def init_registry(
 
     Args:
         sd_directory: Directory to scan for scrapers.
-            Defaults to juriscraper/sd relative to this package.
+            Defaults to scanning the current working directory
+            (same discovery logic as ``kent list``).
         extra_modules: Additional module paths to scan for scrapers
             (e.g., ``["kent.demo.scraper"]``).
 
@@ -354,18 +379,21 @@ def init_registry(
 
     _registry = ScraperRegistry()
 
-    # Default to juriscraper/sd
-    if sd_directory is None:
-        # Navigate from this file to juriscraper/sd
-        # This file is at juriscraper/scraper_driver/driver/persistent_driver/web/scraper_registry.py
-        this_file = Path(__file__)
-        sd_directory = this_file.parent.parent.parent.parent.parent / "sd"
-
-    if sd_directory.exists():
-        count = _registry.scan_directory(sd_directory, "juriscraper.sd")
-        logger.info(f"Initialized scraper registry with {count} scrapers")
+    if sd_directory is not None:
+        if sd_directory.exists():
+            count = _registry.scan_directory(sd_directory, "juriscraper.sd")
+            logger.info(
+                f"Initialized scraper registry with {count} scrapers "
+                f"from {sd_directory}"
+            )
+        else:
+            logger.warning(f"Scraper directory not found: {sd_directory}")
     else:
-        logger.warning(f"Scraper directory not found: {sd_directory}")
+        # Default: scan from CWD, same as `kent list`
+        count = _registry.scan_tree(Path.cwd())
+        logger.info(
+            f"Discovered {count} scrapers from working directory"
+        )
 
     # Register extra modules
     for module_path in extra_modules or []:
@@ -374,15 +402,5 @@ def init_registry(
             logger.info(f"Registered {n} scrapers from {module_path}")
         except Exception as e:
             logger.warning(f"Could not register {module_path}: {e}")
-
-    # Auto-discover the demo scraper if the demo extra is installed
-    if not extra_modules or "kent.demo.scraper" not in extra_modules:
-        try:
-            import kent.demo  # noqa: F401
-
-            n = _registry.register_module("kent.demo.scraper")
-            logger.info(f"Registered {n} demo scrapers")
-        except ImportError:
-            pass  # demo extra not installed
 
     return _registry

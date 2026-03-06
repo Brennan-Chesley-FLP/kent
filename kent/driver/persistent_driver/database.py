@@ -28,7 +28,44 @@ from sqlmodel import SQLModel, select
 from kent.driver.persistent_driver.models import *  # noqa: F401, F403
 from kent.driver.persistent_driver.models import Request, SchemaInfo
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
+
+
+_MIGRATIONS: dict[int, list[str]] = {
+    15: [
+        "ALTER TABLE run_metadata ADD COLUMN browser_cookies_json TEXT",
+    ],
+}
+
+
+async def _apply_migrations(engine: AsyncEngine) -> None:
+    """Apply pending schema migrations for existing databases."""
+    async with engine.begin() as conn:
+        # Get current schema version
+        current = await conn.run_sync(
+            lambda sync_conn: sync_conn.execute(
+                sa.text(
+                    "SELECT MAX(version) FROM schema_info"
+                )
+            ).scalar()
+            or 0
+        )
+
+        for version in sorted(_MIGRATIONS):
+            if current >= version:
+                continue
+            for stmt in _MIGRATIONS[version]:
+                try:
+                    await conn.execute(sa.text(stmt))
+                except Exception:
+                    # Column may already exist (fresh DB via create_all)
+                    pass
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO schema_info (version) VALUES (:v)"
+                ),
+                {"v": version},
+            )
 
 
 async def create_engine_and_init(
@@ -64,6 +101,8 @@ async def create_engine_and_init(
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+
+    await _apply_migrations(engine)
 
     return engine
 

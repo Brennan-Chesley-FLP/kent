@@ -74,6 +74,8 @@ from kent.driver.persistent_driver.sql_manager import (
     SQLManager,
 )
 
+from kent.driver.playwright_driver.browser_profile import BrowserProfile
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
 
@@ -82,6 +84,74 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ScraperReturnDatatype = TypeVar("ScraperReturnDatatype")
+
+
+def _resolve_user_data_dir(
+    scraper: BaseScraper[Any],
+    profile_name: str,
+) -> Path:
+    """Determine the user_data_dir for a persistent browser context.
+
+    Returns ``~/.cache/kent/<scraper_module>/<profile_name>/browser-data/``,
+    creating the directory if needed.
+    """
+    scraper_module = scraper.__class__.__module__.replace(".", "_")
+    cache_dir = (
+        Path.home()
+        / ".cache"
+        / "kent"
+        / scraper_module
+        / profile_name
+        / "browser-data"
+    )
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+async def _launch_persistent(
+    playwright: Any,
+    scraper: BaseScraper[Any],
+    profile: BrowserProfile,
+    headless: bool,
+) -> BrowserContext:
+    """Launch a persistent browser context from a :class:`BrowserProfile`.
+
+    Handles protocol param injection, user data dir resolution, and
+    init script loading.
+    """
+    from kent.driver.playwright_driver.browser_profile import (
+        inject_protocol_params,
+    )
+
+    browser_launcher = getattr(playwright, profile.browser_type)
+
+    # Inject protocol params (e.g. assistantMode, cdpPort) if configured
+    if profile.protocol_params:
+        inject_protocol_params(
+            browser_launcher._impl_obj, profile.protocol_params
+        )
+
+    user_data_dir = _resolve_user_data_dir(scraper, profile.name)
+
+    # Merge launch + context options for persistent context
+    persistent_kwargs: dict[str, Any] = {}
+    persistent_kwargs.update(profile.launch_options)
+    persistent_kwargs.update(profile.context_options)
+    persistent_kwargs["headless"] = headless
+    if profile.channel:
+        persistent_kwargs["channel"] = profile.channel
+
+    context = await browser_launcher.launch_persistent_context(
+        str(user_data_dir),
+        **persistent_kwargs,
+    )
+
+    # Add init scripts from profile
+    for script_path in profile.init_scripts:
+        js = script_path.read_text(encoding="utf-8")
+        await context.add_init_script(js)
+
+    return context
 
 
 class PlaywrightDriver(
@@ -183,6 +253,7 @@ class PlaywrightDriver(
         user_agent: str | None = None,
         locale: str = "en-US",
         timezone_id: str = "America/New_York",
+        browser_profile: BrowserProfile | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[PlaywrightDriver[ScraperReturnDatatype]]:
         """Open Playwright driver as async context manager.
@@ -198,6 +269,9 @@ class PlaywrightDriver(
             user_agent: Custom user agent string (default: None = browser default).
             locale: Browser locale (default: "en-US").
             timezone_id: Browser timezone (default: "America/New_York").
+            browser_profile: Optional :class:`BrowserProfile` loaded from a
+                profile directory.  When provided, overrides browser_type,
+                channel, viewport, and launch strategy.
             **kwargs: Additional arguments passed to __init__.
 
         Yields:
@@ -221,6 +295,7 @@ class PlaywrightDriver(
         enable_monitor = kwargs.pop("enable_monitor", True)
         excluded_resource_types = kwargs.pop("excluded_resource_types", None)
         rates = kwargs.pop("rates", None)
+        seed_params = kwargs.pop("seed_params", None)
 
         # Default viewport
         if viewport is None:
@@ -235,6 +310,23 @@ class PlaywrightDriver(
                 if run_metadata and run_metadata.get("browser_config"):
                     stored_browser_config = run_metadata["browser_config"]
 
+        # On resume, reload browser profile from stored path if available
+        if stored_browser_config and stored_browser_config.get("profile_path"):
+            from kent.driver.playwright_driver.browser_profile import (
+                load_browser_profile,
+            )
+
+            stored_path = Path(stored_browser_config["profile_path"])
+            if stored_path.is_dir():
+                browser_profile = load_browser_profile(stored_path)
+            else:
+                logger.warning(
+                    "Stored browser profile not found at %s, "
+                    "falling back to standard launch",
+                    stored_path,
+                )
+                browser_profile = None
+
         # Use stored config if resuming, otherwise create new config
         if stored_browser_config:
             browser_config = stored_browser_config
@@ -247,7 +339,7 @@ class PlaywrightDriver(
             timezone_id = browser_config.get("timezone_id", timezone_id)
         else:
             # Create new browser configuration for persistence
-            browser_config = {
+            browser_config: dict[str, Any] = {
                 "browser_type": browser_type,
                 "headless": headless,
                 "viewport": viewport,
@@ -255,6 +347,11 @@ class PlaywrightDriver(
                 "locale": locale,
                 "timezone_id": timezone_id,
             }
+            if browser_profile is not None:
+                browser_config["profile_path"] = str(
+                    browser_profile.profile_dir
+                )
+                browser_config["browser_type"] = browser_profile.browser_type
 
         # Initialize database and SQLManager
         from kent.driver.persistent_driver.database import (
@@ -275,6 +372,7 @@ class PlaywrightDriver(
                 num_workers=num_workers,
                 max_backoff_time=max_backoff_time,
                 browser_config=browser_config,
+                seed_params=seed_params,
             )
 
             # Restore queue if resuming
@@ -284,14 +382,34 @@ class PlaywrightDriver(
             # Initialize Playwright
             playwright = await async_playwright().start()
             try:
-                # Launch browser
-                browser_launcher = getattr(playwright, browser_type)
-                browser: Browser = await browser_launcher.launch(
-                    headless=headless
-                )
+                browser_obj: Browser | None = None
+                browser_context: BrowserContext
 
-                try:
-                    # Create browser context with configuration
+                if (
+                    browser_profile is not None
+                    and browser_profile.persistent_context
+                ):
+                    # === Persistent context path (for Cloudflare bypass, etc.) ===
+                    browser_context = await _launch_persistent(
+                        playwright, scraper, browser_profile, headless
+                    )
+                else:
+                    # === Standard path (existing behavior) ===
+                    effective_type = (
+                        browser_profile.browser_type
+                        if browser_profile is not None
+                        else browser_type
+                    )
+                    browser_launcher = getattr(playwright, effective_type)
+
+                    launch_kwargs: dict[str, Any] = {"headless": headless}
+                    if browser_profile is not None:
+                        launch_kwargs.update(browser_profile.launch_options)
+                        if browser_profile.channel:
+                            launch_kwargs["channel"] = browser_profile.channel
+
+                    browser_obj = await browser_launcher.launch(**launch_kwargs)
+
                     context_kwargs: dict[str, Any] = {
                         "viewport": viewport,
                         "locale": locale,
@@ -299,51 +417,71 @@ class PlaywrightDriver(
                     }
                     if user_agent:
                         context_kwargs["user_agent"] = user_agent
+                    if browser_profile is not None:
+                        context_kwargs.update(browser_profile.context_options)
 
-                    browser_context = await browser.new_context(
+                    browser_context = await browser_obj.new_context(
                         **context_kwargs
                     )
 
-                    try:
-                        # Initialize rate limiter from explicit rates or scraper declaration
-                        rate_limiter = None
-                        effective_rates = rates or scraper.rate_limits
-                        if effective_rates:
-                            bucket = AioSQLiteBucket(
-                                db._session_factory,
-                                effective_rates,
-                                db._lock,
-                            )
-                            rate_limiter = Limiter(bucket)
+                    # Add init scripts (works for non-persistent profiles too)
+                    if browser_profile is not None:
+                        for script_path in browser_profile.init_scripts:
+                            js = script_path.read_text(encoding="utf-8")
+                            await browser_context.add_init_script(js)
 
-                        # Create driver instance (no request manager needed for Playwright)
-                        driver = cls(
-                            scraper=scraper,
-                            db=db,
-                            browser_context=browser_context,
-                            storage_dir=storage_dir,
-                            num_workers=num_workers,
-                            max_workers=max_workers,
-                            resume=resume,
-                            max_backoff_time=max_backoff_time,
-                            request_manager=None,  # Playwright doesn't use HTTP request manager
-                            enable_monitor=enable_monitor,
-                            excluded_resource_types=excluded_resource_types,
-                            rate_limiter=rate_limiter,
+                try:
+                    # Initialize rate limiter from explicit rates or scraper declaration
+                    rate_limiter = None
+                    effective_rates = rates or scraper.rate_limits
+                    if effective_rates:
+                        bucket = AioSQLiteBucket(
+                            db._session_factory,
+                            effective_rates,
+                            db._lock,
                         )
+                        rate_limiter = Limiter(bucket)
 
-                        yield driver
+                    # Create driver instance (no request manager needed for Playwright)
+                    driver = cls(
+                        scraper=scraper,
+                        db=db,
+                        browser_context=browser_context,
+                        storage_dir=storage_dir,
+                        num_workers=num_workers,
+                        max_workers=max_workers,
+                        resume=resume,
+                        max_backoff_time=max_backoff_time,
+                        request_manager=None,
+                        enable_monitor=enable_monitor,
+                        excluded_resource_types=excluded_resource_types,
+                        rate_limiter=rate_limiter,
+                    )
 
-                        # Close driver (persist state)
-                        await driver.close()
+                    # Restore cookies on resume
+                    if resume:
+                        try:
+                            cookies_json = await db.get_browser_cookies()
+                            if cookies_json:
+                                cookies = json.loads(cookies_json)
+                                await browser_context.add_cookies(cookies)
+                                logger.info(
+                                    f"Restored {len(cookies)} browser cookies from DB"
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to restore browser cookies: {e}"
+                            )
 
-                    finally:
-                        # Close browser context
-                        await browser_context.close()
+                    yield driver
+
+                    # Close driver (persist state)
+                    await driver.close()
 
                 finally:
-                    # Close browser
-                    await browser.close()
+                    await browser_context.close()
+                    if browser_obj is not None:
+                        await browser_obj.close()
 
             finally:
                 # Stop Playwright
@@ -353,22 +491,106 @@ class PlaywrightDriver(
             # Close database connection
             await engine.dispose()
 
+    async def _setup_tab_with_parent_response(
+        self,
+        page: Page,
+        parent_request_id: int,
+    ) -> bool:
+        """Load parent's cached response into a new tab via route interception.
+
+        Queries the parent's stored response from DB, sets up a route handler
+        to serve the cached HTML, navigates to the response URL (which the
+        handler intercepts), then removes the route so future navigations
+        hit the real server.
+
+        Args:
+            page: The Playwright page to set up.
+            parent_request_id: DB ID of the parent request.
+
+        Returns:
+            True if route interception succeeded, False if parent has no
+            stored response.
+        """
+        from kent.driver.persistent_driver.compression import decompress
+
+        parent_data = await self.db.get_parent_response_for_tab(
+            parent_request_id
+        )
+        if parent_data is None:
+            return False
+
+        (
+            response_url,
+            content_compressed,
+            compression_dict_id,
+            response_headers_json,
+            response_status_code,
+        ) = parent_data
+
+        if not response_url or not content_compressed:
+            return False
+
+        # Decompress content
+        dictionary = None
+        if compression_dict_id is not None:
+            dictionary = await self.db.get_compression_dict(
+                compression_dict_id
+            )
+        body = decompress(content_compressed, dictionary=dictionary)
+
+        # Parse response headers
+        headers: dict[str, str] = {}
+        if response_headers_json:
+            headers = json.loads(response_headers_json)
+        # Ensure content-type is set for HTML
+        if "content-type" not in {k.lower() for k in headers}:
+            headers["content-type"] = "text/html; charset=utf-8"
+
+        status = response_status_code or 200
+
+        # Set up route to intercept the response_url
+        async def _intercept_handler(route):
+            await route.fulfill(
+                status=status,
+                headers=headers,
+                body=body,
+            )
+
+        await page.route(response_url, _intercept_handler)
+
+        # Navigate to the response URL — interceptor serves cached HTML
+        await page.goto(response_url, wait_until="domcontentloaded")
+
+        # Remove route so future navigations (via clicks/form submits) hit
+        # the real server
+        await page.unroute(response_url, _intercept_handler)
+
+        return True
+
     async def _process_regular_request(
         self,
         request_id: int,
         request: BaseRequest,
         continuation_name: str,
+        parent_request_id: int | None = None,
     ) -> None:
         """Process a request using Playwright navigation.
 
-        Overrides LocalDevDriver's HTTP-based request processing to use browser automation.
+        Each request gets its own tab (page). If the request has a parent
+        with a stored response, the parent's page is served from cache via
+        route interception before executing the via navigation.
 
         Args:
             request_id: Database ID of the request.
             request: The request to process.
             continuation_name: The continuation method name to invoke after navigation.
+            parent_request_id: Parent request ID for tab route interception.
         """
         self._current_parent_request_id = request_id
+
+        # Create a fresh page (tab) for this request
+        page = await self.browser_context.new_page()
+        self._register_network_listeners(page)
 
         try:
             # Acquire rate limiter token before navigation
@@ -377,44 +599,58 @@ class PlaywrightDriver(
                     name="navigation", weight=1
                 )
 
-            # Get or create page
-            if self._page is None:
-                self._page = await self.browser_context.new_page()
-                # Register network listeners for incidental request tracking
-                self._register_network_listeners(self._page)
-
             # Clear incidental requests from previous navigation
             self._incidental_requests.clear()
 
-            # Execute navigation based on via field
-            if request.via is not None:
-                await self._execute_via_navigation(request)
+            # Navigate: route-intercept parent's cached page then via,
+            # or navigate directly
+            nav_error: HTMLStructuralAssumptionException | None = None
+            if parent_request_id and request.via is not None:
+                success = await self._setup_tab_with_parent_response(
+                    page, parent_request_id
+                )
+                if success:
+                    # Parent page is loaded from cache; execute via navigation
+                    try:
+                        await self._execute_via_navigation(request, page)
+                    except HTMLStructuralAssumptionException as e:
+                        nav_error = e
+                else:
+                    # Parent has no stored response — fall back to direct URL
+                    await page.goto(
+                        request.request.url, wait_until="domcontentloaded"
+                    )
+            elif request.via is not None:
+                # Has via but no parent (shouldn't normally happen) — direct
+                await page.goto(
+                    request.request.url, wait_until="domcontentloaded"
+                )
             else:
-                # Direct URL navigation
-                await self._page.goto(
+                # Entry point or direct URL (no via)
+                await page.goto(
                     request.request.url, wait_until="domcontentloaded"
                 )
 
-            # Process await_list if continuation has one
-            if continuation_name:
+            # Process await_list if continuation has one (skip on nav error)
+            if continuation_name and nav_error is None:
                 continuation = getattr(self.scraper, continuation_name, None)
                 if continuation:
                     metadata = get_step_metadata(continuation)
                     if metadata and metadata.await_list:
                         await self._process_await_list(
-                            self._page, metadata.await_list
+                            page, metadata.await_list
                         )
 
-            # Snapshot DOM
-            html_content = await self._page.content()
+            # Snapshot DOM (always — even on nav error, for debugging)
+            html_content = await page.content()
 
             # Create Response object
             response = Response(
-                status_code=200,  # Playwright doesn't expose status code directly
-                url=self._page.url,
+                status_code=200,
+                url=page.url,
                 content=html_content.encode("utf-8"),
                 text=html_content,
-                headers={},
+                headers={"content-type": "text/html; charset=utf-8"},
                 request=request,
             )
 
@@ -431,6 +667,10 @@ class PlaywrightDriver(
                 await self.db.insert_incidental_request(
                     parent_request_id=request_id, **incidental
                 )
+
+            # Re-raise navigation error after storing response
+            if nav_error is not None:
+                raise nav_error
 
             # Process continuation if present
             if continuation_name:
@@ -450,6 +690,7 @@ class PlaywrightDriver(
                             request,
                             request_id,
                             auto_await_timeout,
+                            page=page,
                         )
                     else:
                         # Process normally
@@ -483,26 +724,27 @@ class PlaywrightDriver(
 
         finally:
             self._current_parent_request_id = None
+            await page.close()
 
-    async def _execute_via_navigation(self, request: BaseRequest) -> None:
+    async def _execute_via_navigation(
+        self, request: BaseRequest, page: Page
+    ) -> None:
         """Execute browser navigation based on via field.
 
         Args:
             request: The request with via field (ViaFormSubmit or ViaLink).
+            page: The Playwright page to navigate on.
 
         Raises:
             HTMLStructuralAssumptionException: If selector doesn't match in live DOM.
         """
-        assert self._page is not None, (
-            "Page must be initialized before navigation"
-        )
 
         if isinstance(request.via, ViaFormSubmit):
             # Form submission
             form_via = request.via
             try:
                 # Locate form
-                form_element = await self._page.wait_for_selector(
+                form_element = await page.wait_for_selector(
                     form_via.form_selector, timeout=5000
                 )
                 if not form_element:
@@ -524,7 +766,42 @@ class PlaywrightDriver(
                         field_selector
                     )
                     if field_element:
-                        await field_element.fill(str(field_value))
+                        tag = await field_element.evaluate(
+                            "el => el.tagName.toLowerCase()"
+                        )
+                        input_type = await field_element.get_attribute(
+                            "type"
+                        )
+                        is_visible = await field_element.is_visible()
+                        str_value = str(field_value)
+
+                        if tag == "select":
+                            await field_element.select_option(
+                                value=str_value
+                            )
+                        elif input_type == "radio":
+                            # Check the matching radio in the group
+                            radio = await form_element.query_selector(
+                                f'[name="{field_name}"][value="{str_value}"]'
+                            )
+                            if radio:
+                                await radio.evaluate(
+                                    "(el) => el.checked = true"
+                                )
+                        elif input_type in ("hidden", "submit"):
+                            await field_element.evaluate(
+                                "(el, val) => el.value = val",
+                                str_value,
+                            )
+                        elif not is_visible:
+                            # Invisible but not type=hidden (e.g. 1x1px
+                            # Telerik RadDatePicker parent inputs)
+                            await field_element.evaluate(
+                                "(el, val) => el.value = val",
+                                str_value,
+                            )
+                        else:
+                            await field_element.fill(str_value)
 
                 # Click submit button
                 if form_via.submit_selector:
@@ -542,8 +819,18 @@ class PlaywrightDriver(
                             request_url=request.request.url,
                         )
                     # Wait for navigation after click
-                    async with self._page.expect_navigation():
+                    async with page.expect_navigation():
                         await submit_element.click()
+                elif "__EVENTTARGET" in form_via.field_data:
+                    # ASP.NET __doPostBack-style submission: submit the
+                    # form programmatically via JS.  This avoids clicking
+                    # a named submit button, which would cause ASP.NET
+                    # to handle the button-click event instead of the
+                    # __EVENTTARGET postback event.
+                    async with page.expect_navigation():
+                        await form_element.evaluate(
+                            "(form) => form.submit()"
+                        )
                 else:
                     # Click first submit-type element
                     submit_element = await form_element.query_selector(
@@ -559,7 +846,7 @@ class PlaywrightDriver(
                             actual_count=0,
                             request_url=request.request.url,
                         )
-                    async with self._page.expect_navigation():
+                    async with page.expect_navigation():
                         await submit_element.click()
 
             except PlaywrightTimeoutError as e:
@@ -577,7 +864,7 @@ class PlaywrightDriver(
             # Link navigation
             link_via = request.via
             try:
-                link_element = await self._page.wait_for_selector(
+                link_element = await page.wait_for_selector(
                     link_via.selector, timeout=5000
                 )
                 if not link_element:
@@ -592,7 +879,7 @@ class PlaywrightDriver(
                     )
 
                 # Click link and wait for navigation
-                async with self._page.expect_navigation():
+                async with page.expect_navigation():
                     await link_element.click()
 
             except PlaywrightTimeoutError as e:
@@ -608,7 +895,7 @@ class PlaywrightDriver(
 
         else:
             # Direct URL navigation (no via)
-            await self._page.goto(
+            await page.goto(
                 request.request.url, wait_until="domcontentloaded"
             )
 
@@ -663,6 +950,7 @@ class PlaywrightDriver(
         parent_request: BaseRequest,
         request_id: int,
         auto_await_timeout: int,
+        page: Page | None = None,
     ) -> None:
         """Process generator with autowait retry logic.
 
@@ -672,8 +960,11 @@ class PlaywrightDriver(
             parent_request: The parent request.
             request_id: The database request ID.
             auto_await_timeout: Timeout in milliseconds for autowait retries.
+            page: The Playwright page for re-snapshot (optional for non-Playwright).
         """
-        assert self._page is not None, "Page must be initialized for autowait"
+        if page is None:
+            page = self._page
+        assert page is not None, "Page must be provided for autowait"
         start_time = time.time()
         timeout_seconds = auto_await_timeout / 1000.0
 
@@ -730,7 +1021,7 @@ class PlaywrightDriver(
                     (timeout_seconds - elapsed) * 1000
                 )  # Convert to ms
                 try:
-                    await self._page.wait_for_selector(
+                    await page.wait_for_selector(
                         absolute_selector, timeout=remaining_timeout
                     )
                 except PlaywrightTimeoutError:
@@ -740,10 +1031,10 @@ class PlaywrightDriver(
                     raise e from None  # Re-raise original exception
 
                 # Re-snapshot DOM
-                html_content = await self._page.content()
+                html_content = await page.content()
                 response = Response(
                     status_code=response.status_code,
-                    url=self._page.url,
+                    url=page.url,
                     content=html_content.encode("utf-8"),
                     text=html_content,
                     headers=response.headers,
@@ -937,11 +1228,19 @@ class PlaywrightDriver(
         page.on("response", on_response)
 
     async def close(self) -> None:
-        """Close driver and cleanup resources."""
+        """Close driver, save cookies, and cleanup resources."""
         # Close page if open
         if self._page:
             await self._page.close()
             self._page = None
+
+        # Save browser cookies for resume
+        try:
+            cookies = await self.browser_context.cookies()
+            if cookies:
+                await self.db.save_browser_cookies(json.dumps(cookies))
+        except Exception as e:
+            logger.warning(f"Failed to save browser cookies: {e}")
 
         # Call parent close to persist state
         await super().close()

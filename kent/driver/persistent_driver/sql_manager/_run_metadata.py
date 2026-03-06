@@ -246,6 +246,34 @@ class RunMetadataMixin:
         """
         await self.update_run_status_final(status, error)
 
+    async def save_browser_cookies(self, cookies_json: str) -> None:
+        """Save browser cookies to run metadata for resume.
+
+        Args:
+            cookies_json: JSON-encoded browser cookies.
+        """
+        async with self._lock, self._session_factory() as session:
+            await session.execute(
+                update(RunMetadata)
+                .where(RunMetadata.id == 1)
+                .values(browser_cookies_json=cookies_json)
+            )
+            await session.commit()
+
+    async def get_browser_cookies(self) -> str | None:
+        """Get saved browser cookies from run metadata.
+
+        Returns:
+            JSON-encoded browser cookies, or None if not saved.
+        """
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(RunMetadata.browser_cookies_json).where(
+                    RunMetadata.id == 1
+                )
+            )
+            return result.scalar()
+
     async def has_any_requests(self) -> bool:
         """Check if there are any requests in the database.
 

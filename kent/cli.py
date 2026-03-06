@@ -16,7 +16,6 @@ import importlib
 import inspect as inspect_mod
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -98,97 +97,6 @@ def cli() -> None:
     """Kent — scraper-driver framework CLI."""
 
 
-_SKIP_DIRS = {
-    "__pycache__",
-    ".git",
-    ".hg",
-    ".svn",
-    ".venv",
-    "venv",
-    ".env",
-    "env",
-    ".tox",
-    ".nox",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    "node_modules",
-    ".eggs",
-    "dist",
-    "build",
-}
-
-
-def _discover_scrapers(
-    root: Path, verbose: bool = False
-) -> list[tuple[str, type[BaseScraper]]]:
-    """Discover BaseScraper subclasses in ``.py`` files under *root*.
-
-    Walks the directory tree, skipping virtual-env and cache
-    directories.  Only files whose source text contains
-    ``"BaseScraper"`` are imported, keeping the scan fast.
-
-    *root* is added to ``sys.path`` (if absent) so that relative
-    package imports resolve correctly.
-
-    Returns:
-        Sorted list of ``("module.path:ClassName", class)`` tuples.
-    """
-    from kent.data_types import BaseScraper
-
-    root = root.resolve()
-    root_str = str(root)
-    if root_str not in sys.path:
-        sys.path.insert(0, root_str)
-
-    found: list[tuple[str, type[BaseScraper]]] = []
-
-    for py_file in root.rglob("*.py"):
-        # Skip hidden / non-project directories
-        if any(part in _SKIP_DIRS for part in py_file.parts):
-            continue
-
-        # Quick text pre-filter
-        try:
-            source = py_file.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        if "BaseScraper" not in source:
-            continue
-
-        # Derive dotted module path relative to root
-        rel = py_file.relative_to(root).with_suffix("")
-        parts = list(rel.parts)
-        if parts[-1] == "__init__":
-            parts = parts[:-1]
-        if not parts:
-            continue
-        module_path = ".".join(parts)
-
-        try:
-            module = importlib.import_module(module_path)
-        except Exception as exc:
-            if verbose:
-                click.echo(
-                    f"  skip {module_path}: {type(exc).__name__}: {exc}",
-                    err=True,
-                )
-            continue
-
-        for name in dir(module):
-            obj = getattr(module, name, None)
-            if (
-                isinstance(obj, type)
-                and issubclass(obj, BaseScraper)
-                and obj is not BaseScraper
-                and obj.__module__ == module.__name__
-            ):
-                found.append((f"{module_path}:{name}", obj))
-
-    found.sort(key=lambda t: t[0])
-    return found
-
-
 @cli.command("list")
 @click.option("-v", "--verbose", is_flag=True, help="Show import errors.")
 def list_scrapers(verbose: bool) -> None:
@@ -197,12 +105,21 @@ def list_scrapers(verbose: bool) -> None:
     Scans ``.py`` files under the working directory for
     BaseScraper subclasses.
     """
-    scrapers = _discover_scrapers(Path.cwd(), verbose=verbose)
+    from kent.discovery import discover_scrapers
+
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    scrapers = sorted(
+        discover_scrapers(Path.cwd()),
+        key=lambda t: f"{t[0]}:{t[1]}",
+    )
     if not scrapers:
         click.echo("No scrapers found.")
         return
 
-    for full_path, cls in scrapers:
+    for module_path, class_name, cls in scrapers:
+        full_path = f"{module_path}:{class_name}"
         status = getattr(cls, "status", None)
         status_str = f" [{status.value}]" if status else ""
         entries = cls.list_entries()
@@ -424,6 +341,22 @@ def serve(runs_dir: str, host: str, port: int, verbose: bool) -> None:
         "Use ``kent inspect --seed-params`` to generate a template."
     ),
 )
+@click.option(
+    "--headed",
+    is_flag=True,
+    help="Show the browser window (playwright driver only).",
+)
+@click.option(
+    "--browser-profile",
+    "browser_profile_path",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+    default=None,
+    help=(
+        "Path to a browser profile directory (contains manifest.json). "
+        "Configures browser launch for sites with bot protection. "
+        "Only supported with --driver playwright."
+    ),
+)
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging.")
 def run(
     scraper: str,
@@ -433,6 +366,8 @@ def run(
     storage: str | None,
     no_resume: bool,
     params_json: str | None,
+    headed: bool,
+    browser_profile_path: str | None,
     verbose: bool,
 ) -> None:
     """Run a scraper with the chosen driver.
@@ -469,6 +404,11 @@ def run(
         if not isinstance(seed_params, list):
             raise click.BadParameter("--params must be a JSON list")
 
+    if browser_profile_path and driver_name != "playwright":
+        raise click.UsageError(
+            "--browser-profile is only supported with --driver playwright"
+        )
+
     click.echo(f"Scraper: {scraper_name}")
     click.echo(f"Driver:  {driver_name}")
 
@@ -495,6 +435,8 @@ def run(
             workers,
             no_resume,
             seed_params,
+            headed=headed,
+            browser_profile_path=browser_profile_path,
         )
 
 
@@ -581,6 +523,9 @@ def _run_playwright(
     workers: int,
     no_resume: bool,
     seed_params: list[dict[str, dict[str, Any]]] | None,
+    *,
+    headed: bool = False,
+    browser_profile_path: str | None = None,
 ) -> None:
     try:
         from kent.driver.playwright_driver import PlaywrightDriver
@@ -590,6 +535,21 @@ def _run_playwright(
             "Install the 'playwright' and 'persistent-driver' extras: "
             "pip install kent[playwright,persistent-driver]"
         ) from e
+
+    # Load browser profile if provided
+    browser_profile = None
+    if browser_profile_path:
+        from kent.driver.playwright_driver.browser_profile import (
+            load_browser_profile,
+        )
+
+        try:
+            browser_profile = load_browser_profile(Path(browser_profile_path))
+        except (FileNotFoundError, ValueError) as e:
+            raise click.ClickException(
+                f"Invalid browser profile: {e}"
+            ) from e
+        click.echo(f"Profile: {browser_profile.name}")
 
     resolved_db = Path(db_path) if db_path else Path(f"{scraper_name}.db")
     click.echo(f"Database: {resolved_db}")
@@ -602,6 +562,8 @@ def _run_playwright(
             num_workers=workers,
             resume=not no_resume,
             seed_params=seed_params,
+            headless=not headed,
+            browser_profile=browser_profile,
         ) as driver:
             await driver.run()
 
