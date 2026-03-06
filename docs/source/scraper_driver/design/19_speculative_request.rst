@@ -13,15 +13,24 @@ an unbounded number of potential pages, and deciding when to stop checking IDs.
 The Solution
 ------------
 
-The **@speculate decorator** enables scrapers to define functions that generate requests for sequential IDs.
-The driver calls these functions with incrementing IDs, tracking successes and failures to determine when to stop:
+Speculation is configured directly on ``@entry`` decorators using
+``SimpleSpeculation`` or ``YearlySpeculation``.  The driver reads the
+configuration, generates requests for sequential IDs, tracks successes
+and failures, and decides when to stop:
 
 .. code-block:: python
 
-    from kent.common.decorators import speculate
+    from kent.common.decorators import entry, step
+    from kent.common.speculation_types import SimpleSpeculation
 
     class MyScraper(BaseScraper[CaseData]):
-        @speculate(highest_observed=500, largest_observed_gap=20)
+        @entry(
+            CaseData,
+            speculative=SimpleSpeculation(
+                highest_observed=500,
+                largest_observed_gap=20,
+            ),
+        )
         def fetch_case(self, case_id: int) -> Request:
             """Probe for a case by ID.
 
@@ -38,8 +47,8 @@ The driver calls these functions with incrementing IDs, tracking successes and f
             # Parse the case page and yield data
             yield ParsedData(data=CaseData(...))
 
-The scraper defines a function that takes an integer ID and returns a request.
-The driver handles the rest—calling the function with sequential IDs, making requests,
+The scraper defines an ``@entry`` that takes an integer ID and returns a request.
+The driver handles the rest — calling the function with sequential IDs, making requests,
 and deciding when to stop based on response patterns.
 
 
@@ -48,28 +57,33 @@ How It Works
 
 The flow is:
 
-1. **Discovery**: Driver introspects the scraper class using ``list_speculators()`` to find all ``@speculate`` decorated functions
-2. **Configuration**: Driver reads decorator metadata (``highest_observed``, ``largest_observed_gap``) and optional consumer params (``definite_range``, ``plus``)
-3. **Request Generation**: Driver calls the speculate function with sequential IDs to generate requests
+1. **Discovery**: Driver introspects the scraper class using ``list_entries()`` to find entries with speculation config
+2. **Configuration**: Driver reads speculation metadata (``highest_observed``, ``largest_observed_gap``) and builds a ``SpeculateFunctionConfig`` with ``definite_range`` and ``plus``
+3. **Request Generation**: Driver calls the entry function with sequential IDs to generate requests
 4. **Request Execution**: Requests flow through normal pipeline (queue, deduplication)
 5. **Success Tracking**: Driver tracks which IDs succeed (2xx responses) vs fail (non-2xx or deduplication)
 6. **Stopping Criteria**: Driver stops when consecutive failures exceed the configured gap threshold
 
 
-Key Decorator
--------------
+Speculation Types
+-----------------
 
-@speculate
-^^^^^^^^^^
+SimpleSpeculation
+^^^^^^^^^^^^^^^^^
 
-Marks a function as generating speculative requests from sequential IDs:
+For scrapers that probe a single sequential integer ID:
 
 .. code-block:: python
 
-    @speculate(
-        highest_observed=500,        # Highest ID known to exist
-        largest_observed_gap=20,     # Max consecutive failures before stopping
-        observation_date=date(2025, 1, 15)  # When values were last verified (optional)
+    from kent.common.speculation_types import SimpleSpeculation
+
+    @entry(
+        CaseData,
+        speculative=SimpleSpeculation(
+            highest_observed=500,        # Highest ID known to exist
+            largest_observed_gap=20,     # Max consecutive failures before stopping
+            observation_date=date(2025, 1, 15),  # When values were last verified (optional)
+        ),
     )
     def fetch_case(self, case_id: int) -> Request:
         return Request(
@@ -85,104 +99,94 @@ Marks a function as generating speculative requests from sequential IDs:
 
 **Function signature:**
 
-- Must accept exactly one parameter (the ID) in addition to ``self``
+- Must accept exactly one ``int`` parameter (the ID) in addition to ``self``
 - Must return a ``Request``
-- The decorator automatically sets ``is_speculative=True`` on returned requests
 
+YearlySpeculation
+^^^^^^^^^^^^^^^^^
 
-Consumer Configuration
-----------------------
-
-Consumers can configure speculative functions via the params interface:
-
-definite_range
-^^^^^^^^^^^^^^
-
-Specify an exact range of IDs to fetch (start, end inclusive):
+For scrapers that partition IDs by year (e.g., docket numbers like ``2025-00123``):
 
 .. code-block:: python
 
-    params = MyScraper.params()
-    params.speculative.fetch_case.definite_range = (100, 200)
+    from datetime import timedelta
+    from kent.common.speculation_types import YearlySpeculation, YearPartition
 
-    # Fetch a single ID
-    params.speculative.fetch_case.definite_range = (12345, 12345)
+    @entry(
+        CaseData,
+        speculative=YearlySpeculation(
+            backfill=(
+                YearPartition(year=2024, number=(1, 10), frozen=True),
+                YearPartition(year=2025, number=(1, 10), frozen=True),
+                YearPartition(year=2026, number=(1, 10), frozen=False),
+            ),
+            trailing_period=timedelta(days=60),
+            largest_observed_gap=3,
+        ),
+    )
+    def fetch_case(self, year: int, number: int) -> Request:
+        return Request(
+            request=HTTPRequestParams(url=f"/cases/{year}/{number}"),
+            continuation=self.parse_case,
+        )
 
-When ``definite_range`` is set, the driver fetches all IDs in the range regardless of failures.
-This is useful for:
+**YearlySpeculation parameters:**
 
-- Fetching a specific case by ID
-- Resuming from a known checkpoint
-- Filling gaps in previously scraped data
+- ``backfill``: Tuple of ``YearPartition`` objects defining year-specific ranges
+- ``trailing_period``: After January 1, keep probing the previous year for this duration (defaults to 60 days)
+- ``largest_observed_gap``: Max consecutive failures before stopping a non-frozen partition (defaults to 10)
 
-plus
-^^^^
+**YearPartition parameters:**
 
-Control how many consecutive failures to tolerate beyond the highest successful ID:
+- ``year``: The calendar year
+- ``number``: Tuple ``(start, end)`` defining the range of the speculative axis
+- ``frozen``: If ``True``, this is a backfill-only range with no adaptive extension. If ``False``, the driver extends past the upper bound when it finds successes.
 
-.. code-block:: python
+**Function signature:**
 
-    params = MyScraper.params()
-    params.speculative.fetch_case.plus = 50  # Override decorator's largest_observed_gap
-
-When ``plus`` is set, it overrides the ``largest_observed_gap`` from the decorator.
-Set to 0 to stop immediately after the first failure beyond the definite range.
+- Must accept exactly two ``int`` parameters: one named ``year`` and one other (the speculative axis)
+- Must return a ``Request``
 
 
 Driver Integration
 ------------------
 
-Discovering Speculate Functions
+Discovering Speculative Entries
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Drivers use ``list_speculators()`` to discover all ``@speculate`` decorated functions:
+Drivers use ``list_entries()`` to discover entry points with speculation config:
 
 .. code-block:: python
 
-    speculators = MyScraper.list_speculators()
-    # Returns: [('fetch_case', 500, None, 20)]
-    #           (name, highest_observed, observation_date, largest_observed_gap)
-
-This enables drivers to automatically seed their queues with speculative requests
-without requiring explicit entry points.
+    entries = MyScraper.list_entries()
+    # Each EntryInfo has a .speculation field:
+    #   None for normal entries
+    #   SimpleSpeculation or YearlySpeculation for speculative entries
 
 Seeding the Queue
 ^^^^^^^^^^^^^^^^^
 
-The driver calls each speculate function with sequential IDs based on configuration:
+The driver builds a ``SpeculationState`` for each speculative entry (or each
+year-partition for ``YearlySpeculation``), with a ``SpeculateFunctionConfig``
+controlling the ``definite_range`` and ``plus``:
 
-.. code-block:: python
+- ``definite_range``: Tuple ``(start, end)`` of IDs to fetch with certainty.
+  Defaults to ``(1, highest_observed)`` from the speculation metadata.
+- ``plus``: Number of consecutive failures to tolerate beyond the definite range.
+  Defaults to ``largest_observed_gap`` from the speculation metadata.
 
-    # Get configuration from params (or use decorator defaults)
-    definite_range = params.speculative.fetch_case.definite_range or (1, highest_observed)
-    plus = params.speculative.fetch_case.plus or largest_observed_gap
+For ``YearlySpeculation``, the driver also handles:
 
-    # Generate requests for definite range
-    for id in range(definite_range[0], definite_range[1] + 1):
-        request = scraper.fetch_case(id)
-        queue.add(request)
-
-    # Continue probing beyond definite range until 'plus' consecutive failures
-    current_id = definite_range[1] + 1
-    consecutive_failures = 0
-    while consecutive_failures < plus:
-        request = scraper.fetch_case(current_id)
-        queue.add(request)
-
-        # Track success/failure after execution
-        if request_succeeded:
-            consecutive_failures = 0
-        else:
-            consecutive_failures += 1
-
-        current_id += 1
+- **Rollover**: Automatically creates the current year's partition if not listed in ``backfill``
+- **Trailing period**: Continues probing the previous year for the configured duration after January 1
 
 Behavior
 ^^^^^^^^
 
-The driver determines success/failure purely based on HTTP response status codes:
+The driver determines success/failure based on HTTP response status codes and
+the scraper's ``fails_successfully()`` method:
 
-- **2xx response**: Success, calls continuation with response, will check a fails_successfully handler if present.
+- **2xx response**: Calls continuation with response. If a ``fails_successfully()`` handler is present, it is checked to detect soft-404 pages.
 - **Non-2xx response**: Failure, skips continuation, increments failure counter
 - **Deduplicated**: Treated as failure (prevents infinite loops)
 
@@ -193,19 +197,10 @@ Implementation Details
 Request Marking
 ^^^^^^^^^^^^^^^
 
-The ``@speculate`` decorator automatically marks requests as speculative:
-
-.. code-block:: python
-
-    @wraps(fn)
-    def wrapper(scraper_self: Any, id_value: int) -> Request:
-        request = fn(scraper_self, id_value)
-        # Set is_speculative=True on the request
-        object.__setattr__(request, "is_speculative", True)
-        return request
-
-This enables drivers to identify and track speculative requests separately from
-regular navigation requests.
+Requests generated by speculative entries are automatically marked with
+``is_speculative=True`` and a ``speculation_id`` tuple of
+``(function_name, integer_id)``.  This enables drivers to identify and
+track speculative requests separately from regular navigation requests.
 
 Deduplication Handling
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -233,7 +228,13 @@ Basic Sequential ID Probing
 .. code-block:: python
 
     class CaseScraper(BaseScraper[CaseData]):
-        @speculate(highest_observed=50000, largest_observed_gap=100)
+        @entry(
+            CaseData,
+            speculative=SimpleSpeculation(
+                highest_observed=50000,
+                largest_observed_gap=100,
+            ),
+        )
         def fetch_case(self, case_id: int) -> Request:
             """Probe for a case by ID."""
             return Request(
@@ -246,25 +247,26 @@ Basic Sequential ID Probing
             case_name = lxml_tree.checked_xpath("//h1/text()", "case name")[0]
             yield ParsedData(data=CaseData(case_id=..., case_name=case_name))
 
-Multiple Speculate Functions
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-A scraper can have multiple ``@speculate`` functions for different ID sequences:
+Year-Partitioned Probing
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
-    class MultiCourtScraper(BaseScraper[CaseData]):
-        @speculate(highest_observed=275000, largest_observed_gap=20)
-        def fetch_supreme_court_case(self, case_id: int) -> Request:
+    class CourtScraper(BaseScraper[CaseData]):
+        @entry(
+            CaseData,
+            speculative=YearlySpeculation(
+                backfill=(
+                    YearPartition(year=2024, number=(1, 4000), frozen=True),
+                    YearPartition(year=2025, number=(1, 2000), frozen=False),
+                ),
+                trailing_period=timedelta(days=60),
+                largest_observed_gap=15,
+            ),
+        )
+        def fetch_case(self, year: int, number: int) -> Request:
             return Request(
-                request=HTTPRequestParams(url=f"/supreme/{case_id}"),
-                continuation=self.parse_case,
-            )
-
-        @speculate(highest_observed=170000, largest_observed_gap=20)
-        def fetch_appeals_case(self, case_id: int) -> Request:
-            return Request(
-                request=HTTPRequestParams(url=f"/appeals/{case_id}"),
+                request=HTTPRequestParams(url=f"/cases/{year}/{number}"),
                 continuation=self.parse_case,
             )
 
@@ -272,57 +274,39 @@ A scraper can have multiple ``@speculate`` functions for different ID sequences:
         def parse_case(self, lxml_tree) -> Generator[ScraperYield, None, None]:
             yield ParsedData(data=CaseData(...))
 
-Consumers can configure each function independently:
+Frozen vs non-frozen partitions:
+
+- **frozen=True**: The driver fetches exactly the IDs in the ``number`` range and stops. Useful for historical years where the full range is known.
+- **frozen=False**: The driver fetches the ``number`` range, then continues probing beyond it until ``largest_observed_gap`` consecutive failures. Useful for the current year where new cases are still being filed.
+
+Soft-404 Detection
+^^^^^^^^^^^^^^^^^^^
+
+Override ``fails_successfully()`` on the scraper to detect pages that return
+200 but aren't real content:
 
 .. code-block:: python
 
-    params = MultiCourtScraper.params()
-    params.speculative.fetch_supreme_court_case.definite_range = (275000, 275100)
-    params.speculative.fetch_appeals_case.plus = 50
-
-Fetching a Specific Case
-^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Use ``definite_range`` to fetch a single case by ID:
-
-.. code-block:: python
-
-    params = CaseScraper.params()
-    params.speculative.fetch_case.definite_range = (12345, 12345)
-    params.speculative.fetch_case.plus = 0  # Don't probe beyond this ID
-
-    scraper = CaseScraper(params=params)
-    driver = SyncDriver(scraper)
-    results = driver.scrape()
-
-Resuming from a Checkpoint
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Use ``definite_range`` to resume from a known checkpoint:
-
-.. code-block:: python
-
-    # Resume from ID 10000, probe 100 IDs beyond highest successful
-    params = CaseScraper.params()
-    params.speculative.fetch_case.definite_range = (10000, 50000)
-    params.speculative.fetch_case.plus = 100
-
-    scraper = CaseScraper(params=params)
+    class CaseScraper(BaseScraper[CaseData]):
+        def fails_successfully(self, response: Response) -> bool:
+            """Return True if the response is a real page, False if soft-404."""
+            return "Case Not Found" not in response.text
 
 
 Design Decisions
 ----------------
 
-**Function-based approach**: Using simple functions (``int → Request``) instead of
-generators makes the pattern more explicit and easier to understand.
+**Integrated with @entry**: Speculation is configured on ``@entry`` decorators rather
+than a separate ``@speculate`` decorator.  This keeps entry point discovery unified
+through ``list_entries()`` and avoids a parallel discovery mechanism.
 
-**Automatic discovery**: Drivers can introspect scrapers using ``list_speculators()``
-to find all speculative entry points without requiring explicit registration.
+**Year-aware partitioning**: ``YearlySpeculation`` is a first-class concept because
+many courts use year-prefixed docket numbers.  The driver handles rollover and
+trailing periods automatically.
 
-**Declarative configuration**: Consumers control behavior via params (``definite_range``, ``plus``)
-instead of implementing custom callbacks. This makes common use cases simpler while
-remaining flexible.
+**Frozen vs adaptive**: The ``frozen`` flag on ``YearPartition`` lets scrapers
+distinguish between historical backfill (exact range) and live probing (adaptive extension).
 
-**Status-based success**: Determining success/failure purely from HTTP status codes
-simplifies the driver implementation and makes behavior more predictable.
-
+**Status-based success**: Determining success/failure from HTTP status codes
+(plus optional ``fails_successfully()``) simplifies the driver implementation
+and makes behavior more predictable.

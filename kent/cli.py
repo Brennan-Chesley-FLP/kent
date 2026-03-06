@@ -546,9 +546,7 @@ def _run_playwright(
         try:
             browser_profile = load_browser_profile(Path(browser_profile_path))
         except (FileNotFoundError, ValueError) as e:
-            raise click.ClickException(
-                f"Invalid browser profile: {e}"
-            ) from e
+            raise click.ClickException(f"Invalid browser profile: {e}") from e
         click.echo(f"Profile: {browser_profile.name}")
 
     resolved_db = Path(db_path) if db_path else Path(f"{scraper_name}.db")

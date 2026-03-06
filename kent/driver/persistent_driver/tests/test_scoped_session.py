@@ -20,7 +20,9 @@ from kent.driver.persistent_driver.scoped_session import (
 
 
 @pytest.fixture
-async def scoped_factory(tmp_path: Path) -> AsyncGenerator[tuple[ScopedSessionFactory, Any]]:
+async def scoped_factory(
+    tmp_path: Path,
+) -> AsyncGenerator[tuple[ScopedSessionFactory, Any]]:
     """Create a ScopedSessionFactory backed by a real SQLite database."""
     engine, factory = await init_database(tmp_path / "test.db")
     yield factory, engine

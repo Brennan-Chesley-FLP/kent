@@ -249,9 +249,11 @@ class LxmlPageElement:
             value = input_elem.get_attribute("value")
 
             # For radio buttons, only include the checked one
-            if field_type == "radio":
-                if input_elem.get_attribute("checked") is None:
-                    continue
+            if (
+                field_type == "radio"
+                and input_elem.get_attribute("checked") is None
+            ):
+                continue
 
             fields.append(
                 FormField(name=name, field_type=field_type, value=value)

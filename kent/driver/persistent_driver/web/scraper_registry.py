@@ -391,9 +391,7 @@ def init_registry(
     else:
         # Default: scan from CWD, same as `kent list`
         count = _registry.scan_tree(Path.cwd())
-        logger.info(
-            f"Discovered {count} scrapers from working directory"
-        )
+        logger.info(f"Discovered {count} scrapers from working directory")
 
     # Register extra modules
     for module_path in extra_modules or []:

@@ -443,14 +443,8 @@ class TestGracefulShutdownAndResume:
             result = await driver._get_next_request()
 
             assert result is not None
-            request_id, deserialized = result
-            # Request returns BaseRequest directly
-            request = (
-                deserialized
-                if not isinstance(deserialized, tuple)
-                else deserialized[0]
-            )
-            assert request.request.url == "https://example.com/pending"
+            request_id, deserialized, _parent_id = result
+            assert deserialized.request.url == "https://example.com/pending"
 
             # The pending request should now be marked in_progress
             async with driver.db._session_factory() as session:

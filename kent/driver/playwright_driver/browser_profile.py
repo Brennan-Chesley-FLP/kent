@@ -146,10 +146,15 @@ def _validate_script_path(profile_dir: Path, script_rel: str) -> Path:
         FileNotFoundError: If the script file doesn't exist.
     """
     if not isinstance(script_rel, str):
-        raise ValueError(f"Init script path must be a string, got {type(script_rel)}")
+        raise ValueError(
+            f"Init script path must be a string, got {type(script_rel)}"
+        )
 
     resolved = (profile_dir / script_rel).resolve()
-    if not str(resolved).startswith(str(profile_dir) + "/") and resolved != profile_dir:
+    if (
+        not str(resolved).startswith(str(profile_dir) + "/")
+        and resolved != profile_dir
+    ):
         raise ValueError(
             f"Init script path escapes profile directory: {script_rel}"
         )

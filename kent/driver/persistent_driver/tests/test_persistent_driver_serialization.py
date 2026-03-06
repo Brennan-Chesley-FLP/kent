@@ -94,7 +94,7 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify
+                       is_speculative, speculation_id, verify, via_json
                 FROM requests WHERE id = 1
                 """)
             )
@@ -207,7 +207,7 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify
+                       is_speculative, speculation_id, verify, via_json
                 FROM requests WHERE id = 1
                 """)
             )
@@ -315,7 +315,7 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify
+                       is_speculative, speculation_id, verify, via_json
                 FROM requests WHERE id = 1
                 """)
             )
@@ -418,7 +418,7 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify
+                       is_speculative, speculation_id, verify, via_json
                 FROM requests WHERE id = 1
                 """)
             )
@@ -502,7 +502,7 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify
+                       is_speculative, speculation_id, verify, via_json
                 FROM requests WHERE id = 1
                 """)
             )
@@ -593,7 +593,7 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify
+                       is_speculative, speculation_id, verify, via_json
                 FROM requests WHERE id = 1
                 """)
             )

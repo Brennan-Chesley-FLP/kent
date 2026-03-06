@@ -139,10 +139,12 @@ class TestPlaywrightTabForking:
             from kent.driver.persistent_driver.sql_manager import SQLManager
 
             async with SQLManager.open(db_path) as db:
-                from sqlalchemy import select, update, delete
+                from sqlalchemy import delete, select, update
 
                 from kent.driver.persistent_driver.models import (
                     Request as RequestModel,
+                )
+                from kent.driver.persistent_driver.models import (
                     Result,
                 )
 

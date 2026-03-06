@@ -361,8 +361,7 @@ class ResponseStorageMixin:
                     Request.compression_dict_id,
                     Request.response_headers_json,
                     Request.response_status_code,
-                )
-                .where(
+                ).where(
                     Request.id == parent_request_id,
                     Request.response_status_code.isnot(None),  # type: ignore[union-attr]
                 )

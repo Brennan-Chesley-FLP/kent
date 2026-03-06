@@ -19,25 +19,27 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SKIP_DIRS = frozenset({
-    "__pycache__",
-    ".git",
-    ".hg",
-    ".svn",
-    ".venv",
-    "venv",
-    ".env",
-    "env",
-    ".tox",
-    ".nox",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    "node_modules",
-    ".eggs",
-    "dist",
-    "build",
-})
+_SKIP_DIRS = frozenset(
+    {
+        "__pycache__",
+        ".git",
+        ".hg",
+        ".svn",
+        ".venv",
+        "venv",
+        ".env",
+        "env",
+        ".tox",
+        ".nox",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "node_modules",
+        ".eggs",
+        "dist",
+        "build",
+    }
+)
 
 
 def discover_scrapers(

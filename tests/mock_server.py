@@ -8,6 +8,7 @@ The data structure is designed to support all steps of the tutorial,
 from basic data through async drivers.
 """
 
+import secrets
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -862,7 +863,6 @@ async def handle_complex_form_results(request: web.Request) -> web.Response:
 # =============================================================================
 
 # Global secret for session tree (set per-request to validate cookies)
-import secrets
 
 
 async def handle_session_tree_root(request: web.Request) -> web.Response:
@@ -995,7 +995,9 @@ def create_app() -> web.Application:
     app.router.add_post("/complex-search/results", handle_complex_form_results)
     # Session tree endpoints for tab forking tests
     app.router.add_get("/session-tree", handle_session_tree_root)
-    app.router.add_get("/session-tree/branch/{name}", handle_session_tree_branch)
+    app.router.add_get(
+        "/session-tree/branch/{name}", handle_session_tree_branch
+    )
     app.router.add_get("/session-tree/leaf/{name}", handle_session_tree_leaf)
     # Same-URL search (GET=form, POST=results) for unroute verification
     app.router.add_get("/same-url-search", handle_same_url_search_get)

@@ -64,6 +64,9 @@ The demo serves a fictional court where insects file lawsuits.
    * - ``/justices``
      - HTML
      - Justice bio cards
+   * - ``/cases/search``
+     - HTML
+     - Date-range search form for cases
    * - ``/api/justices``
      - **JSON**
      - All justice bios as a JSON array
@@ -107,6 +110,8 @@ The demo scraper exercises the following kent features:
    * - ``ScrapedData`` + deferred validation
      - All four data models use ``.raw()`` for deferred Pydantic
        validation.
+   * - ``page.find_form()`` / ``Form.submit()``
+     - Submitting the date-range search form on ``/cases/search``.
    * - ``fails_successfully()``
      - Detecting soft-404 pages ("Case Not Found") on speculative
        requests.
@@ -132,25 +137,25 @@ Then visit http://127.0.0.1:8081 to explore:
 - **Archived files** — browse downloaded WAV and image files
 
 
-Debugging with ``ldd-debug``
-----------------------------
+Debugging with ``pdd``
+----------------------
 
-The ``ldd-debug`` CLI provides offline inspection of the scraper database::
+The ``pdd`` CLI provides offline inspection of the scraper database::
 
    # Overview
-   uv run ldd-debug --db demo_scraper.db info
+   uv run pdd --db demo_scraper.db info
 
    # List all requests and their statuses
-   uv run ldd-debug --db demo_scraper.db requests list
+   uv run pdd --db demo_scraper.db requests list
 
    # View a specific response
-   uv run ldd-debug --db demo_scraper.db responses show <request-id>
+   uv run pdd --db demo_scraper.db responses show <request-id>
 
    # List all parsed results
-   uv run ldd-debug --db demo_scraper.db results list
+   uv run pdd --db demo_scraper.db results list
 
    # Check for errors
-   uv run ldd-debug --db demo_scraper.db errors list
+   uv run pdd --db demo_scraper.db errors list
 
    # Database health check
-   uv run ldd-debug --db demo_scraper.db doctor health
+   uv run pdd --db demo_scraper.db doctor health

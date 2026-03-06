@@ -166,19 +166,23 @@ class QueueMixin:
             from kent.common.page_element import ViaFormSubmit, ViaLink
 
             if isinstance(request.via, ViaFormSubmit):
-                via_json = json.dumps({
-                    "type": "form_submit",
-                    "form_selector": request.via.form_selector,
-                    "submit_selector": request.via.submit_selector,
-                    "field_data": request.via.field_data,
-                    "description": request.via.description,
-                })
+                via_json = json.dumps(
+                    {
+                        "type": "form_submit",
+                        "form_selector": request.via.form_selector,
+                        "submit_selector": request.via.submit_selector,
+                        "field_data": request.via.field_data,
+                        "description": request.via.description,
+                    }
+                )
             elif isinstance(request.via, ViaLink):
-                via_json = json.dumps({
-                    "type": "link",
-                    "selector": request.via.selector,
-                    "description": request.via.description,
-                })
+                via_json = json.dumps(
+                    {
+                        "type": "link",
+                        "selector": request.via.selector,
+                        "description": request.via.description,
+                    }
+                )
 
         return {
             "request_type": request_type,

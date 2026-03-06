@@ -1,37 +1,14 @@
-"""Tests that verify=False works end-to-end.
-
-The Alabama ACIS site has broken TLS, so it serves as a real-world test
-for the verify parameter plumbing.
-"""
+"""Tests that the verify parameter round-trips through serialization."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import httpx
 import pytest
 
 ALABAMA_URL = (
     "https://acis.alabama.gov/displaydocs2.cfm?no=7287&event=5CS0U0K6M"
 )
-
-
-class TestVerifyWithHttpx:
-    """Sanity-check: verify=False works at the raw httpx level."""
-
-    @pytest.mark.slow
-    async def test_verify_false_succeeds(self) -> None:
-        """A direct httpx request with verify=False should succeed."""
-        async with httpx.AsyncClient(verify=False) as client:
-            resp = await client.get(ALABAMA_URL)
-        assert resp.status_code == 200
-
-    @pytest.mark.slow
-    async def test_verify_true_fails(self) -> None:
-        """A direct httpx request with verify=True should raise an SSL error."""
-        async with httpx.AsyncClient(verify=True) as client:
-            with pytest.raises(httpx.ConnectError):
-                await client.get(ALABAMA_URL)
 
 
 class TestVerifyThroughPersistentDriverQueue:
@@ -74,7 +51,7 @@ class TestVerifyThroughPersistentDriverQueue:
         row = await sql.dequeue_next_request()
         assert row is not None
 
-        request = driver._deserialize_request(row)
+        request = driver._deserialize_request(row[:18])
         assert request.request.verify is False
 
     async def test_verify_true_round_trip(self, initialized_db) -> None:
@@ -111,7 +88,7 @@ class TestVerifyThroughPersistentDriverQueue:
         row = await sql.dequeue_next_request()
         assert row is not None
 
-        request = driver._deserialize_request(row)
+        request = driver._deserialize_request(row[:18])
         assert request.request.verify is True
 
     async def test_verify_ca_bundle_round_trip(self, initialized_db) -> None:
@@ -148,7 +125,7 @@ class TestVerifyThroughPersistentDriverQueue:
         row = await sql.dequeue_next_request()
         assert row is not None
 
-        request = driver._deserialize_request(row)
+        request = driver._deserialize_request(row[:18])
         assert request.request.verify == "/etc/ssl/certs/ca-bundle.crt"
 
     async def test_serialize_deserialize_verify_false(self) -> None:
@@ -280,7 +257,7 @@ class TestVerifyThroughPersistentDriverQueue:
         # Dequeue
         row = await sql.dequeue_next_request()
         assert row is not None
-        request = driver._deserialize_request(row)
+        request = driver._deserialize_request(row[:18])
         assert request.request.verify is False
 
         # Actually fetch through AsyncRequestManager

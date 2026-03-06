@@ -73,7 +73,6 @@ from kent.driver.persistent_driver.rate_limiter import (
 from kent.driver.persistent_driver.sql_manager import (
     SQLManager,
 )
-
 from kent.driver.playwright_driver.browser_profile import BrowserProfile
 
 if TYPE_CHECKING:
@@ -339,7 +338,7 @@ class PlaywrightDriver(
             timezone_id = browser_config.get("timezone_id", timezone_id)
         else:
             # Create new browser configuration for persistence
-            browser_config: dict[str, Any] = {
+            browser_config = {
                 "browser_type": browser_type,
                 "headless": headless,
                 "viewport": viewport,
@@ -408,7 +407,9 @@ class PlaywrightDriver(
                         if browser_profile.channel:
                             launch_kwargs["channel"] = browser_profile.channel
 
-                    browser_obj = await browser_launcher.launch(**launch_kwargs)
+                    browser_obj = await browser_launcher.launch(
+                        **launch_kwargs
+                    )
 
                     context_kwargs: dict[str, Any] = {
                         "viewport": viewport,
@@ -769,16 +770,12 @@ class PlaywrightDriver(
                         tag = await field_element.evaluate(
                             "el => el.tagName.toLowerCase()"
                         )
-                        input_type = await field_element.get_attribute(
-                            "type"
-                        )
+                        input_type = await field_element.get_attribute("type")
                         is_visible = await field_element.is_visible()
                         str_value = str(field_value)
 
                         if tag == "select":
-                            await field_element.select_option(
-                                value=str_value
-                            )
+                            await field_element.select_option(value=str_value)
                         elif input_type == "radio":
                             # Check the matching radio in the group
                             radio = await form_element.query_selector(
@@ -828,9 +825,7 @@ class PlaywrightDriver(
                     # to handle the button-click event instead of the
                     # __EVENTTARGET postback event.
                     async with page.expect_navigation():
-                        await form_element.evaluate(
-                            "(form) => form.submit()"
-                        )
+                        await form_element.evaluate("(form) => form.submit()")
                 else:
                     # Click first submit-type element
                     submit_element = await form_element.query_selector(
@@ -895,9 +890,7 @@ class PlaywrightDriver(
 
         else:
             # Direct URL navigation (no via)
-            await page.goto(
-                request.request.url, wait_until="domcontentloaded"
-            )
+            await page.goto(request.request.url, wait_until="domcontentloaded")
 
     async def _process_await_list(
         self, page: Page, await_list: list[Any]

@@ -44,9 +44,7 @@ async def _apply_migrations(engine: AsyncEngine) -> None:
         # Get current schema version
         current = await conn.run_sync(
             lambda sync_conn: sync_conn.execute(
-                sa.text(
-                    "SELECT MAX(version) FROM schema_info"
-                )
+                sa.text("SELECT MAX(version) FROM schema_info")
             ).scalar()
             or 0
         )
@@ -61,9 +59,7 @@ async def _apply_migrations(engine: AsyncEngine) -> None:
                     # Column may already exist (fresh DB via create_all)
                     pass
             await conn.execute(
-                sa.text(
-                    "INSERT INTO schema_info (version) VALUES (:v)"
-                ),
+                sa.text("INSERT INTO schema_info (version) VALUES (:v)"),
                 {"v": version},
             )
 

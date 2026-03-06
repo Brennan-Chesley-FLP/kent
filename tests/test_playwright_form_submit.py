@@ -39,7 +39,9 @@ class FormSubmitScraper(BaseScraper[None]):
     @step
     def submit_search(self, page: LxmlPageElement):
         form = page.find_form("#case-search", "case search form")
-        request = form.submit(data={"case_type": "Property Dispute", "status": ""})
+        request = form.submit(
+            data={"case_type": "Property Dispute", "status": ""}
+        )
         yield replace(request, continuation=self.parse_results)
 
     @step
@@ -98,7 +100,9 @@ class ComplexFormScraper(BaseScraper[None]):
     @step
     def parse_results(self, page: LxmlPageElement):
         # Verify hidden fields were submitted
-        vs_els = page.query_css("#viewstate-ok", "viewstate check", min_count=1)
+        vs_els = page.query_css(
+            "#viewstate-ok", "viewstate check", min_count=1
+        )
         self.viewstate_ok = vs_els[0].text_content()
 
         cs_els = page.query_css(
