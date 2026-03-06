@@ -966,3 +966,84 @@ def is_entry(func: Callable[..., Any]) -> bool:
         True if the method has entry decorator metadata.
     """
     return get_entry_metadata(func) is not None
+
+
+def single_page(
+    scraper_cls: type,
+    step_name: str,
+    *,
+    params: Any | None = None,
+) -> Callable[..., list[Any]]:
+    """Create a function that runs a single @step method on provided content.
+
+    Useful for unit-testing scraper parsing logic without a driver or HTTP
+    server.  The returned callable constructs a synthetic Response, feeds
+    it through the @step wrapper (so all argument injection works normally),
+    and returns the unwrapped ParsedData items.
+
+    Args:
+        scraper_cls: A BaseScraper subclass.
+        step_name: Name of a @step-decorated method on the scraper.
+        params: Optional params passed to the scraper constructor.
+
+    Returns:
+        A callable ``run(content, *, url, accumulated_data, status_code,
+        headers)`` that returns ``list[T]`` of unwrapped ParsedData items.
+
+    Example::
+
+        from my_scraper import MyScraper
+
+        run = single_page(MyScraper, "parse_results")
+        results = run("<html>...</html>", accumulated_data={"page": 1})
+        assert len(results) == 5
+    """
+    from kent.data_types import (
+        HttpMethod,
+        HTTPRequestParams,
+        ParsedData,
+    )
+
+    scraper = scraper_cls(params=params)
+    method = scraper.get_continuation(step_name)
+
+    def run(
+        content: str | bytes,
+        *,
+        url: str = "https://test.example.com",
+        accumulated_data: dict[str, Any] | None = None,
+        status_code: int = 200,
+        headers: dict[str, str] | None = None,
+    ) -> list[Any]:
+        if isinstance(content, str):
+            content_bytes = content.encode("utf-8")
+            text = content
+        else:
+            content_bytes = content
+            text = ""
+
+        request = Request(
+            request=HTTPRequestParams(
+                method=HttpMethod.GET,
+                url=url,
+            ),
+            continuation=step_name,
+            accumulated_data=accumulated_data or {},
+        )
+
+        response = Response(
+            status_code=status_code,
+            headers=headers or {},
+            content=content_bytes,
+            text=text,
+            url=url,
+            request=request,
+        )
+
+        results: list[Any] = []
+        for item in method(response):
+            if isinstance(item, ParsedData):
+                results.append(item.unwrap())
+        return results
+
+    return run

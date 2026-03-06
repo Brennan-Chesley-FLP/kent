@@ -87,6 +87,27 @@ make html           # Build HTML docs to docs/build/html/
 make livehtml       # Auto-rebuilding dev server on port 8001
 ```
 
+## I just want to parse one page
+
+Use `single_page` to run a `@step` method without a driver or HTTP server:
+
+```python
+from kent.common.decorators import single_page
+from my_scraper import MyScraper
+
+run = single_page(MyScraper, "parse_results")
+results = run("<html><body>...</body></html>")
+
+# With accumulated_data from an earlier step:
+results = run(html, accumulated_data={"case_id": "12345"})
+
+# With JSON content:
+run = single_page(MyScraper, "parse_api")
+results = run('[{"id": 1}, {"id": 2}]')
+```
+
+`single_page` constructs a synthetic `Response`, feeds it through the `@step` wrapper (so all argument injection — `lxml_tree`, `json_content`, `page`, `text`, `accumulated_data`, etc. — works normally), and returns the unwrapped `ParsedData` items as a list.
+
 ## Stability
 
 ### Well Tested
