@@ -70,6 +70,7 @@ class SyncRequestManager:
         self._rates = rates
         self._limiter: Limiter | None = None
         self._alt_clients: dict[str, httpx.Client] = {}
+        self._bypass_client: httpx.Client | None = None
 
         # Initialize httpx client, with rate-limited transport if rates given
         if rates:
@@ -122,9 +123,30 @@ class SyncRequestManager:
             self._alt_clients[key] = self._make_client(verify)
         return self._alt_clients[key]
 
+    def _bypass_client_for(self, verify: bool | str) -> httpx.Client:
+        """Return a non-rate-limited client for bypass requests."""
+        if verify is not True:
+            # For non-default verify, create a fresh non-rate-limited client
+            key = f"bypass_{verify}"
+            if key not in self._alt_clients:
+                self._alt_clients[key] = httpx.Client(
+                    verify=verify, timeout=self.timeout
+                )
+            return self._alt_clients[key]
+        if self._bypass_client is None:
+            if self._ssl_context:
+                self._bypass_client = httpx.Client(
+                    verify=self._ssl_context, timeout=self.timeout
+                )
+            else:
+                self._bypass_client = httpx.Client(timeout=self.timeout)
+        return self._bypass_client
+
     def close(self) -> None:
         """Close the HTTP client and release resources."""
         self._client.close()
+        if self._bypass_client is not None:
+            self._bypass_client.close()
         for client in self._alt_clients.values():
             client.close()
         self._alt_clients.clear()
@@ -152,7 +174,11 @@ class SyncRequestManager:
         """
         # Use the modified request for HTTP
         http_params = request.request
-        client = self._client_for(http_params.verify)
+        bypass = getattr(request, "bypass_rate_limit", False)
+        if bypass:
+            client = self._bypass_client_for(http_params.verify)
+        else:
+            client = self._client_for(http_params.verify)
 
         try:
             http_response = client.request(
@@ -230,6 +256,7 @@ class AsyncRequestManager:
         self._rates = rates
         self._limiter: Limiter | None = None
         self._alt_clients: dict[str, httpx.AsyncClient] = {}
+        self._bypass_client: httpx.AsyncClient | None = None
 
         # Initialize httpx async client, with rate-limited transport if rates given
         if rates:
@@ -286,9 +313,29 @@ class AsyncRequestManager:
             self._alt_clients[key] = self._make_client(verify)
         return self._alt_clients[key]
 
+    def _bypass_client_for(self, verify: bool | str) -> httpx.AsyncClient:
+        """Return a non-rate-limited client for bypass requests."""
+        if verify is not True:
+            key = f"bypass_{verify}"
+            if key not in self._alt_clients:
+                self._alt_clients[key] = httpx.AsyncClient(
+                    verify=verify, timeout=self.timeout
+                )
+            return self._alt_clients[key]
+        if self._bypass_client is None:
+            if self._ssl_context:
+                self._bypass_client = httpx.AsyncClient(
+                    verify=self._ssl_context, timeout=self.timeout
+                )
+            else:
+                self._bypass_client = httpx.AsyncClient(timeout=self.timeout)
+        return self._bypass_client
+
     async def close(self) -> None:
         """Close the HTTP client and release resources."""
         await self._client.aclose()
+        if self._bypass_client is not None:
+            await self._bypass_client.aclose()
         for client in self._alt_clients.values():
             await client.aclose()
         self._alt_clients.clear()
@@ -317,7 +364,11 @@ class AsyncRequestManager:
 
         # Use the modified request for HTTP
         http_params = request.request
-        client = self._client_for(http_params.verify)
+        bypass = getattr(request, "bypass_rate_limit", False)
+        if bypass:
+            client = self._bypass_client_for(http_params.verify)
+        else:
+            client = self._client_for(http_params.verify)
 
         # Prepare content and data parameters for httpx
         request_data = http_params.data

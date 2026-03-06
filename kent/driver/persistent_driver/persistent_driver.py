@@ -441,6 +441,9 @@ class PersistentDriver(
                         permanent_json=request_data["permanent_json"],
                         dedup_key=dedup_key,
                         verify=request_data.get("verify"),
+                        bypass_rate_limit=request_data.get(
+                            "bypass_rate_limit", False
+                        ),
                     )
 
             # Discover @speculate functions and seed the queue

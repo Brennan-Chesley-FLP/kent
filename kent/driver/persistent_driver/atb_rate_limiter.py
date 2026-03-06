@@ -130,7 +130,8 @@ class RateLimitedRequestManager(AsyncRequestManager):
             return cached
 
         # Cache miss - acquire rate limiter token if configured
-        if self._limiter:
+        bypass = getattr(request, "bypass_rate_limit", False)
+        if self._limiter and not bypass:
             await self._limiter.try_acquire_async(name="request", weight=1)
 
         # Make the actual request via parent class

@@ -98,6 +98,7 @@ class QueueMixin:
             speculation_id=request_data["speculation_id"],
             verify=request_data["verify"],
             via_json=request_data["via_json"],
+            bypass_rate_limit=request_data["bypass_rate_limit"],
         )
 
         # Emit progress event
@@ -223,6 +224,7 @@ class QueueMixin:
                 else str(http_request.verify)
             ),
             "via_json": via_json,
+            "bypass_rate_limit": request.bypass_rate_limit,
         }
 
     async def _get_next_request(
@@ -249,10 +251,10 @@ class QueueMixin:
             return None
 
         request_id = row[0]
-        parent_request_id = row[18]  # Added at end of RETURNING clause
+        parent_request_id = row[19]  # Last column in RETURNING clause
 
-        # Deserialize using the first 18 columns (excluding parent_request_id)
-        request = self._deserialize_request(row[:18])
+        # Deserialize using the first 19 columns (excluding parent_request_id)
+        request = self._deserialize_request(row[:19])
         return (request_id, request, parent_request_id)
 
     def _deserialize_request(self, row: tuple[Any, ...]) -> BaseRequest:
@@ -284,6 +286,7 @@ class QueueMixin:
             speculation_id_json,
             verify_raw,
             via_json_raw,
+            bypass_rate_limit_raw,
         ) = row
 
         # Parse JSON fields
@@ -349,6 +352,8 @@ class QueueMixin:
                     description=via_data["description"],
                 )
 
+        bypass_rate_limit = bool(bypass_rate_limit_raw)
+
         # Create the appropriate request type
         if request_type == "archive":
             return Request(
@@ -362,6 +367,7 @@ class QueueMixin:
                 archive=True,
                 expected_type=expected_type,
                 via=via,
+                bypass_rate_limit=bypass_rate_limit,
             )
         elif request_type == "non_navigating":
             return Request(
@@ -374,6 +380,7 @@ class QueueMixin:
                 priority=priority,
                 nonnavigating=True,
                 via=via,
+                bypass_rate_limit=bypass_rate_limit,
             )
         else:  # navigating (default)
             return Request(
@@ -387,4 +394,5 @@ class QueueMixin:
                 is_speculative=bool(is_speculative),
                 speculation_id=speculation_id,
                 via=via,
+                bypass_rate_limit=bypass_rate_limit,
             )

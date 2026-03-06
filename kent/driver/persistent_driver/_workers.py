@@ -214,7 +214,9 @@ class WorkerMixin:
             else:
                 # Determine how many workers are needed to saturate the
                 # configured rate limit given observed request durations.
-                rates = getattr(self.request_manager, "_rates", None)
+                rates = getattr(
+                    self.request_manager, "_rates", None
+                ) or getattr(self, "_rates", None)
 
                 if rates:
                     # Most restrictive rate expressed as requests/second.
@@ -468,6 +470,7 @@ class WorkerMixin:
                     request,  # type: ignore[arg-type]
                     continuation_name,
                     parent_request_id=parent_request_id,
+                    worker_id=worker_id,
                 )
                 req_time = time_module.time() - req_start
                 loop_time = time_module.time() - loop_start
@@ -588,6 +591,7 @@ class WorkerMixin:
         request: Request,
         continuation_name: str,
         parent_request_id: int | None = None,
+        worker_id: int = 0,
     ) -> None:
         """Process a regular (non-speculative, non-resume) request.
 
@@ -596,6 +600,7 @@ class WorkerMixin:
             request: The request to process.
             continuation_name: Name of the continuation method.
             parent_request_id: Parent request ID for tab forking (Playwright).
+            worker_id: Identifier of the calling worker (used by Playwright driver).
         """
         # Process the request using parent class methods
         # For archive requests, resolve_archive_request returns ArchiveResponse

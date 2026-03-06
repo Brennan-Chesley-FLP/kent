@@ -849,6 +849,9 @@ class BaseRequest:
                        function generated this request. None for non-speculative requests.
         via: Optional description of how the request was produced (ViaLink, ViaFormSubmit).
              Enables the Playwright driver to replay the browser action. HTTP driver ignores.
+        bypass_rate_limit: If True, skip the rate limiter for this request.
+             Useful for time-sensitive requests (e.g., file downloads) where
+             stale server-side state expires quickly and delays cause failures.
     """
 
     request: HTTPRequestParams
@@ -863,6 +866,7 @@ class BaseRequest:
     is_speculative: bool = False
     speculation_id: tuple[str, int] | None = None
     via: Any = None  # ViaLink | ViaFormSubmit | None - using Any to avoid circular import
+    bypass_rate_limit: bool = False
 
     def __post_init__(self) -> None:
         """Deep copy accumulated_data, aux_data, and permanent to prevent unintended sharing.
@@ -1093,6 +1097,7 @@ class Request(BaseRequest):
             nonnavigating=self.nonnavigating,
             archive=self.archive,
             expected_type=self.expected_type,
+            bypass_rate_limit=self.bypass_rate_limit,
         )
 
     def speculative(self, func_name: str, spec_id: int) -> Request:
@@ -1124,6 +1129,7 @@ class Request(BaseRequest):
             nonnavigating=self.nonnavigating,
             archive=self.archive,
             expected_type=self.expected_type,
+            bypass_rate_limit=self.bypass_rate_limit,
         )
 
 

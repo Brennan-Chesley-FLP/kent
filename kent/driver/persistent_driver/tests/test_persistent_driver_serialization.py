@@ -94,7 +94,8 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify, via_json
+                       is_speculative, speculation_id, verify, via_json,
+                       bypass_rate_limit
                 FROM requests WHERE id = 1
                 """)
             )
@@ -207,7 +208,8 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify, via_json
+                       is_speculative, speculation_id, verify, via_json,
+                       bypass_rate_limit
                 FROM requests WHERE id = 1
                 """)
             )
@@ -315,7 +317,8 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify, via_json
+                       is_speculative, speculation_id, verify, via_json,
+                       bypass_rate_limit
                 FROM requests WHERE id = 1
                 """)
             )
@@ -418,7 +421,8 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify, via_json
+                       is_speculative, speculation_id, verify, via_json,
+                       bypass_rate_limit
                 FROM requests WHERE id = 1
                 """)
             )
@@ -502,7 +506,8 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify, via_json
+                       is_speculative, speculation_id, verify, via_json,
+                       bypass_rate_limit
                 FROM requests WHERE id = 1
                 """)
             )
@@ -593,7 +598,8 @@ class TestRequestTypeRoundTrip:
                        continuation, current_location,
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
-                       is_speculative, speculation_id, verify, via_json
+                       is_speculative, speculation_id, verify, via_json,
+                       bypass_rate_limit
                 FROM requests WHERE id = 1
                 """)
             )
@@ -609,3 +615,167 @@ class TestRequestTypeRoundTrip:
         assert deserialized.accumulated_data == {}
         assert deserialized.aux_data == {}
         assert deserialized.permanent == {}
+
+    async def test_bypass_rate_limit_round_trip(self, initialized_db) -> None:
+        """Test that bypass_rate_limit=True round-trips through DB correctly."""
+        from kent.data_types import (
+            HttpMethod,
+            HTTPRequestParams,
+            Request,
+        )
+        from kent.driver.persistent_driver.persistent_driver import (
+            PersistentDriver,
+        )
+
+        original = Request(
+            request=HTTPRequestParams(
+                method=HttpMethod.GET,
+                url="https://example.com/urgent",
+            ),
+            continuation="handle_urgent",
+            current_location="",
+            bypass_rate_limit=True,
+        )
+
+        driver = PersistentDriver.__new__(PersistentDriver)
+        serialized = driver._serialize_request(original)
+        assert serialized["bypass_rate_limit"] is True
+
+        engine, session_factory = initialized_db
+        async with session_factory() as session:
+            await session.execute(
+                sa.text("""
+                INSERT INTO requests (
+                    status, priority, queue_counter, request_type,
+                    method, url, headers_json, cookies_json, body,
+                    continuation, current_location,
+                    accumulated_data_json, aux_data_json, permanent_json,
+                    expected_type, bypass_rate_limit
+                ) VALUES (
+                    'pending', :priority, 1, :request_type,
+                    :method, :url, :headers_json, :cookies_json, :body,
+                    :continuation, :current_location,
+                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :expected_type, :bypass_rate_limit
+                )
+                """),
+                {
+                    "priority": original.priority,
+                    "request_type": serialized["request_type"],
+                    "method": serialized["method"],
+                    "url": serialized["url"],
+                    "headers_json": serialized["headers_json"],
+                    "cookies_json": serialized["cookies_json"],
+                    "body": serialized["body"],
+                    "continuation": serialized["continuation"],
+                    "current_location": serialized["current_location"],
+                    "accumulated_data_json": serialized[
+                        "accumulated_data_json"
+                    ],
+                    "aux_data_json": serialized["aux_data_json"],
+                    "permanent_json": serialized["permanent_json"],
+                    "expected_type": serialized["expected_type"],
+                    "bypass_rate_limit": serialized["bypass_rate_limit"],
+                },
+            )
+            await session.commit()
+
+        async with session_factory() as session:
+            result = await session.execute(
+                sa.text("""
+                SELECT id, request_type, method, url, headers_json, cookies_json, body,
+                       continuation, current_location,
+                       accumulated_data_json, aux_data_json, permanent_json,
+                       expected_type, priority,
+                       is_speculative, speculation_id, verify, via_json,
+                       bypass_rate_limit
+                FROM requests WHERE id = 1
+                """)
+            )
+            row = result.first()
+        assert row is not None
+
+        deserialized = driver._deserialize_request(row)
+        assert deserialized.bypass_rate_limit is True
+
+    async def test_bypass_rate_limit_default_false(
+        self, initialized_db
+    ) -> None:
+        """Test that bypass_rate_limit defaults to False when not set."""
+        from kent.data_types import (
+            HttpMethod,
+            HTTPRequestParams,
+            Request,
+        )
+        from kent.driver.persistent_driver.persistent_driver import (
+            PersistentDriver,
+        )
+
+        original = Request(
+            request=HTTPRequestParams(
+                method=HttpMethod.GET,
+                url="https://example.com/normal",
+            ),
+            continuation="parse",
+            current_location="",
+        )
+
+        driver = PersistentDriver.__new__(PersistentDriver)
+        serialized = driver._serialize_request(original)
+        assert serialized["bypass_rate_limit"] is False
+
+        engine, session_factory = initialized_db
+        async with session_factory() as session:
+            await session.execute(
+                sa.text("""
+                INSERT INTO requests (
+                    status, priority, queue_counter, request_type,
+                    method, url, headers_json, cookies_json, body,
+                    continuation, current_location,
+                    accumulated_data_json, aux_data_json, permanent_json,
+                    expected_type
+                ) VALUES (
+                    'pending', :priority, 1, :request_type,
+                    :method, :url, :headers_json, :cookies_json, :body,
+                    :continuation, :current_location,
+                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :expected_type
+                )
+                """),
+                {
+                    "priority": original.priority,
+                    "request_type": serialized["request_type"],
+                    "method": serialized["method"],
+                    "url": serialized["url"],
+                    "headers_json": serialized["headers_json"],
+                    "cookies_json": serialized["cookies_json"],
+                    "body": serialized["body"],
+                    "continuation": serialized["continuation"],
+                    "current_location": serialized["current_location"],
+                    "accumulated_data_json": serialized[
+                        "accumulated_data_json"
+                    ],
+                    "aux_data_json": serialized["aux_data_json"],
+                    "permanent_json": serialized["permanent_json"],
+                    "expected_type": serialized["expected_type"],
+                },
+            )
+            await session.commit()
+
+        async with session_factory() as session:
+            result = await session.execute(
+                sa.text("""
+                SELECT id, request_type, method, url, headers_json, cookies_json, body,
+                       continuation, current_location,
+                       accumulated_data_json, aux_data_json, permanent_json,
+                       expected_type, priority,
+                       is_speculative, speculation_id, verify, via_json,
+                       bypass_rate_limit
+                FROM requests WHERE id = 1
+                """)
+            )
+            row = result.first()
+        assert row is not None
+
+        deserialized = driver._deserialize_request(row)
+        assert deserialized.bypass_rate_limit is False

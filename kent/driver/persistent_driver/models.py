@@ -104,6 +104,12 @@ class Request(SQLModel, table=True):  # type: ignore[call-arg]
     # Archive-specific
     expected_type: str | None = None
 
+    # Rate limit bypass
+    bypass_rate_limit: bool = Field(
+        default=False,
+        sa_column_kwargs={"server_default": sa.text("0")},
+    )
+
     # Timestamps (human-readable)
     created_at: str | None = Field(
         default=None,

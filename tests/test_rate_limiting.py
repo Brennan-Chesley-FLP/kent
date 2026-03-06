@@ -272,3 +272,163 @@ class TestAioSQLiteBucketPut:
         assert await bucket.put(RateItem("r", now, 1)) is False
         # 1001 ms later (outside the 1-second window), should be accepted
         assert await bucket.put(RateItem("r", now + 1001, 1)) is True
+
+
+# ---------------------------------------------------------------------------
+# bypass_rate_limit tests
+# ---------------------------------------------------------------------------
+
+BYPASS_NUM_REQUESTS = 4
+# 1 request per 2 seconds → without bypass, 4 requests needs ≥ 6 s
+BYPASS_RATE = Rate(1, 2 * Duration.SECOND)
+# With bypass, all requests should complete in well under 6 s
+BYPASS_MAX_SECONDS = 4.0
+
+
+def _make_bypass_scraper_class(
+    server_url: str,
+    rate: Rate = BYPASS_RATE,
+    n_requests: int = BYPASS_NUM_REQUESTS,
+):
+    """Build a scraper that emits bypass_rate_limit=True requests."""
+
+    class BypassRateLimitScraper(BaseScraper[dict]):
+        rate_limits = [rate]
+
+        def get_entry(self) -> Generator[Request, None, None]:
+            for i in range(n_requests):
+                yield Request(
+                    request=HTTPRequestParams(
+                        method=HttpMethod.GET,
+                        url=f"{server_url}/test?i={i}",
+                    ),
+                    continuation="parse",
+                    bypass_rate_limit=True,
+                )
+
+        def parse(self, response: Response):
+            yield ParsedData(data={"url": response.url})
+
+    return BypassRateLimitScraper
+
+
+class TestSyncDriverBypassRateLimit:
+    def test_bypass_skips_rate_limit(
+        self, server_url: str, tmp_path: Path
+    ) -> None:
+        """SyncDriver bypass_rate_limit requests skip rate limiting."""
+        from kent.driver.sync_driver import SyncDriver
+
+        Scraper = _make_bypass_scraper_class(server_url)
+        scraper = Scraper()
+        callback, results = collect_results()
+
+        start = time.monotonic()
+        driver = SyncDriver(
+            scraper=scraper,
+            storage_dir=tmp_path,
+            on_data=callback,
+        )
+        driver.run()
+        elapsed = time.monotonic() - start
+
+        assert len(results) == BYPASS_NUM_REQUESTS
+        assert elapsed < BYPASS_MAX_SECONDS, (
+            f"SyncDriver bypass requests took {elapsed:.2f}s, "
+            f"expected < {BYPASS_MAX_SECONDS:.1f}s (rate limit should be skipped)"
+        )
+
+
+class TestAsyncDriverBypassRateLimit:
+    async def test_bypass_skips_rate_limit(
+        self, server_url: str, tmp_path: Path
+    ) -> None:
+        """AsyncDriver bypass_rate_limit requests skip rate limiting."""
+        from kent.driver.async_driver import AsyncDriver
+
+        Scraper = _make_bypass_scraper_class(server_url)
+        scraper = Scraper()
+        callback, results = collect_results_async()
+
+        start = time.monotonic()
+        driver = AsyncDriver(
+            scraper=scraper,
+            storage_dir=tmp_path,
+            on_data=callback,
+            num_workers=1,
+        )
+        await driver.run()
+        elapsed = time.monotonic() - start
+
+        assert len(results) == BYPASS_NUM_REQUESTS
+        assert elapsed < BYPASS_MAX_SECONDS, (
+            f"AsyncDriver bypass requests took {elapsed:.2f}s, "
+            f"expected < {BYPASS_MAX_SECONDS:.1f}s (rate limit should be skipped)"
+        )
+
+
+class TestPersistentDriverBypassRateLimit:
+    async def test_bypass_skips_rate_limit(
+        self, server_url: str, tmp_path: Path
+    ) -> None:
+        """PersistentDriver bypass_rate_limit requests skip rate limiting."""
+        from kent.driver.persistent_driver import PersistentDriver
+
+        Scraper = _make_bypass_scraper_class(server_url)
+        scraper = Scraper()
+        callback, results = collect_results_async()
+
+        db_path = tmp_path / "bypass_test.db"
+
+        start = time.monotonic()
+        async with PersistentDriver.open(
+            scraper,
+            db_path,
+            num_workers=1,
+            resume=False,
+            enable_monitor=False,
+        ) as driver:
+            driver.on_data = callback
+            await driver.run()
+        elapsed = time.monotonic() - start
+
+        assert len(results) == BYPASS_NUM_REQUESTS
+        assert elapsed < BYPASS_MAX_SECONDS, (
+            f"PersistentDriver bypass requests took {elapsed:.2f}s, "
+            f"expected < {BYPASS_MAX_SECONDS:.1f}s (rate limit should be skipped)"
+        )
+
+
+class TestPlaywrightDriverBypassRateLimit:
+    @pytest.mark.slow
+    async def test_bypass_skips_rate_limit(
+        self, server_url: str, tmp_path: Path
+    ) -> None:
+        """PlaywrightDriver bypass_rate_limit requests skip rate limiting."""
+        pw = pytest.importorskip("playwright")  # noqa: F841
+        from kent.driver.playwright_driver import PlaywrightDriver
+
+        Scraper = _make_bypass_scraper_class(server_url)
+        scraper = Scraper()
+        callback, results = collect_results_async()
+
+        db_path = tmp_path / "bypass_pw_test.db"
+
+        start = time.monotonic()
+        async with PlaywrightDriver.open(
+            scraper,
+            db_path,
+            num_workers=1,
+            resume=False,
+            enable_monitor=False,
+            headless=True,
+        ) as driver:
+            driver.on_data = callback
+            await driver.run()
+        elapsed = time.monotonic() - start
+
+        assert len(results) == BYPASS_NUM_REQUESTS
+        assert elapsed < BYPASS_MAX_SECONDS, (
+            f"PlaywrightDriver bypass requests took {elapsed:.2f}s, "
+            f"expected < {BYPASS_MAX_SECONDS:.1f}s (rate limit should be skipped)"
+        )

@@ -53,6 +53,7 @@ from kent.common.selector_observer import (
     SelectorQuery,
 )
 from kent.data_types import (
+    ArchiveResponse,
     BaseRequest,
     BaseScraper,
     Response,
@@ -153,6 +154,94 @@ async def _launch_persistent(
     return context
 
 
+class WorkerPage:
+    """A Playwright page bound to a single worker, reused across requests.
+
+    Encapsulates per-request state (incidental network requests) so that
+    concurrent workers don't corrupt each other's data.
+    """
+
+    def __init__(self, page: Page, excluded_resource_types: set[str]):
+        self.page = page
+        self.incidental_requests: list[dict[str, Any]] = []
+        self.current_parent_request_id: int | None = None
+        self._excluded_resource_types = excluded_resource_types
+        self._register_network_listeners()
+
+    def _register_network_listeners(self) -> None:
+        """Register network request/response listeners for incidental tracking."""
+
+        incidentals = self.incidental_requests
+        excluded = self._excluded_resource_types
+
+        async def on_request(request: Any) -> None:
+            incidental = {
+                "resource_type": request.resource_type,
+                "method": request.method,
+                "url": request.url,
+                "headers_json": json.dumps(dict(request.headers)),
+                "body": None,
+                "status_code": None,
+                "response_headers_json": None,
+                "content_compressed": None,
+                "content_size_original": None,
+                "content_size_compressed": None,
+                "compression_dict_id": None,
+                "started_at_ns": time.time_ns(),
+                "completed_at_ns": None,
+                "from_cache": None,
+                "failure_reason": None,
+            }
+            incidentals.append(incidental)
+
+        async def on_response(response: Any) -> None:
+            request = response.request
+            for incidental in incidentals:
+                if (
+                    incidental["url"] == request.url
+                    and incidental["completed_at_ns"] is None
+                ):
+                    incidental["status_code"] = response.status
+                    incidental["response_headers_json"] = json.dumps(
+                        dict(response.headers)
+                    )
+                    incidental["completed_at_ns"] = time.time_ns()
+                    incidental["from_cache"] = response.from_service_worker
+
+                    if incidental["resource_type"] not in excluded:
+                        try:
+                            content = await response.body()
+                            content_compressed = compress(content)
+                            incidental["content_compressed"] = (
+                                content_compressed
+                            )
+                            incidental["content_size_original"] = len(content)
+                            incidental["content_size_compressed"] = len(
+                                content_compressed
+                            )
+                        except Exception as e:
+                            logger.debug(
+                                f"Failed to capture content for {request.url}: {e}"
+                            )
+                    break
+
+        self.page.on("request", on_request)
+        self.page.on("response", on_response)
+
+    def clear_request_state(self) -> None:
+        """Reset per-request state between navigations."""
+        self.incidental_requests.clear()
+        self.current_parent_request_id = None
+
+    async def reset_for_reuse(self) -> None:
+        """Lightweight cleanup between requests."""
+        await self.page.goto("about:blank", wait_until="commit")
+        self.clear_request_state()
+
+    async def close(self) -> None:
+        await self.page.close()
+
+
 class PlaywrightDriver(
     PersistentDriver[ScraperReturnDatatype], Generic[ScraperReturnDatatype]
 ):
@@ -225,12 +314,8 @@ class PlaywrightDriver(
         )
 
         self.browser_context = browser_context
-        # Page reuse within context for sequential navigations
-        self._page: Page | None = None
-        # Track incidental requests for current navigation
-        self._incidental_requests: list[dict[str, Any]] = []
-        # Current parent request ID for linking incidental requests
-        self._current_parent_request_id: int | None = None
+        # Per-worker page registry: each worker owns a long-lived page
+        self._worker_pages: dict[int, WorkerPage] = {}
         # Resource types to exclude from content capture
         self.excluded_resource_types = excluded_resource_types or {
             "image",
@@ -239,6 +324,33 @@ class PlaywrightDriver(
         }
         # Rate limiter for controlling navigation pace
         self.rate_limiter = rate_limiter
+        # Expose rates so the worker monitor can compute workers_needed
+        self._rates: list[Any] | None = None
+
+    async def _acquire_worker_page(self, worker_id: int) -> WorkerPage:
+        """Get or create the reusable page for a worker."""
+        wp = self._worker_pages.get(worker_id)
+        if wp is not None and wp.page.is_closed():
+            self._worker_pages.pop(worker_id)
+            wp = None
+        if wp is None:
+            page = await self.browser_context.new_page()
+            wp = WorkerPage(page, self.excluded_resource_types)
+            self._worker_pages[worker_id] = wp
+        return wp
+
+    async def _release_worker_page(self, worker_id: int) -> None:
+        """Close and remove the page when a worker exits."""
+        wp = self._worker_pages.pop(worker_id, None)
+        if wp:
+            await wp.close()
+
+    async def _db_worker(self, worker_id: int) -> None:
+        """Wrap parent _db_worker to clean up the worker's page on exit."""
+        try:
+            await super()._db_worker(worker_id)
+        finally:
+            await self._release_worker_page(worker_id)
 
     @classmethod
     @asynccontextmanager
@@ -415,6 +527,7 @@ class PlaywrightDriver(
                         "viewport": viewport,
                         "locale": locale,
                         "timezone_id": timezone_id,
+                        "accept_downloads": True,
                     }
                     if user_agent:
                         context_kwargs["user_agent"] = user_agent
@@ -458,6 +571,8 @@ class PlaywrightDriver(
                         excluded_resource_types=excluded_resource_types,
                         rate_limiter=rate_limiter,
                     )
+                    # Expose rates for the worker monitor's scaling logic
+                    driver._rates = effective_rates
 
                     # Restore cookies on resume
                     if resume:
@@ -574,128 +689,97 @@ class PlaywrightDriver(
         request: BaseRequest,
         continuation_name: str,
         parent_request_id: int | None = None,
+        worker_id: int = 0,
     ) -> None:
-        """Process a request using Playwright navigation.
+        """Process a request using the worker's reusable Playwright page.
 
-        Each request gets its own tab (page). If the request has a parent
-        with a stored response, the parent's page is served from cache via
-        route interception before executing the via navigation.
+        Each worker owns a long-lived page that is reset between requests
+        via ``about:blank`` navigation.  Per-request network state lives on
+        the :class:`WorkerPage`, eliminating shared-state races.
 
         Args:
             request_id: Database ID of the request.
             request: The request to process.
             continuation_name: The continuation method name to invoke after navigation.
             parent_request_id: Parent request ID for tab route interception.
+            worker_id: Identifier of the calling worker.
         """
-        self._current_parent_request_id = request_id
-
-        # Create a fresh page (tab) for this request
-        page = await self.browser_context.new_page()
-        self._register_network_listeners(page)
+        wp = await self._acquire_worker_page(worker_id)
+        await wp.reset_for_reuse()
+        wp.current_parent_request_id = request_id
+        page = wp.page
 
         try:
             # Acquire rate limiter token before navigation
-            if self.rate_limiter:
+            bypass = getattr(request, "bypass_rate_limit", False)
+            if self.rate_limiter and not bypass:
                 await self.rate_limiter.try_acquire_async(
                     name="navigation", weight=1
                 )
+                # Re-stamp start time so duration excludes rate limiter wait
+                await self.db.restamp_request_start(request_id)
 
-            # Clear incidental requests from previous navigation
-            self._incidental_requests.clear()
-
-            # Navigate: route-intercept parent's cached page then via,
-            # or navigate directly
-            nav_error: HTMLStructuralAssumptionException | None = None
-            if parent_request_id and request.via is not None:
+            # Archive requests: click triggers a download, not a navigation
+            is_archive = getattr(request, "archive", False)
+            if is_archive and parent_request_id and request.via is not None:
                 success = await self._setup_tab_with_parent_response(
                     page, parent_request_id
                 )
-                if success:
-                    # Parent page is loaded from cache; execute via navigation
-                    try:
-                        await self._execute_via_navigation(request, page)
-                    except HTMLStructuralAssumptionException as e:
-                        nav_error = e
-                else:
-                    # Parent has no stored response — fall back to direct URL
-                    await page.goto(
-                        request.request.url, wait_until="domcontentloaded"
-                    )
-            elif request.via is not None:
-                # Has via but no parent (shouldn't normally happen) — direct
-                await page.goto(
-                    request.request.url, wait_until="domcontentloaded"
-                )
-            else:
-                # Entry point or direct URL (no via)
-                await page.goto(
-                    request.request.url, wait_until="domcontentloaded"
-                )
-
-            # Process await_list if continuation has one (skip on nav error)
-            if continuation_name and nav_error is None:
-                continuation = getattr(self.scraper, continuation_name, None)
-                if continuation:
-                    metadata = get_step_metadata(continuation)
-                    if metadata and metadata.await_list:
-                        await self._process_await_list(
-                            page, metadata.await_list
-                        )
-
-            # Snapshot DOM (always — even on nav error, for debugging)
-            html_content = await page.content()
-
-            # Create Response object
-            response = Response(
-                status_code=200,
-                url=page.url,
-                content=html_content.encode("utf-8"),
-                text=html_content,
-                headers={"content-type": "text/html; charset=utf-8"},
-                request=request,
-            )
-
-            # Store response with DOM snapshot
-            await self._store_response(
-                request_id=request_id,
-                response=response,
-                continuation=continuation_name,
-                speculation_outcome=None,
-            )
-
-            # Store incidental requests
-            for incidental in self._incidental_requests:
-                await self.db.insert_incidental_request(
-                    parent_request_id=request_id, **incidental
-                )
-
-            # Re-raise navigation error after storing response
-            if nav_error is not None:
-                raise nav_error
-
-            # Process continuation if present
-            if continuation_name:
-                continuation = getattr(self.scraper, continuation_name, None)
-                if continuation:
-                    # Check for autowait
-                    metadata = get_step_metadata(continuation)
-                    auto_await_timeout = (
-                        metadata.auto_await_timeout if metadata else None
+                if not success:
+                    raise TransientException(
+                        f"Archive request {request_id}: parent has no stored response"
                     )
 
-                    if auto_await_timeout:
-                        # Process with autowait retry logic
-                        await self._process_generator_with_autowait(
-                            continuation,
-                            response,
-                            request,
-                            request_id,
-                            auto_await_timeout,
-                            page=page,
-                        )
-                    else:
-                        # Process normally
-                        gen = continuation(response)
+                download = await self._execute_via_download(request, page)
+
+                # Read downloaded content and save via on_archive callback
+                import uuid as _uuid
+
+                download_path = await download.path()
+                if download_path is None:
+                    raise TransientException(
+                        f"Archive request {request_id}: download produced no file"
+                    )
+                file_content = download_path.read_bytes()
+                expected_type = getattr(request, "expected_type", None)
+
+                # Build a unique URL so on_archive derives a unique filename.
+                # Use the download's suggested_filename (from Content-Disposition)
+                # for the extension, prefixed with a UUID to avoid collisions.
+                suggested = download.suggested_filename
+                ext = Path(suggested).suffix if suggested else ""
+                unique_filename = f"{_uuid.uuid4()}{ext}"
+                archive_url = f"{request.request.url}/{unique_filename}"
+
+                file_url = await self.on_archive(
+                    file_content,
+                    archive_url,
+                    expected_type,
+                    self.storage_dir,
+                )
+
+                response: Response = ArchiveResponse(
+                    status_code=200,
+                    url=download.url or request.request.url,
+                    content=file_content,
+                    text="",
+                    headers={},
+                    request=request,
+                    file_url=file_url,
+                )
+
+                await self._store_response(
+                    request_id=request_id,
+                    response=response,
+                    continuation=continuation_name,
+                    speculation_outcome=None,
+                )
+
+                # Process continuation
+                if continuation_name:
+                    cont = getattr(self.scraper, continuation_name, None)
+                    if cont:
+                        gen = cont(response)
                         await self._process_generator_with_storage(
                             gen,
                             response,
@@ -704,8 +788,118 @@ class PlaywrightDriver(
                             request_id,
                         )
 
-            # Mark request as completed
-            await self.db.mark_request_completed(request_id)
+                await self.db.mark_request_completed(request_id)
+
+            else:
+                # Non-archive: navigate and snapshot HTML
+
+                # Navigate: route-intercept parent's cached page then via,
+                # or navigate directly
+                nav_error: HTMLStructuralAssumptionException | None = None
+                if parent_request_id and request.via is not None:
+                    success = await self._setup_tab_with_parent_response(
+                        page, parent_request_id
+                    )
+                    if success:
+                        # Parent page is loaded from cache; execute via navigation
+                        try:
+                            await self._execute_via_navigation(request, page)
+                        except HTMLStructuralAssumptionException as e:
+                            nav_error = e
+                    else:
+                        # Parent has no stored response — fall back to direct URL
+                        await page.goto(
+                            request.request.url, wait_until="domcontentloaded"
+                        )
+                elif request.via is not None:
+                    # Has via but no parent (shouldn't normally happen) — direct
+                    await page.goto(
+                        request.request.url, wait_until="domcontentloaded"
+                    )
+                else:
+                    # Entry point or direct URL (no via)
+                    await page.goto(
+                        request.request.url, wait_until="domcontentloaded"
+                    )
+
+                # Process await_list if continuation has one (skip on nav error)
+                if continuation_name and nav_error is None:
+                    continuation = getattr(
+                        self.scraper, continuation_name, None
+                    )
+                    if continuation:
+                        metadata = get_step_metadata(continuation)
+                        if metadata and metadata.await_list:
+                            await self._process_await_list(
+                                page, metadata.await_list
+                            )
+
+                # Snapshot DOM (always — even on nav error, for debugging)
+                html_content = await page.content()
+
+                # Create Response object
+                response = Response(
+                    status_code=200,
+                    url=page.url,
+                    content=html_content.encode("utf-8"),
+                    text=html_content,
+                    headers={"content-type": "text/html; charset=utf-8"},
+                    request=request,
+                )
+
+                # Store response with DOM snapshot
+                await self._store_response(
+                    request_id=request_id,
+                    response=response,
+                    continuation=continuation_name,
+                    speculation_outcome=None,
+                )
+
+                # Store incidental requests from this worker's page
+                for incidental in wp.incidental_requests:
+                    await self.db.insert_incidental_request(
+                        parent_request_id=request_id, **incidental
+                    )
+
+                # Re-raise navigation error after storing response
+                if nav_error is not None:
+                    raise nav_error
+
+                # Process continuation if present
+                if continuation_name:
+                    continuation = getattr(
+                        self.scraper, continuation_name, None
+                    )
+                    if continuation:
+                        # Check for autowait
+                        metadata = get_step_metadata(continuation)
+                        auto_await_timeout = (
+                            metadata.auto_await_timeout if metadata else None
+                        )
+
+                        if auto_await_timeout:
+                            # Process with autowait retry logic
+                            await self._process_generator_with_autowait(
+                                continuation,
+                                response,
+                                request,
+                                request_id,
+                                auto_await_timeout,
+                                page=page,
+                            )
+                        else:
+                            # Process normally
+                            gen = continuation(response)
+                            await self._process_generator_with_storage(
+                                gen,
+                                response,
+                                request,
+                                continuation_name,
+                                request_id,
+                            )
+
+                # Mark request as completed
+                await self.db.mark_request_completed(request_id)
 
         except PlaywrightTimeoutError as e:
             # Timeout waiting for selector/load state
@@ -723,9 +917,102 @@ class PlaywrightDriver(
             )
             raise
 
-        finally:
-            self._current_parent_request_id = None
-            await page.close()
+    async def _execute_via_download(
+        self, request: BaseRequest, page: Page
+    ) -> Any:
+        """Execute a via action that triggers a file download instead of navigation.
+
+        Similar to _execute_via_navigation but wraps the click in
+        page.expect_download() instead of page.expect_navigation().
+
+        Returns:
+            The Playwright Download object.
+        """
+        if not isinstance(request.via, ViaFormSubmit):
+            raise ValueError(
+                f"Archive download requires ViaFormSubmit, got {type(request.via)}"
+            )
+
+        form_via = request.via
+
+        # Locate form
+        form_element = await page.wait_for_selector(
+            form_via.form_selector, timeout=5000
+        )
+        if not form_element:
+            raise HTMLStructuralAssumptionException(
+                selector=form_via.form_selector,
+                selector_type="form",
+                description=f"Form selector not found: {form_via.form_selector}",
+                expected_min=1,
+                expected_max=1,
+                actual_count=0,
+                request_url=request.request.url,
+            )
+
+        # Fill form fields (same as _execute_via_navigation)
+        for field_name, field_value in form_via.field_data.items():
+            field_selector = f'[name="{field_name}"]'
+            field_element = await form_element.query_selector(field_selector)
+            if field_element:
+                tag = await field_element.evaluate(
+                    "el => el.tagName.toLowerCase()"
+                )
+                input_type = await field_element.get_attribute("type")
+                is_visible = await field_element.is_visible()
+                str_value = str(field_value)
+
+                if tag == "select":
+                    await field_element.select_option(value=str_value)
+                elif input_type == "radio":
+                    radio = await form_element.query_selector(
+                        f'[name="{field_name}"][value="{str_value}"]'
+                    )
+                    if radio:
+                        await radio.evaluate("(el) => el.checked = true")
+                elif input_type in ("hidden", "submit") or not is_visible:
+                    await field_element.evaluate(
+                        "(el, val) => el.value = val", str_value
+                    )
+                else:
+                    await field_element.fill(str_value)
+
+        # Click submit button, expecting a download instead of navigation
+        if form_via.submit_selector:
+            submit_element = await form_element.query_selector(
+                form_via.submit_selector
+            )
+            if not submit_element:
+                raise HTMLStructuralAssumptionException(
+                    selector=form_via.submit_selector,
+                    selector_type="submit",
+                    description=f"Submit selector not found: {form_via.submit_selector}",
+                    expected_min=1,
+                    expected_max=1,
+                    actual_count=0,
+                    request_url=request.request.url,
+                )
+            async with page.expect_download() as download_info:
+                await submit_element.click()
+            return await download_info.value
+        else:
+            # Fallback: click first submit element
+            submit_element = await form_element.query_selector(
+                'button[type="submit"], input[type="submit"]'
+            )
+            if not submit_element:
+                raise HTMLStructuralAssumptionException(
+                    selector=form_via.form_selector,
+                    selector_type="form",
+                    description="No submit button found in form for download",
+                    expected_min=1,
+                    expected_max=1,
+                    actual_count=0,
+                    request_url=request.request.url,
+                )
+            async with page.expect_download() as download_info:
+                await submit_element.click()
+            return await download_info.value
 
     async def _execute_via_navigation(
         self, request: BaseRequest, page: Page
@@ -955,8 +1242,6 @@ class PlaywrightDriver(
             auto_await_timeout: Timeout in milliseconds for autowait retries.
             page: The Playwright page for re-snapshot (optional for non-Playwright).
         """
-        if page is None:
-            page = self._page
         assert page is not None, "Page must be provided for autowait"
         start_time = time.time()
         timeout_seconds = auto_await_timeout / 1000.0
@@ -1149,83 +1434,12 @@ class PlaywrightDriver(
                 return found
         return None
 
-    def _register_network_listeners(self, page: Page) -> None:
-        """Register network request/response listeners for incidental tracking.
-
-        Args:
-            page: The Playwright page to listen on.
-        """
-
-        async def on_request(request):
-            """Capture request metadata."""
-            # Store request info (will be updated with response when it arrives)
-            incidental = {
-                "resource_type": request.resource_type,
-                "method": request.method,
-                "url": request.url,
-                "headers_json": json.dumps(dict(request.headers)),
-                "body": None,  # Playwright doesn't expose request body easily
-                "status_code": None,
-                "response_headers_json": None,
-                "content_compressed": None,
-                "content_size_original": None,
-                "content_size_compressed": None,
-                "compression_dict_id": None,
-                "started_at_ns": time.time_ns(),
-                "completed_at_ns": None,
-                "from_cache": None,
-                "failure_reason": None,
-            }
-            self._incidental_requests.append(incidental)
-
-        async def on_response(response):
-            """Capture response metadata and content."""
-            # Find corresponding request
-            request = response.request
-            for incidental in self._incidental_requests:
-                if (
-                    incidental["url"] == request.url
-                    and incidental["completed_at_ns"] is None
-                ):
-                    # Update with response info
-                    incidental["status_code"] = response.status
-                    incidental["response_headers_json"] = json.dumps(
-                        dict(response.headers)
-                    )
-                    incidental["completed_at_ns"] = time.time_ns()
-                    incidental["from_cache"] = response.from_service_worker
-
-                    # Capture content for certain resource types (skip large binaries)
-                    if (
-                        incidental["resource_type"]
-                        not in self.excluded_resource_types
-                    ):
-                        try:
-                            content = await response.body()
-                            # Compress content with zstd
-                            content_compressed = compress(content)
-                            incidental["content_compressed"] = (
-                                content_compressed
-                            )
-                            incidental["content_size_original"] = len(content)
-                            incidental["content_size_compressed"] = len(
-                                content_compressed
-                            )
-                        except Exception as e:
-                            logger.debug(
-                                f"Failed to capture content for {request.url}: {e}"
-                            )
-                    break
-
-        page.on("request", on_request)
-        page.on("response", on_response)
-
     async def close(self) -> None:
         """Close driver, save cookies, and cleanup resources."""
-        # Close page if open
-        if self._page:
-            await self._page.close()
-            self._page = None
+        # Close any remaining worker pages
+        for wp in self._worker_pages.values():
+            await wp.close()
+        self._worker_pages.clear()
 
         # Save browser cookies for resume
         try:

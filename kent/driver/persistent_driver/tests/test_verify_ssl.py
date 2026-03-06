@@ -51,7 +51,7 @@ class TestVerifyThroughPersistentDriverQueue:
         row = await sql.dequeue_next_request()
         assert row is not None
 
-        request = driver._deserialize_request(row[:18])
+        request = driver._deserialize_request(row[:19])
         assert request.request.verify is False
 
     async def test_verify_true_round_trip(self, initialized_db) -> None:
@@ -88,7 +88,7 @@ class TestVerifyThroughPersistentDriverQueue:
         row = await sql.dequeue_next_request()
         assert row is not None
 
-        request = driver._deserialize_request(row[:18])
+        request = driver._deserialize_request(row[:19])
         assert request.request.verify is True
 
     async def test_verify_ca_bundle_round_trip(self, initialized_db) -> None:
@@ -125,7 +125,7 @@ class TestVerifyThroughPersistentDriverQueue:
         row = await sql.dequeue_next_request()
         assert row is not None
 
-        request = driver._deserialize_request(row[:18])
+        request = driver._deserialize_request(row[:19])
         assert request.request.verify == "/etc/ssl/certs/ca-bundle.crt"
 
     async def test_serialize_deserialize_verify_false(self) -> None:
@@ -257,7 +257,7 @@ class TestVerifyThroughPersistentDriverQueue:
         # Dequeue
         row = await sql.dequeue_next_request()
         assert row is not None
-        request = driver._deserialize_request(row[:18])
+        request = driver._deserialize_request(row[:19])
         assert request.request.verify is False
 
         # Actually fetch through AsyncRequestManager

@@ -87,6 +87,7 @@ class RequestQueueMixin:
         speculation_id: str | None = None,
         verify: str | None = None,
         via_json: str | None = None,
+        bypass_rate_limit: bool = False,
     ) -> int:
         """Insert a new request into the queue.
 
@@ -108,6 +109,7 @@ class RequestQueueMixin:
             parent_id: Parent request ID.
             is_speculative: Whether this is a speculative request.
             speculation_id: JSON tuple ["func_name", spec_id] for speculative requests.
+            bypass_rate_limit: If True, skip rate limiting for this request.
 
         Returns:
             The ID of the newly inserted request.
@@ -142,6 +144,7 @@ class RequestQueueMixin:
                     speculation_id=speculation_id,
                     verify=verify,
                     via_json=via_json,
+                    bypass_rate_limit=bypass_rate_limit,
                 )
                 session.add(req)
                 await session.commit()
@@ -162,6 +165,7 @@ class RequestQueueMixin:
         permanent_json: str | None,
         dedup_key: str | None,
         verify: str | None = None,
+        bypass_rate_limit: bool = False,
     ) -> int:
         """Insert an entry point request.
 
@@ -178,6 +182,7 @@ class RequestQueueMixin:
             aux_data_json: JSON-encoded aux data.
             permanent_json: JSON-encoded permanent data.
             dedup_key: Deduplication key.
+            bypass_rate_limit: If True, skip rate limiting for this request.
 
         Returns:
             The ID of the newly inserted request.
@@ -204,6 +209,7 @@ class RequestQueueMixin:
                     deduplication_key=dedup_key,
                     created_at_ns=created_at_ns,
                     verify=verify,
+                    bypass_rate_limit=bypass_rate_limit,
                 )
                 session.add(req)
                 await session.commit()
@@ -241,6 +247,7 @@ class RequestQueueMixin:
                     Request.speculation_id,
                     Request.verify,
                     Request.via_json,
+                    Request.bypass_rate_limit,
                 )
                 .where(
                     Request.status == "pending",
@@ -319,6 +326,7 @@ class RequestQueueMixin:
                     Request.speculation_id,
                     Request.verify,
                     Request.via_json,
+                    Request.bypass_rate_limit,
                     Request.parent_request_id,
                 )
             )
@@ -346,6 +354,16 @@ class RequestQueueMixin:
                     started_at=func.current_timestamp(),
                     started_at_ns=started_at_ns,
                 )
+            )
+            await session.commit()
+
+    async def restamp_request_start(self, request_id: int) -> None:
+        """Update started_at_ns to now (excludes prior wait from duration)."""
+        async with self._lock, self._session_factory() as session:
+            await session.execute(
+                update(Request)
+                .where(Request.id == request_id)
+                .values(started_at_ns=time.monotonic_ns())
             )
             await session.commit()
 
