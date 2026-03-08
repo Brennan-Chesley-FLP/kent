@@ -24,7 +24,9 @@ class HTMLScraper(BaseScraper[dict]):
     ) -> Generator[ScraperYield, None, None]:
         titles = lxml_tree.checked_xpath("//h1", "titles")
         for title in titles:
-            yield ParsedData({"title": title.text_content(), "url": response.url})
+            yield ParsedData(
+                {"title": title.text_content(), "url": response.url}
+            )
 
 
 class JSONScraper(BaseScraper[dict]):

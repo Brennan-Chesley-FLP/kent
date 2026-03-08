@@ -19,6 +19,7 @@ dependencies = [
     "sqlmodel>=0.0.32",
     "pyrate-limiter>=3.9.0",
     "click>=8.0.0",
+    "jsondiff>=2.2.1",
 ]
 
 [project.optional-dependencies]
@@ -56,7 +57,6 @@ dev = [
     "mypy>=1.19.0",
     "types-lxml>=2025.11.25",
     "aiohttp>=3.13.3",
-    "jsondiff>=2.2.1",
     "ruff>=0.15.0",
     "sphinx-immaterial>=0.13.9",
     "sphinxcontrib-mermaid>=2.0.0",

@@ -733,7 +733,7 @@ class PlaywrightDriver(
                 download = await self._execute_via_download(request, page)
 
                 # Read downloaded content and save via on_archive callback
-                import uuid as _uuid
+                import hashlib as _hashlib
 
                 download_path = await download.path()
                 if download_path is None:
@@ -745,10 +745,11 @@ class PlaywrightDriver(
 
                 # Build a unique URL so on_archive derives a unique filename.
                 # Use the download's suggested_filename (from Content-Disposition)
-                # for the extension, prefixed with a UUID to avoid collisions.
+                # for the extension, with a SHA-256 content hash to avoid collisions.
                 suggested = download.suggested_filename
                 ext = Path(suggested).suffix if suggested else ""
-                unique_filename = f"{_uuid.uuid4()}{ext}"
+                content_hash = _hashlib.sha256(file_content).hexdigest()
+                unique_filename = f"{content_hash}{ext}"
                 archive_url = f"{request.request.url}/{unique_filename}"
 
                 file_url = await self.on_archive(
@@ -1030,8 +1031,9 @@ class PlaywrightDriver(
         if isinstance(request.via, ViaFormSubmit):
             # Form submission
             form_via = request.via
+
+            # --- Phase 1: locate form and elements (structural) ---
             try:
-                # Locate form
                 form_element = await page.wait_for_selector(
                     form_via.form_selector, timeout=5000
                 )
@@ -1045,106 +1047,110 @@ class PlaywrightDriver(
                         actual_count=0,
                         request_url=request.request.url,
                     )
-
-                # Fill form fields
-                for field_name, field_value in form_via.field_data.items():
-                    # Locate field relative to form
-                    field_selector = f'[name="{field_name}"]'
-                    field_element = await form_element.query_selector(
-                        field_selector
-                    )
-                    if field_element:
-                        tag = await field_element.evaluate(
-                            "el => el.tagName.toLowerCase()"
-                        )
-                        input_type = await field_element.get_attribute("type")
-                        is_visible = await field_element.is_visible()
-                        str_value = str(field_value)
-
-                        if tag == "select":
-                            await field_element.select_option(value=str_value)
-                        elif input_type == "radio":
-                            # Check the matching radio in the group
-                            radio = await form_element.query_selector(
-                                f'[name="{field_name}"][value="{str_value}"]'
-                            )
-                            if radio:
-                                await radio.evaluate(
-                                    "(el) => el.checked = true"
-                                )
-                        elif input_type in ("hidden", "submit"):
-                            await field_element.evaluate(
-                                "(el, val) => el.value = val",
-                                str_value,
-                            )
-                        elif not is_visible:
-                            # Invisible but not type=hidden (e.g. 1x1px
-                            # Telerik RadDatePicker parent inputs)
-                            await field_element.evaluate(
-                                "(el, val) => el.value = val",
-                                str_value,
-                            )
-                        else:
-                            await field_element.fill(str_value)
-
-                # Click submit button
-                if form_via.submit_selector:
-                    submit_element = await form_element.query_selector(
-                        form_via.submit_selector
-                    )
-                    if not submit_element:
-                        raise HTMLStructuralAssumptionException(
-                            selector=form_via.submit_selector,
-                            selector_type="submit",
-                            description=f"Submit selector not found: {form_via.submit_selector}",
-                            expected_min=1,
-                            expected_max=1,
-                            actual_count=0,
-                            request_url=request.request.url,
-                        )
-                    # Wait for navigation after click
-                    async with page.expect_navigation():
-                        await submit_element.click()
-                elif "__EVENTTARGET" in form_via.field_data:
-                    # ASP.NET __doPostBack-style submission: submit the
-                    # form programmatically via JS.  This avoids clicking
-                    # a named submit button, which would cause ASP.NET
-                    # to handle the button-click event instead of the
-                    # __EVENTTARGET postback event.
-                    async with page.expect_navigation():
-                        await form_element.evaluate("(form) => form.submit()")
-                else:
-                    # Click first submit-type element
-                    submit_element = await form_element.query_selector(
-                        'button[type="submit"], input[type="submit"]'
-                    )
-                    if not submit_element:
-                        raise HTMLStructuralAssumptionException(
-                            selector=form_via.form_selector,
-                            selector_type="form",
-                            description="No submit button found in form",
-                            expected_min=1,
-                            expected_max=1,
-                            actual_count=0,
-                            request_url=request.request.url,
-                        )
-                    async with page.expect_navigation():
-                        await submit_element.click()
-
             except PlaywrightTimeoutError as e:
                 raise HTMLStructuralAssumptionException(
                     selector=form_via.form_selector,
                     selector_type="form",
-                    description=f"Selector timeout: {form_via.form_selector}",
+                    description=f"Form selector timeout: {form_via.form_selector}",
                     expected_min=1,
                     expected_max=1,
                     actual_count=0,
                     request_url=request.request.url,
                 ) from e
 
+            # Fill form fields
+            for field_name, field_value in form_via.field_data.items():
+                # Locate field relative to form
+                field_selector = f'[name="{field_name}"]'
+                field_element = await form_element.query_selector(
+                    field_selector
+                )
+                if field_element:
+                    tag = await field_element.evaluate(
+                        "el => el.tagName.toLowerCase()"
+                    )
+                    input_type = await field_element.get_attribute("type")
+                    is_visible = await field_element.is_visible()
+                    str_value = str(field_value)
+
+                    if tag == "select":
+                        await field_element.select_option(value=str_value)
+                    elif input_type == "radio":
+                        # Check the matching radio in the group
+                        radio = await form_element.query_selector(
+                            f'[name="{field_name}"][value="{str_value}"]'
+                        )
+                        if radio:
+                            await radio.evaluate("(el) => el.checked = true")
+                    elif input_type in ("hidden", "submit"):
+                        await field_element.evaluate(
+                            "(el, val) => el.value = val",
+                            str_value,
+                        )
+                    elif not is_visible:
+                        # Invisible but not type=hidden (e.g. 1x1px
+                        # Telerik RadDatePicker parent inputs)
+                        await field_element.evaluate(
+                            "(el, val) => el.value = val",
+                            str_value,
+                        )
+                    else:
+                        await field_element.fill(str_value)
+
+            # --- Phase 2: submit and navigate (transient on timeout) ---
+            if form_via.submit_selector:
+                submit_element = await form_element.query_selector(
+                    form_via.submit_selector
+                )
+                if not submit_element:
+                    raise HTMLStructuralAssumptionException(
+                        selector=form_via.submit_selector,
+                        selector_type="submit",
+                        description=f"Submit selector not found: {form_via.submit_selector}",
+                        expected_min=1,
+                        expected_max=1,
+                        actual_count=0,
+                        request_url=request.request.url,
+                    )
+                # Wait for navigation after click
+                async with page.expect_navigation():
+                    await submit_element.click()
+            elif "__EVENTTARGET" in form_via.field_data:
+                # ASP.NET __doPostBack-style submission: submit the
+                # form programmatically via JS.  This avoids clicking
+                # a named submit button, which would cause ASP.NET
+                # to handle the button-click event instead of the
+                # __EVENTTARGET postback event.
+                async with page.expect_navigation():
+                    await form_element.evaluate("(form) => form.submit()")
+            else:
+                # Click first submit-type element
+                submit_element = await form_element.query_selector(
+                    'button[type="submit"], input[type="submit"]'
+                )
+                if not submit_element:
+                    raise HTMLStructuralAssumptionException(
+                        selector=form_via.form_selector,
+                        selector_type="form",
+                        description="No submit button found in form",
+                        expected_min=1,
+                        expected_max=1,
+                        actual_count=0,
+                        request_url=request.request.url,
+                    )
+                async with page.expect_navigation():
+                    await submit_element.click()
+
+            # Navigation timeouts from Phase 2 are NOT caught here;
+            # they propagate to _process_regular_request where
+            # PlaywrightTimeoutError is handled as a TransientException
+            # and retried.
+
         elif isinstance(request.via, ViaLink):
             # Link navigation
             link_via = request.via
+
+            # --- Phase 1: locate link element (structural) ---
             try:
                 link_element = await page.wait_for_selector(
                     link_via.selector, timeout=5000
@@ -1159,11 +1165,6 @@ class PlaywrightDriver(
                         actual_count=0,
                         request_url=request.request.url,
                     )
-
-                # Click link and wait for navigation
-                async with page.expect_navigation():
-                    await link_element.click()
-
             except PlaywrightTimeoutError as e:
                 raise HTMLStructuralAssumptionException(
                     selector=link_via.selector,
@@ -1174,6 +1175,12 @@ class PlaywrightDriver(
                     actual_count=0,
                     request_url=request.request.url,
                 ) from e
+
+            # --- Phase 2: click and navigate (transient on timeout) ---
+            # Navigation timeouts propagate to _process_regular_request
+            # where PlaywrightTimeoutError becomes TransientException.
+            async with page.expect_navigation():
+                await link_element.click()
 
         else:
             # Direct URL navigation (no via)

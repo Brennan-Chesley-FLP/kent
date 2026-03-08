@@ -441,6 +441,139 @@ class ComparisonMixin:
 
         return comparison_result
 
+    async def run_with_xpath_observer(
+        self,
+        request_id: int,
+        scraper_class: type,
+    ) -> dict[str, Any]:
+        """Run a continuation with XPathObserver to capture selector queries.
+
+        Args:
+            request_id: The request ID to run.
+            scraper_class: The scraper class to instantiate.
+
+        Returns:
+            Dictionary with:
+                - queries: List of SelectorQuery dicts from the observer
+                - error: Error string if the continuation raised, else None
+
+        Raises:
+            ValueError: If request not found or no response available.
+        """
+        from kent.common.xpath_observer import XPathObserver
+        from kent.data_types import (
+            HttpMethod,
+            HTTPRequestParams,
+            Response,
+        )
+        from kent.data_types import (
+            Request as DataRequest,
+        )
+
+        # Get request data
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(
+                    Request.url,
+                    Request.method,
+                    Request.continuation,
+                    Request.current_location,
+                    Request.accumulated_data_json,
+                    Request.aux_data_json,
+                    Request.permanent_json,
+                ).where(Request.id == request_id)
+            )
+            request_row = result.first()
+            if not request_row:
+                raise ValueError(f"Request {request_id} not found")
+
+        (
+            url,
+            method,
+            continuation_name,
+            current_location,
+            accumulated_data_json,
+            aux_data_json,
+            permanent_json,
+        ) = request_row
+
+        # Get response data
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(
+                    Request.response_status_code,
+                    Request.response_headers_json,
+                    Request.response_url,
+                ).where(
+                    Request.id == request_id,
+                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
+                )
+            )
+            response_row = result.first()
+            if not response_row:
+                raise ValueError(f"No response found for request {request_id}")
+
+        status_code, headers_json, response_url = response_row
+
+        # Get decompressed content
+        content = await self.get_response_content(request_id)
+        if content is None:
+            raise ValueError(f"No content available for request {request_id}")
+
+        # Reconstruct Response object
+        headers = json.loads(headers_json) if headers_json else {}
+        accumulated_data = (
+            json.loads(accumulated_data_json) if accumulated_data_json else {}
+        )
+        aux_data = json.loads(aux_data_json) if aux_data_json else {}
+        permanent = json.loads(permanent_json) if permanent_json else {}
+
+        reconstructed_request = DataRequest(
+            request=HTTPRequestParams(
+                method=HttpMethod(method),
+                url=url,
+            ),
+            continuation=continuation_name,
+            current_location=current_location or url,
+            accumulated_data=accumulated_data,
+            aux_data=aux_data,
+            permanent=permanent,
+        )
+
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            text = content.decode("utf-8", errors="replace")
+
+        response = Response(
+            status_code=status_code,
+            url=response_url,
+            content=content,
+            text=text,
+            headers=headers,
+            request=reconstructed_request,
+        )
+
+        # Run continuation with XPathObserver
+        scraper_instance = scraper_class()
+        error: str | None = None
+
+        with XPathObserver() as observer:
+            try:
+                continuation_method = scraper_instance.get_continuation(
+                    continuation_name
+                )
+                gen = continuation_method(response)
+                for _item in gen:
+                    pass
+            except Exception as e:
+                error = f"{type(e).__name__}: {e}"
+
+        return {
+            "queries": observer.json(),
+            "error": error,
+        }
+
     async def compare_request_tree(
         self,
         request_id: int,

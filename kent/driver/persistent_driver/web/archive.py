@@ -1,14 +1,14 @@
 """Archive handler for LocalDevDriver web interface.
 
 This module provides a custom archive callback that saves downloaded files
-using UUID4 filenames while preserving the original file extension.
+using SHA-256 content-hash filenames while preserving the original file extension.
 """
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from urllib.parse import urlparse
-from uuid import uuid4
 
 
 async def uuid_archive_callback(
@@ -17,11 +17,11 @@ async def uuid_archive_callback(
     expected_type: str | None,
     storage_dir: Path,
 ) -> str:
-    """Archive callback that uses UUID4 filenames with preserved extensions.
+    """Archive callback that uses SHA-256 content-hash filenames with preserved extensions.
 
-    This callback generates a unique UUID4 filename for each downloaded file,
-    preserving the file extension from the URL if available, or inferring it
-    from the expected_type hint.
+    This callback generates a filename from the SHA-256 digest of the file
+    content, preserving the file extension from the URL if available, or
+    inferring it from the expected_type hint.
 
     Args:
         content: The binary file content.
@@ -32,8 +32,8 @@ async def uuid_archive_callback(
     Returns:
         The local file path where the file was saved.
     """
-    # Generate UUID4 for the filename
-    file_uuid = uuid4()
+    # Generate SHA-256 hex digest of the content for the filename
+    content_hash = hashlib.sha256(content).hexdigest()
 
     # Try to extract extension from URL
     parsed_url = urlparse(url)
@@ -62,7 +62,7 @@ async def uuid_archive_callback(
         extension = type_to_extension.get(expected_type.lower(), "")
 
     # Construct filename
-    filename = f"{file_uuid}{extension}"
+    filename = f"{content_hash}{extension}"
     file_path = storage_dir / filename
 
     # Ensure storage directory exists

@@ -108,6 +108,20 @@ results = run('[{"id": 1}, {"id": 2}]')
 
 `single_page` constructs a synthetic `Response`, feeds it through the `@step` wrapper (so all argument injection — `lxml_tree`, `json_content`, `page`, `text`, `accumulated_data`, etc. — works normally), and returns the unwrapped `ParsedData` items as a list.
 
+## Claude Code Integration
+
+Kent ships a [Claude Code skill](https://code.claude.com/docs/en/skills.md) for debugging scrapers. To use it in a consuming project, symlink the skill directory into your project's `.claude/skills/`:
+
+```bash
+# From your project root (adjust the path to your kent clone)
+mkdir -p .claude/skills
+ln -s /path/to/kent/.claude/skills/debug-scraper .claude/skills/debug-scraper
+```
+
+Then invoke it in Claude Code with `/debug-scraper`.
+
+The skill gives Claude knowledge of all `pdd` and `kent` CLI commands and a structured debugging workflow. After each debugging session it writes a brief incident report to `.claude/debug-incidents/` noting what worked and where `pdd` fell short.
+
 ## Stability
 
 ### Well Tested

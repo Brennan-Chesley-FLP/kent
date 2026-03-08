@@ -428,6 +428,9 @@ def main() -> None:
 # (imports trigger @cli.group/@cli.command decorators)
 # =========================================================================
 from kent.driver.persistent_driver.cli import (
+    bulk_xpath as _bulk_xpath_mod,
+)
+from kent.driver.persistent_driver.cli import (
     compare as _compare_mod,
 )
 from kent.driver.persistent_driver.cli import (

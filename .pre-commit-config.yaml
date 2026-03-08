@@ -32,6 +32,12 @@ repos:
 
   - repo: local
     hooks:
+      - id: cli-reference-sync
+        name: cli-reference-sync
+        entry: uv run python scripts/generate_cli_reference.py --check
+        language: system
+        pass_filenames: false
+        files: ^(kent/cli\.py|kent/driver/persistent_driver/cli/)
       - id: pytest
         name: pytest
         entry: uv run pytest -x -q -n auto
