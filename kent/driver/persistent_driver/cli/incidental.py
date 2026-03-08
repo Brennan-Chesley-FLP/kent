@@ -78,10 +78,10 @@ def incidental_list(
 
     \b
     Examples:
-        ldd-debug incidental list run.db
-        ldd-debug incidental list run.db --parent-id 123
-        ldd-debug incidental list run.db --resource-type script
-        ldd-debug incidental list run.db --from-cache
+        pdd incidental list run.db
+        pdd incidental list run.db --parent-id 123
+        pdd incidental list run.db --resource-type script
+        pdd incidental list run.db --from-cache
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -164,8 +164,8 @@ def incidental_show(
 
     \b
     Examples:
-        ldd-debug incidental show run.db 456
-        ldd-debug incidental show run.db 456 --format json
+        pdd incidental show run.db 456
+        pdd incidental show run.db 456 --format json
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -229,8 +229,8 @@ def incidental_content(
 
     \b
     Examples:
-        ldd-debug incidental content run.db 456
-        ldd-debug incidental content run.db 456 -o script.js
+        pdd incidental content run.db 456
+        pdd incidental content run.db 456 -o script.js
     """
 
     db_path = _resolve_db_path(ctx, db_path)

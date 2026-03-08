@@ -68,8 +68,8 @@ def responses_list(
 
     \b
     Examples:
-        ldd-debug responses list run.db
-        ldd-debug responses list run.db --continuation step1
+        pdd responses list run.db
+        pdd responses list run.db --continuation step1
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -154,8 +154,8 @@ def responses_show(
 
     \b
     Examples:
-        ldd-debug responses show run.db 123
-        ldd-debug responses show run.db 123 --format json
+        pdd responses show run.db 123
+        pdd responses show run.db 123 --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -219,8 +219,8 @@ def responses_content(
 
     \b
     Examples:
-        ldd-debug responses content run.db 123
-        ldd-debug responses content run.db 123 -o response.html
+        pdd responses content run.db 123
+        pdd responses content run.db 123 -o response.html
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -284,11 +284,11 @@ def responses_search(
 
     \b
     Examples:
-        ldd-debug responses search run.db --text "error"
-        ldd-debug responses search run.db --regex "case.*\\\\d{4}"
-        ldd-debug responses search run.db --xpath "//div[@class='opinion']"
-        ldd-debug responses search run.db --text "verdict" --format json
-        ldd-debug responses search run.db --text "verdict" --format jsonl
+        pdd responses search run.db --text "error"
+        pdd responses search run.db --regex "case.*\\\\d{4}"
+        pdd responses search run.db --xpath "//div[@class='opinion']"
+        pdd responses search run.db --text "verdict" --format json
+        pdd responses search run.db --text "verdict" --format jsonl
     """
     # Validate exactly one search type is provided
     search_types = [text_pattern, regex_pattern, xpath_expr]

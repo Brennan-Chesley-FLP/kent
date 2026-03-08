@@ -78,22 +78,22 @@ def compare(
     \b
     Examples:
         # Compare all requests for a continuation
-        ldd-debug compare run.db parse_opinions
+        pdd compare run.db parse_opinions
 
         # Compare a specific request
-        ldd-debug compare run.db parse_opinions --request-id 123
+        pdd compare run.db parse_opinions --request-id 123
 
         # Sample 10 terminal requests
-        ldd-debug compare run.db parse_opinions --sample 10
+        pdd compare run.db parse_opinions --sample 10
 
         # Show detailed output
-        ldd-debug compare run.db parse_opinions --output-mode detail
+        pdd compare run.db parse_opinions --output-mode detail
 
         # Show only request changes
-        ldd-debug compare run.db parse_opinions --show-requests
+        pdd compare run.db parse_opinions --show-requests
 
         # Limit to 50 comparisons
-        ldd-debug compare run.db parse_opinions --limit 50
+        pdd compare run.db parse_opinions --limit 50
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -403,8 +403,8 @@ def diagnose(
 
     \b
     Examples:
-        ldd-debug diagnose run.db 123
-        ldd-debug diagnose run.db 123 --format json
+        pdd diagnose run.db 123
+        pdd diagnose run.db 123 --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 

@@ -71,8 +71,8 @@ def results_list(
 
     \b
     Examples:
-        ldd-debug results list run.db
-        ldd-debug results list run.db --type CourtOpinion --valid
+        pdd results list run.db
+        pdd results list run.db --type CourtOpinion --valid
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -152,8 +152,8 @@ def results_show(
 
     \b
     Examples:
-        ldd-debug results show run.db 123
-        ldd-debug results show run.db 123 --format json
+        pdd results show run.db 123
+        pdd results show run.db 123 --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -214,8 +214,8 @@ def results_summary(
 
     \b
     Examples:
-        ldd-debug results summary run.db
-        ldd-debug results summary run.db --format json
+        pdd results summary run.db
+        pdd results summary run.db --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 

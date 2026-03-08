@@ -59,8 +59,8 @@ def export_jsonl(
 
     \b
     Examples:
-        ldd-debug export jsonl run.db results.jsonl
-        ldd-debug export jsonl run.db opinions.jsonl --type CourtOpinion --valid
+        pdd export jsonl run.db results.jsonl
+        pdd export jsonl run.db opinions.jsonl --type CourtOpinion --valid
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -102,8 +102,8 @@ def export_warc(
 
     \b
     Examples:
-        ldd-debug export warc run.db archive.warc.gz
-        ldd-debug export warc run.db step1.warc --no-compress --continuation step1
+        pdd export warc run.db archive.warc.gz
+        pdd export warc run.db step1.warc --no-compress --continuation step1
     """
 
     db_path = _resolve_db_path(ctx, db_path)

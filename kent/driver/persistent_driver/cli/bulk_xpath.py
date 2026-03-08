@@ -33,6 +33,7 @@ class SelectorStats:
     times_seen: int = 0
     match_counts: list[int] = field(default_factory=list)
     failures: int = 0
+    zero_match_request_ids: list[int] = field(default_factory=list)
 
     @property
     def total_matches(self) -> int:
@@ -68,12 +69,12 @@ def _is_failure(query: dict[str, Any]) -> bool:
 
 
 def _aggregate_queries(
-    all_observations: list[list[dict[str, Any]]],
+    all_observations: list[tuple[int, list[dict[str, Any]]]],
 ) -> tuple[dict[tuple[str, str], SelectorStats], int]:
     """Aggregate query observations across multiple requests.
 
     Args:
-        all_observations: List of per-request query lists (observer.json() output).
+        all_observations: List of (request_id, query_list) tuples.
 
     Returns:
         Tuple of (stats dict keyed by (selector, description), count of requests
@@ -82,8 +83,8 @@ def _aggregate_queries(
     stats: dict[tuple[str, str], SelectorStats] = {}
     requests_with_failures = 0
 
-    for queries in all_observations:
-        _collect_queries_flat(queries, stats, has_failure_ref=[False])
+    for req_id, queries in all_observations:
+        _collect_queries_flat(queries, stats, req_id)
         if _request_has_failure(queries):
             requests_with_failures += 1
 
@@ -103,7 +104,7 @@ def _request_has_failure(queries: list[dict[str, Any]]) -> bool:
 def _collect_queries_flat(
     queries: list[dict[str, Any]],
     stats: dict[tuple[str, str], SelectorStats],
-    has_failure_ref: list[bool],
+    request_id: int,
 ) -> None:
     """Walk query tree and accumulate into stats dict."""
     for q in queries:
@@ -121,10 +122,11 @@ def _collect_queries_flat(
         s.match_counts.append(q["match_count"])
         if _is_failure(q):
             s.failures += 1
-            has_failure_ref[0] = True
+        if q["match_count"] == 0:
+            s.zero_match_request_ids.append(request_id)
 
         if q.get("children"):
-            _collect_queries_flat(q["children"], stats, has_failure_ref)
+            _collect_queries_flat(q["children"], stats, request_id)
 
 
 def _load_scraper_class(
@@ -208,10 +210,20 @@ def _load_scraper_class(
     help="Scraper class path (e.g., juriscraper.opinions.united_states.federal_appellate.ca1.Site)",
 )
 @click.option(
-    "--output-mode",
+    "--format",
+    "format_type",
     type=click.Choice(["summary", "json"]),
     default="summary",
-    help="Output mode",
+    help="Output format",
+)
+@click.option(
+    "--xpath-name",
+    help="Filter output to selectors whose description matches this name",
+)
+@click.option(
+    "--list-non-matching",
+    is_flag=True,
+    help="Include request IDs where the selector matched zero elements",
 )
 @click.pass_context
 def bulk_xpath(
@@ -222,7 +234,9 @@ def bulk_xpath(
     sample: int | None,
     limit: int | None,
     scraper_class: str | None,
-    output_mode: str,
+    format_type: str,
+    xpath_name: str | None,
+    list_non_matching: bool,
 ) -> None:
     """Gather XPath observation statistics across requests for a continuation.
 
@@ -233,16 +247,19 @@ def bulk_xpath(
     \b
     Examples:
         # Stats for all requests of a continuation
-        ldd-debug bulk-xpath parse_opinions
+        pdd bulk-xpath parse_opinions
 
         # Sample 20 requests
-        ldd-debug bulk-xpath parse_opinions --sample 20
+        pdd bulk-xpath parse_opinions --sample 20
 
-        # Specific request
-        ldd-debug bulk-xpath parse_opinions --request-id 123
+        # Filter to a specific selector by description
+        pdd bulk-xpath parse_opinions --xpath-name "case link"
+
+        # Show which requests had zero matches for a selector
+        pdd bulk-xpath parse_opinions --xpath-name "case link" --list-non-matching
 
         # JSON output
-        ldd-debug bulk-xpath parse_opinions --output-mode json
+        pdd bulk-xpath parse_opinions --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -294,7 +311,7 @@ def bulk_xpath(
                 request_ids = request_ids[:limit]
 
             # Run each request with XPath observer
-            all_observations: list[list[dict[str, Any]]] = []
+            all_observations: list[tuple[int, list[dict[str, Any]]]] = []
             error_count = 0
             total = len(request_ids)
 
@@ -303,7 +320,7 @@ def bulk_xpath(
                     result = await debugger.run_with_xpath_observer(
                         req_id, scraper_cls
                     )
-                    all_observations.append(result["queries"])
+                    all_observations.append((req_id, result["queries"]))
                     if result["error"]:
                         error_count += 1
                 except (ValueError, Exception) as e:
@@ -326,9 +343,17 @@ def bulk_xpath(
                 all_observations
             )
 
+            # Filter by --xpath-name if provided
+            if xpath_name:
+                selector_stats = {
+                    k: v
+                    for k, v in selector_stats.items()
+                    if xpath_name.lower() in v.description.lower()
+                }
+
             # Output
-            if output_mode == "json":
-                output = {
+            if format_type == "json":
+                output: dict[str, Any] = {
                     "continuation": continuation,
                     "requests_processed": len(all_observations),
                     "requests_with_errors": error_count,
@@ -347,6 +372,13 @@ def bulk_xpath(
                             "avg_matches": round(s.avg_matches, 2),
                             "failures": s.failures,
                             "failure_rate": round(s.failure_rate, 4),
+                            **(
+                                {
+                                    "zero_match_request_ids": s.zero_match_request_ids
+                                }
+                                if list_non_matching
+                                else {}
+                            ),
                         }
                         for s in selector_stats.values()
                     ],
@@ -374,6 +406,10 @@ def bulk_xpath(
                             f"Failures: {s.failures}/{s.times_seen} "
                             f"({s.failure_rate:.1%})"
                         )
+                        if list_non_matching and s.zero_match_request_ids:
+                            click.echo(
+                                f"    Zero-match requests: {s.zero_match_request_ids}"
+                            )
                 else:
                     click.echo("\nNo selector observations recorded.")
 

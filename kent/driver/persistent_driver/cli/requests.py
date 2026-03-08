@@ -69,9 +69,9 @@ def requests_list(
 
     \b
     Examples:
-        ldd-debug requests list run.db
-        ldd-debug requests list run.db --status failed
-        ldd-debug requests list run.db --continuation step1 --limit 50
+        pdd requests list run.db
+        pdd requests list run.db --status failed
+        pdd requests list run.db --continuation step1 --limit 50
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -159,8 +159,8 @@ def requests_show(
 
     \b
     Examples:
-        ldd-debug requests show run.db 123
-        ldd-debug requests show run.db 123 --format json
+        pdd requests show run.db 123
+        pdd requests show run.db 123 --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -225,8 +225,8 @@ def requests_summary(
 
     \b
     Examples:
-        ldd-debug requests summary run.db
-        ldd-debug requests summary run.db --format json
+        pdd requests summary run.db
+        pdd requests summary run.db --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 

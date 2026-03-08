@@ -4,26 +4,26 @@ This module provides a Click-based CLI for inspecting and manipulating
 LocalDevDriver run databases.
 
 Usage:
-    ldd-debug --db run.db info                    # Show run metadata and stats
-    ldd-debug --db run.db requests list           # List requests
-    ldd-debug --db run.db requests show <id>      # Show request details
-    ldd-debug --db run.db responses list          # List responses
-    ldd-debug --db run.db responses search        # Search response content
-    ldd-debug --db run.db errors list             # List errors
-    ldd-debug --db run.db results list            # List results
-    ldd-debug --db run.db requeue request <id>    # Requeue a request
-    ldd-debug --db run.db cancel request <id>     # Cancel a request
-    ldd-debug --db run.db compression stats       # Show compression stats
-    ldd-debug --db run.db diagnose <error-id>     # Diagnose an error
-    ldd-debug --db run.db export jsonl <output>   # Export results to JSONL
-    ldd-debug --db run.db export warc <output>    # Export responses to WARC
-    ldd-debug --db run.db doctor health           # Run health checks
-    ldd-debug --db run.db doctor structure        # Validate response structure
+    pdd --db run.db info                    # Show run metadata and stats
+    pdd --db run.db requests list           # List requests
+    pdd --db run.db requests show <id>      # Show request details
+    pdd --db run.db responses list          # List responses
+    pdd --db run.db responses search        # Search response content
+    pdd --db run.db errors list             # List errors
+    pdd --db run.db results list            # List results
+    pdd --db run.db requeue request <id>    # Requeue a request
+    pdd --db run.db cancel request <id>     # Cancel a request
+    pdd --db run.db compression stats       # Show compression stats
+    pdd --db run.db diagnose <error-id>     # Diagnose an error
+    pdd --db run.db export jsonl <output>   # Export results to JSONL
+    pdd --db run.db export warc <output>    # Export responses to WARC
+    pdd --db run.db doctor health           # Run health checks
+    pdd --db run.db doctor structure        # Validate response structure
 
 The --db option can be placed at any level:
-    ldd-debug --db run.db doctor structure
-    ldd-debug doctor --db run.db structure
-    ldd-debug doctor structure --db run.db
+    pdd --db run.db doctor structure
+    pdd doctor --db run.db structure
+    pdd doctor structure --db run.db
 
 All commands support:
     --format table|json|jsonl    Output format (default: table)
@@ -378,8 +378,8 @@ def info(ctx: click.Context, db_path: str | None, format_type: str) -> None:
 
     \b
     Examples:
-        ldd-debug info run.db
-        ldd-debug info run.db --format json
+        pdd info run.db
+        pdd info run.db --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 

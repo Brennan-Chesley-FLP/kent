@@ -149,24 +149,31 @@ Usage: pdd bulk-xpath [OPTIONS] CONTINUATION
 
   Examples:
       # Stats for all requests of a continuation
-      ldd-debug bulk-xpath parse_opinions
+      pdd bulk-xpath parse_opinions
 
-      # Sample 20 requests     ldd-debug bulk-xpath parse_opinions --sample 20
+      # Sample 20 requests     pdd bulk-xpath parse_opinions --sample 20
 
-      # Specific request     ldd-debug bulk-xpath parse_opinions --request-id
-      123
+      # Filter to a specific selector by description     pdd bulk-xpath
+      parse_opinions --xpath-name "case link"
 
-      # JSON output     ldd-debug bulk-xpath parse_opinions --output-mode json
+      # Show which requests had zero matches for a selector     pdd bulk-xpath
+      parse_opinions --xpath-name "case link" --list-non-matching
+
+      # JSON output     pdd bulk-xpath parse_opinions --format json
 
 Options:
-  --db PATH                     Path to the database file
-  --request-id INTEGER          Run for a specific request ID only
-  --sample INTEGER              Sample N requests randomly
-  --limit INTEGER               Maximum number of requests to process
-  --scraper-class TEXT          Scraper class path (e.g., juriscraper.opinions
-                                .united_states.federal_appellate.ca1.Site)
-  --output-mode [summary|json]  Output mode
-  --help                        Show this message and exit.
+  --db PATH                Path to the database file
+  --request-id INTEGER     Run for a specific request ID only
+  --sample INTEGER         Sample N requests randomly
+  --limit INTEGER          Maximum number of requests to process
+  --scraper-class TEXT     Scraper class path (e.g., juriscraper.opinions.unit
+                           ed_states.federal_appellate.ca1.Site)
+  --format [summary|json]  Output format
+  --xpath-name TEXT        Filter output to selectors whose description
+                           matches this name
+  --list-non-matching      Include request IDs where the selector matched zero
+                           elements
+  --help                   Show this message and exit.
 ```
 
 ## pdd cancel
@@ -193,7 +200,7 @@ Usage: pdd cancel continuation [OPTIONS] CONTINUATION
   Cancel all pending/held requests for a continuation.
 
   Examples:
-      ldd-debug cancel continuation run.db step1
+      pdd cancel continuation run.db step1
 
 Options:
   --db PATH  Path to the database file
@@ -208,7 +215,7 @@ Usage: pdd cancel request [OPTIONS] REQUEST_ID
   Cancel a pending or held request.
 
   Examples:
-      ldd-debug cancel request run.db 123
+      pdd cancel request run.db 123
 
 Options:
   --db PATH  Path to the database file
@@ -227,22 +234,22 @@ Usage: pdd compare [OPTIONS] CONTINUATION
 
   Examples:
       # Compare all requests for a continuation
-      ldd-debug compare run.db parse_opinions
+      pdd compare run.db parse_opinions
 
-      # Compare a specific request     ldd-debug compare run.db parse_opinions
+      # Compare a specific request     pdd compare run.db parse_opinions
       --request-id 123
 
-      # Sample 10 terminal requests     ldd-debug compare run.db
-      parse_opinions --sample 10
+      # Sample 10 terminal requests     pdd compare run.db parse_opinions
+      --sample 10
 
-      # Show detailed output     ldd-debug compare run.db parse_opinions
-      --output-mode detail
+      # Show detailed output     pdd compare run.db parse_opinions --output-
+      mode detail
 
-      # Show only request changes     ldd-debug compare run.db parse_opinions
+      # Show only request changes     pdd compare run.db parse_opinions
       --show-requests
 
-      # Limit to 50 comparisons     ldd-debug compare run.db parse_opinions
-      --limit 50
+      # Limit to 50 comparisons     pdd compare run.db parse_opinions --limit
+      50
 
 Options:
   --db PATH                       Path to the database file
@@ -284,8 +291,8 @@ Usage: pdd compression recompress [OPTIONS] CONTINUATION
   Recompress responses with a compression dictionary.
 
   Examples:
-      ldd-debug compression recompress run.db step1
-      ldd-debug compression recompress run.db step1 --dict-id 5
+      pdd compression recompress run.db step1
+      pdd compression recompress run.db step1 --dict-id 5
 
 Options:
   --db PATH          Path to the database file
@@ -301,8 +308,8 @@ Usage: pdd compression stats [OPTIONS]
   Show compression statistics.
 
   Examples:
-      ldd-debug compression stats run.db
-      ldd-debug compression stats run.db --format json
+      pdd compression stats run.db
+      pdd compression stats run.db --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -318,8 +325,8 @@ Usage: pdd compression train [OPTIONS] CONTINUATION
   Train a new compression dictionary for a continuation.
 
   Examples:
-      ldd-debug compression train run.db step1
-      ldd-debug compression train run.db step1 --samples 500
+      pdd compression train run.db step1
+      pdd compression train run.db step1 --samples 500
 
 Options:
   --db PATH          Path to the database file
@@ -335,8 +342,8 @@ Usage: pdd diagnose [OPTIONS] ERROR_ID
   Diagnose an error by re-running XPath observation.
 
   Examples:
-      ldd-debug diagnose run.db 123
-      ldd-debug diagnose run.db 123 --format json
+      pdd diagnose run.db 123
+      pdd diagnose run.db 123 --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -352,10 +359,10 @@ Usage: pdd doctor [OPTIONS] COMMAND [ARGS]...
   Run health checks on database.
 
   Examples:
-      ldd-debug doctor --db run.db health
-      ldd-debug doctor health --db run.db
-      ldd-debug doctor structure --db run.db
-      ldd-debug doctor structure --db run.db --detailed
+      pdd doctor --db run.db health
+      pdd doctor health --db run.db
+      pdd doctor structure --db run.db
+      pdd doctor structure --db run.db --detailed
 
 Options:
   --db PATH  Path to the database file
@@ -381,9 +388,9 @@ Usage: pdd doctor estimates [OPTIONS]
   matches the estimates declared by scraper steps.
 
   Examples:
-      ldd-debug doctor estimates --db run.db
-      ldd-debug doctor --db run.db estimates --failures-only
-      ldd-debug doctor estimates --db run.db --format json
+      pdd doctor estimates --db run.db
+      pdd doctor --db run.db estimates --failures-only
+      pdd doctor estimates --db run.db --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -402,8 +409,8 @@ Usage: pdd doctor ghosts [OPTIONS]
   Ghost requests are completed requests with no child requests and no results.
 
   Examples:
-      ldd-debug doctor ghosts --db run.db
-      ldd-debug doctor --db run.db ghosts --continuation parse_index
+      pdd doctor ghosts --db run.db
+      pdd doctor --db run.db ghosts --continuation parse_index
 
 Options:
   --db PATH                    Path to the database file
@@ -423,8 +430,8 @@ Usage: pdd doctor health [OPTIONS]
   ghost request summary by step.
 
   Examples:
-      ldd-debug doctor health --db run.db
-      ldd-debug doctor --db run.db health
+      pdd doctor health --db run.db
+      pdd doctor --db run.db health
 
 Options:
   --db PATH                    Path to the database file
@@ -440,8 +447,8 @@ Usage: pdd doctor orphans [OPTIONS]
   List orphaned requests and responses with details.
 
   Examples:
-      ldd-debug doctor orphans --db run.db
-      ldd-debug doctor --db run.db orphans --format json
+      pdd doctor orphans --db run.db
+      pdd doctor --db run.db orphans --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -457,8 +464,8 @@ Usage: pdd doctor pending [OPTIONS]
   List pending requests with details.
 
   Examples:
-      ldd-debug doctor pending --db run.db
-      ldd-debug doctor --db run.db pending --limit 50
+      pdd doctor pending --db run.db
+      pdd doctor --db run.db pending --limit 50
 
 Options:
   --db PATH                    Path to the database file
@@ -483,10 +490,10 @@ Usage: pdd doctor structure [OPTIONS]
   --request or --response shows full validation error detail.
 
   Examples:
-      ldd-debug doctor structure --db run.db
-      ldd-debug doctor --db run.db structure --step parse_opinions_page
-      ldd-debug doctor structure --db run.db --detailed
-      ldd-debug doctor structure --db run.db --request 15
+      pdd doctor structure --db run.db
+      pdd doctor --db run.db structure --step parse_opinions_page
+      pdd doctor structure --db run.db --detailed
+      pdd doctor structure --db run.db --request 15
 
 Options:
   --db PATH                    Path to the database file
@@ -526,9 +533,9 @@ Usage: pdd errors list [OPTIONS]
   List errors with optional filtering.
 
   Examples:
-      ldd-debug errors list run.db
-      ldd-debug errors list run.db --type xpath --unresolved
-      ldd-debug errors list run.db --continuation step1
+      pdd errors list run.db
+      pdd errors list run.db --type xpath --unresolved
+      pdd errors list run.db --continuation step1
 
 Options:
   --db PATH                    Path to the database file
@@ -549,8 +556,8 @@ Usage: pdd errors requeue [OPTIONS] ERROR_ID
   Requeue the request that caused an error.
 
   Examples:
-      ldd-debug errors requeue run.db 123
-      ldd-debug errors requeue run.db 123 --notes "Fixed server issue"
+      pdd errors requeue run.db 123
+      pdd errors requeue run.db 123 --notes "Fixed server issue"
 
 Options:
   --db PATH     Path to the database file
@@ -566,8 +573,8 @@ Usage: pdd errors resolve [OPTIONS] ERROR_ID
   Mark an error as resolved.
 
   Examples:
-      ldd-debug errors resolve run.db 123
-      ldd-debug errors resolve run.db 123 --notes "Fixed XPath selector"
+      pdd errors resolve run.db 123
+      pdd errors resolve run.db 123 --notes "Fixed XPath selector"
 
 Options:
   --db PATH     Path to the database file
@@ -583,8 +590,8 @@ Usage: pdd errors show [OPTIONS] ERROR_ID
   Show detailed error information.
 
   Examples:
-      ldd-debug errors show run.db 123
-      ldd-debug errors show run.db 123 --format json
+      pdd errors show run.db 123
+      pdd errors show run.db 123 --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -600,8 +607,8 @@ Usage: pdd errors summary [OPTIONS]
   Show error counts by type and resolution status.
 
   Examples:
-      ldd-debug errors summary run.db
-      ldd-debug errors summary run.db --format json
+      pdd errors summary run.db
+      pdd errors summary run.db --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -633,8 +640,8 @@ Usage: pdd export jsonl [OPTIONS] OUTPUT_PATH
   Export results to JSONL (newline-delimited JSON) file.
 
   Examples:
-      ldd-debug export jsonl run.db results.jsonl
-      ldd-debug export jsonl run.db opinions.jsonl --type CourtOpinion --valid
+      pdd export jsonl run.db results.jsonl
+      pdd export jsonl run.db opinions.jsonl --type CourtOpinion --valid
 
 Options:
   --db PATH            Path to the database file
@@ -651,8 +658,8 @@ Usage: pdd export warc [OPTIONS] OUTPUT_PATH
   Export responses to WARC (Web ARChive) format.
 
   Examples:
-      ldd-debug export warc run.db archive.warc.gz
-      ldd-debug export warc run.db step1.warc --no-compress --continuation step1
+      pdd export warc run.db archive.warc.gz
+      pdd export warc run.db step1.warc --no-compress --continuation step1
 
 Options:
   --db PATH                   Path to the database file
@@ -686,8 +693,8 @@ Usage: pdd incidental content [OPTIONS] INCIDENTAL_ID
   Get decompressed incidental request content.
 
   Examples:
-      ldd-debug incidental content run.db 456
-      ldd-debug incidental content run.db 456 -o script.js
+      pdd incidental content run.db 456
+      pdd incidental content run.db 456 -o script.js
 
 Options:
   --db PATH          Path to the database file
@@ -703,10 +710,10 @@ Usage: pdd incidental list [OPTIONS]
   List incidental requests with optional filtering.
 
   Examples:
-      ldd-debug incidental list run.db
-      ldd-debug incidental list run.db --parent-id 123
-      ldd-debug incidental list run.db --resource-type script
-      ldd-debug incidental list run.db --from-cache
+      pdd incidental list run.db
+      pdd incidental list run.db --parent-id 123
+      pdd incidental list run.db --resource-type script
+      pdd incidental list run.db --from-cache
 
 Options:
   --db PATH                       Path to the database file
@@ -729,8 +736,8 @@ Usage: pdd incidental show [OPTIONS] INCIDENTAL_ID
   Show detailed incidental request information.
 
   Examples:
-      ldd-debug incidental show run.db 456
-      ldd-debug incidental show run.db 456 --format json
+      pdd incidental show run.db 456
+      pdd incidental show run.db 456 --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -746,8 +753,8 @@ Usage: pdd info [OPTIONS]
   Show run metadata and statistics.
 
   Examples:
-      ldd-debug info run.db
-      ldd-debug info run.db --format json
+      pdd info run.db
+      pdd info run.db --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -780,9 +787,9 @@ Usage: pdd requests list [OPTIONS]
   List requests with optional filtering.
 
   Examples:
-      ldd-debug requests list run.db
-      ldd-debug requests list run.db --status failed
-      ldd-debug requests list run.db --continuation step1 --limit 50
+      pdd requests list run.db
+      pdd requests list run.db --status failed
+      pdd requests list run.db --continuation step1 --limit 50
 
 Options:
   --db PATH                    Path to the database file
@@ -803,8 +810,8 @@ Usage: pdd requests show [OPTIONS] REQUEST_ID
   Show detailed request information.
 
   Examples:
-      ldd-debug requests show run.db 123
-      ldd-debug requests show run.db 123 --format json
+      pdd requests show run.db 123
+      pdd requests show run.db 123 --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -820,8 +827,8 @@ Usage: pdd requests summary [OPTIONS]
   Show request counts by status and continuation.
 
   Examples:
-      ldd-debug requests summary run.db
-      ldd-debug requests summary run.db --format json
+      pdd requests summary run.db
+      pdd requests summary run.db --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -854,8 +861,8 @@ Usage: pdd requeue continuation [OPTIONS] CONTINUATION
   Requeue all requests for a continuation with a given status.
 
   Examples:
-      ldd-debug requeue continuation run.db step1
-      ldd-debug requeue continuation run.db step1 --status failed
+      pdd requeue continuation run.db step1
+      pdd requeue continuation run.db step1 --status failed
 
 Options:
   --db PATH                    Path to the database file
@@ -871,8 +878,8 @@ Usage: pdd requeue errors [OPTIONS]
   Batch requeue errors matching filter criteria.
 
   Examples:
-      ldd-debug requeue errors run.db --type xpath
-      ldd-debug requeue errors run.db --continuation step1
+      pdd requeue errors run.db --type xpath
+      pdd requeue errors run.db --continuation step1
 
 Options:
   --db PATH            Path to the database file
@@ -889,8 +896,8 @@ Usage: pdd requeue request [OPTIONS] REQUEST_ID
   Requeue a completed or failed request.
 
   Examples:
-      ldd-debug requeue request run.db 123
-      ldd-debug requeue request run.db 123 --no-clear-downstream
+      pdd requeue request run.db 123
+      pdd requeue request run.db 123 --no-clear-downstream
 
 Options:
   --db PATH                       Path to the database file
@@ -926,8 +933,8 @@ Usage: pdd responses content [OPTIONS] REQUEST_ID
   Get decompressed response content.
 
   Examples:
-      ldd-debug responses content run.db 123
-      ldd-debug responses content run.db 123 -o response.html
+      pdd responses content run.db 123
+      pdd responses content run.db 123 -o response.html
 
 Options:
   --db PATH          Path to the database file
@@ -943,8 +950,8 @@ Usage: pdd responses list [OPTIONS]
   List responses with optional filtering.
 
   Examples:
-      ldd-debug responses list run.db
-      ldd-debug responses list run.db --continuation step1
+      pdd responses list run.db
+      pdd responses list run.db --continuation step1
 
 Options:
   --db PATH                    Path to the database file
@@ -966,11 +973,11 @@ Usage: pdd responses search [OPTIONS]
   one of --text, --regex, or --xpath must be provided.
 
   Examples:
-      ldd-debug responses search run.db --text "error"
-      ldd-debug responses search run.db --regex "case.*\\d{4}"
-      ldd-debug responses search run.db --xpath "//div[@class='opinion']"
-      ldd-debug responses search run.db --text "verdict" --format json
-      ldd-debug responses search run.db --text "verdict" --format jsonl
+      pdd responses search run.db --text "error"
+      pdd responses search run.db --regex "case.*\\d{4}"
+      pdd responses search run.db --xpath "//div[@class='opinion']"
+      pdd responses search run.db --text "verdict" --format json
+      pdd responses search run.db --text "verdict" --format jsonl
 
 Options:
   --db PATH                    Path to the database file
@@ -990,8 +997,8 @@ Usage: pdd responses show [OPTIONS] REQUEST_ID
   Show detailed response information.
 
   Examples:
-      ldd-debug responses show run.db 123
-      ldd-debug responses show run.db 123 --format json
+      pdd responses show run.db 123
+      pdd responses show run.db 123 --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -1024,8 +1031,8 @@ Usage: pdd results list [OPTIONS]
   List results with optional filtering.
 
   Examples:
-      ldd-debug results list run.db
-      ldd-debug results list run.db --type CourtOpinion --valid
+      pdd results list run.db
+      pdd results list run.db --type CourtOpinion --valid
 
 Options:
   --db PATH                    Path to the database file
@@ -1045,8 +1052,8 @@ Usage: pdd results show [OPTIONS] RESULT_ID
   Show detailed result information.
 
   Examples:
-      ldd-debug results show run.db 123
-      ldd-debug results show run.db 123 --format json
+      pdd results show run.db 123
+      pdd results show run.db 123 --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -1062,8 +1069,8 @@ Usage: pdd results summary [OPTIONS]
   Show result counts by type and validity.
 
   Examples:
-      ldd-debug results summary run.db
-      ldd-debug results summary run.db --format json
+      pdd results summary run.db
+      pdd results summary run.db --format json
 
 Options:
   --db PATH                    Path to the database file

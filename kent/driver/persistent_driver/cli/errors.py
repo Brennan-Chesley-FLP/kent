@@ -74,9 +74,9 @@ def errors_list(
 
     \b
     Examples:
-        ldd-debug errors list run.db
-        ldd-debug errors list run.db --type xpath --unresolved
-        ldd-debug errors list run.db --continuation step1
+        pdd errors list run.db
+        pdd errors list run.db --type xpath --unresolved
+        pdd errors list run.db --continuation step1
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -151,8 +151,8 @@ def errors_show(
 
     \b
     Examples:
-        ldd-debug errors show run.db 123
-        ldd-debug errors show run.db 123 --format json
+        pdd errors show run.db 123
+        pdd errors show run.db 123 --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -208,8 +208,8 @@ def errors_summary(
 
     \b
     Examples:
-        ldd-debug errors summary run.db
-        ldd-debug errors summary run.db --format json
+        pdd errors summary run.db
+        pdd errors summary run.db --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -258,8 +258,8 @@ def errors_resolve(
 
     \b
     Examples:
-        ldd-debug errors resolve run.db 123
-        ldd-debug errors resolve run.db 123 --notes "Fixed XPath selector"
+        pdd errors resolve run.db 123
+        pdd errors resolve run.db 123 --notes "Fixed XPath selector"
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -298,8 +298,8 @@ def errors_requeue(
 
     \b
     Examples:
-        ldd-debug errors requeue run.db 123
-        ldd-debug errors requeue run.db 123 --notes "Fixed server issue"
+        pdd errors requeue run.db 123
+        pdd errors requeue run.db 123 --notes "Fixed server issue"
     """
     db_path = _resolve_db_path(ctx, db_path)
 

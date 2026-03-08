@@ -33,10 +33,10 @@ def doctor(ctx: click.Context, db_path: str | None) -> None:
 
     \b
     Examples:
-        ldd-debug doctor --db run.db health
-        ldd-debug doctor health --db run.db
-        ldd-debug doctor structure --db run.db
-        ldd-debug doctor structure --db run.db --detailed
+        pdd doctor --db run.db health
+        pdd doctor health --db run.db
+        pdd doctor structure --db run.db
+        pdd doctor structure --db run.db --detailed
     """
     ctx.ensure_object(dict)
     if db_path:
@@ -71,8 +71,8 @@ def doctor_health(
 
     \b
     Examples:
-        ldd-debug doctor health --db run.db
-        ldd-debug doctor --db run.db health
+        pdd doctor health --db run.db
+        pdd doctor --db run.db health
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -187,8 +187,8 @@ def doctor_orphans(
 
     \b
     Examples:
-        ldd-debug doctor orphans --db run.db
-        ldd-debug doctor --db run.db orphans --format json
+        pdd doctor orphans --db run.db
+        pdd doctor --db run.db orphans --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -260,8 +260,8 @@ def doctor_pending(
 
     \b
     Examples:
-        ldd-debug doctor pending --db run.db
-        ldd-debug doctor --db run.db pending --limit 50
+        pdd doctor pending --db run.db
+        pdd doctor --db run.db pending --limit 50
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -346,8 +346,8 @@ def doctor_ghosts(
 
     \b
     Examples:
-        ldd-debug doctor ghosts --db run.db
-        ldd-debug doctor --db run.db ghosts --continuation parse_index
+        pdd doctor ghosts --db run.db
+        pdd doctor --db run.db ghosts --continuation parse_index
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -455,9 +455,9 @@ def doctor_estimates(
 
     \b
     Examples:
-        ldd-debug doctor estimates --db run.db
-        ldd-debug doctor --db run.db estimates --failures-only
-        ldd-debug doctor estimates --db run.db --format json
+        pdd doctor estimates --db run.db
+        pdd doctor --db run.db estimates --failures-only
+        pdd doctor estimates --db run.db --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -574,10 +574,10 @@ def doctor_structure(
 
     \b
     Examples:
-        ldd-debug doctor structure --db run.db
-        ldd-debug doctor --db run.db structure --step parse_opinions_page
-        ldd-debug doctor structure --db run.db --detailed
-        ldd-debug doctor structure --db run.db --request 15
+        pdd doctor structure --db run.db
+        pdd doctor --db run.db structure --step parse_opinions_page
+        pdd doctor structure --db run.db --detailed
+        pdd doctor structure --db run.db --request 15
     """
     db_path = _resolve_db_path(ctx, db_path)
 

@@ -58,8 +58,8 @@ def compression_stats(
 
     \b
     Examples:
-        ldd-debug compression stats run.db
-        ldd-debug compression stats run.db --format json
+        pdd compression stats run.db
+        pdd compression stats run.db --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -107,8 +107,8 @@ def compression_train(
 
     \b
     Examples:
-        ldd-debug compression train run.db step1
-        ldd-debug compression train run.db step1 --samples 500
+        pdd compression train run.db step1
+        pdd compression train run.db step1 --samples 500
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -153,8 +153,8 @@ def compression_recompress(
 
     \b
     Examples:
-        ldd-debug compression recompress run.db step1
-        ldd-debug compression recompress run.db step1 --dict-id 5
+        pdd compression recompress run.db step1
+        pdd compression recompress run.db step1 --dict-id 5
     """
 
     db_path = _resolve_db_path(ctx, db_path)
