@@ -722,52 +722,63 @@ class PlaywrightDriver(
             # Archive requests: click triggers a download, not a navigation
             is_archive = getattr(request, "archive", False)
             if is_archive and parent_request_id and request.via is not None:
-                success = await self._setup_tab_with_parent_response(
-                    page, parent_request_id
-                )
-                if not success:
-                    raise TransientException(
-                        f"Archive request {request_id}: parent has no stored response"
+                if self.skip_archive:
+                    response: Response = ArchiveResponse(
+                        status_code=0,
+                        url=request.request.url,
+                        content=b"",
+                        text="",
+                        headers={},
+                        request=request,
+                        file_url="skipped",
+                    )
+                else:
+                    success = await self._setup_tab_with_parent_response(
+                        page, parent_request_id
+                    )
+                    if not success:
+                        raise TransientException(
+                            f"Archive request {request_id}: parent has no stored response"
+                        )
+
+                    download = await self._execute_via_download(request, page)
+
+                    # Read downloaded content and save via on_archive callback
+                    import hashlib as _hashlib
+
+                    download_path = await download.path()
+                    if download_path is None:
+                        raise TransientException(
+                            f"Archive request {request_id}: download produced no file"
+                        )
+                    file_content = download_path.read_bytes()
+                    expected_type = getattr(request, "expected_type", None)
+
+                    # Build a unique URL so on_archive derives a unique filename.
+                    # Use the download's suggested_filename (from Content-Disposition)
+                    # for the extension, with a SHA-256 content hash to avoid collisions.
+                    suggested = download.suggested_filename
+                    ext = Path(suggested).suffix if suggested else ""
+                    content_hash = _hashlib.sha256(file_content).hexdigest()
+                    unique_filename = f"{content_hash}{ext}"
+                    archive_url = f"{request.request.url}/{unique_filename}"
+
+                    file_url = await self.on_archive(
+                        file_content,
+                        archive_url,
+                        expected_type,
+                        self.storage_dir,
                     )
 
-                download = await self._execute_via_download(request, page)
-
-                # Read downloaded content and save via on_archive callback
-                import hashlib as _hashlib
-
-                download_path = await download.path()
-                if download_path is None:
-                    raise TransientException(
-                        f"Archive request {request_id}: download produced no file"
+                    response = ArchiveResponse(
+                        status_code=200,
+                        url=download.url or request.request.url,
+                        content=file_content,
+                        text="",
+                        headers={},
+                        request=request,
+                        file_url=file_url,
                     )
-                file_content = download_path.read_bytes()
-                expected_type = getattr(request, "expected_type", None)
-
-                # Build a unique URL so on_archive derives a unique filename.
-                # Use the download's suggested_filename (from Content-Disposition)
-                # for the extension, with a SHA-256 content hash to avoid collisions.
-                suggested = download.suggested_filename
-                ext = Path(suggested).suffix if suggested else ""
-                content_hash = _hashlib.sha256(file_content).hexdigest()
-                unique_filename = f"{content_hash}{ext}"
-                archive_url = f"{request.request.url}/{unique_filename}"
-
-                file_url = await self.on_archive(
-                    file_content,
-                    archive_url,
-                    expected_type,
-                    self.storage_dir,
-                )
-
-                response: Response = ArchiveResponse(
-                    status_code=200,
-                    url=download.url or request.request.url,
-                    content=file_content,
-                    text="",
-                    headers={},
-                    request=request,
-                    file_url=file_url,
-                )
 
                 await self._store_response(
                     request_id=request_id,

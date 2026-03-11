@@ -418,6 +418,32 @@ def info(ctx: click.Context, db_path: str | None, format_type: str) -> None:
 # =========================================================================
 
 
+def _print_help_recursive(
+    group: click.MultiCommand, ctx: click.Context, prefix: str = ""
+) -> None:
+    """Recursively print help for all commands in a group."""
+    for name in group.list_commands(ctx):
+        cmd = group.get_command(ctx, name)
+        if cmd is None:
+            continue
+        sub_ctx = click.Context(cmd, info_name=f"{prefix}{name}", parent=ctx)
+        click.echo(cmd.get_help(sub_ctx))
+        click.echo("\n")
+        if isinstance(cmd, click.MultiCommand):
+            _print_help_recursive(cmd, sub_ctx, prefix=f"{prefix}{name} ")
+
+
+@cli.command("help-all")
+@click.pass_context
+def help_all(ctx: click.Context) -> None:
+    """Show help for all commands and subcommands."""
+    parent = ctx.parent
+    assert parent is not None
+    click.echo(parent.command.get_help(parent))
+    click.echo("\n")
+    _print_help_recursive(parent.command, parent)
+
+
 def main() -> None:
     """Main CLI entry point."""
     cli()

@@ -74,6 +74,9 @@ Options:
                                   (persistent/playwright).
   --workers INTEGER               Number of concurrent workers
                                   (async/persistent/playwright).  [default: 1]
+  --max-workers INTEGER           Maximum number of workers for dynamic
+                                  scaling (persistent/playwright). Defaults to
+                                  10.
   --storage PATH                  Directory for downloaded files.
   --no-resume                     Start fresh instead of resuming
                                   (persistent/playwright).
@@ -88,6 +91,8 @@ Options:
                                   (contains manifest.json). Configures browser
                                   launch for sites with bot protection. Only
                                   supported with --driver playwright.
+  --skip-archive                  Skip archive requests; local_filepath will
+                                  be 'skipped'.
   -v, --verbose                   Verbose logging.
   --help                          Show this message and exit.
 ```
@@ -128,6 +133,7 @@ Commands:
   doctor       Run health checks on database.
   errors       Inspect and manipulate errors.
   export       Export results and responses.
+  help-all     Show help for all commands and subcommands.
   incidental   Inspect incidental requests (browser-initiated network...
   info         Show run metadata and statistics.
   requests     Inspect and manipulate requests.
@@ -666,6 +672,17 @@ Options:
   --compress / --no-compress  Gzip-compress the WARC file
   --continuation TEXT         Filter by continuation (step name)
   --help                      Show this message and exit.
+```
+
+## pdd help-all
+
+```
+Usage: pdd help-all [OPTIONS]
+
+  Show help for all commands and subcommands.
+
+Options:
+  --help  Show this message and exit.
 ```
 
 ## pdd incidental

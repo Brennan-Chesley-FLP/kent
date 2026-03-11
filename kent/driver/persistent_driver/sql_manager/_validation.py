@@ -139,7 +139,8 @@ class ValidationMixin:
                     dict_id,
                 )
                 html_tree = lxml_html.fromstring(content)
-                schema.validate(html_tree)
+                if not schema.validate(html_tree):
+                    invalid_request_ids.append(request_id)
             except Exception:
                 invalid_request_ids.append(request_id)
 

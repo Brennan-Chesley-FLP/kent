@@ -222,6 +222,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         | None = None,
         on_archive: Callable[[bytes, str, str | None, Path], str]
         | None = None,
+        skip_archive: bool = False,
         on_run_start: Callable[[str], None] | None = None,
         on_run_complete: Callable[[str, str, Exception | None], None]
         | None = None,
@@ -251,6 +252,8 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
             on_archive: Optional callback invoked when files are archived. Receives content (bytes),
                 url (str), expected_type (str | None), and storage_dir (Path). Should return the
                 local file path where the file was saved. If not provided, uses default_archive_callback.
+            skip_archive: If True, archive requests return immediately with an empty mock
+                response and ``file_url="skipped"`` instead of fetching the file.
             on_run_start: Optional callback invoked when the scraper run starts. Receives scraper_name (str).
             on_run_complete: Optional callback invoked when the scraper run completes. Receives
                 scraper_name (str), status ("completed" | "error"),
@@ -291,6 +294,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         self.on_invalid_data = on_invalid_data
         self.on_transient_exception = on_transient_exception
         self.on_archive = on_archive or default_archive_callback
+        self.skip_archive = skip_archive
         self.on_run_start = on_run_start
         self.on_run_complete = on_run_complete
         self.duplicate_check = duplicate_check
@@ -776,12 +780,26 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         to local storage, and returns an ArchiveResponse with the file_url field
         populated.
 
+        If ``skip_archive`` is True, the HTTP fetch is skipped entirely and a
+        mock response with empty content and ``file_url="skipped"`` is returned.
+
         Args:
             request: The archive Request to fetch (must have archive=True).
 
         Returns:
             ArchiveResponse containing the HTTP response data and local file path.
         """
+        if self.skip_archive:
+            return ArchiveResponse(
+                status_code=0,
+                headers={},
+                content=b"",
+                text="",
+                url=request.request.url,
+                request=request,
+                file_url="skipped",
+            )
+
         http_response = self.resolve_request(request)
 
         # Step 13: Use on_archive callback to save the file

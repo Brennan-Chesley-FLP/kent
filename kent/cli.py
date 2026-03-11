@@ -321,6 +321,15 @@ def serve(runs_dir: str, host: str, port: int, verbose: bool) -> None:
     help="Number of concurrent workers (async/persistent/playwright).",
 )
 @click.option(
+    "--max-workers",
+    type=int,
+    default=None,
+    help=(
+        "Maximum number of workers for dynamic scaling "
+        "(persistent/playwright). Defaults to 10."
+    ),
+)
+@click.option(
     "--storage",
     type=click.Path(),
     default=None,
@@ -357,17 +366,24 @@ def serve(runs_dir: str, host: str, port: int, verbose: bool) -> None:
         "Only supported with --driver playwright."
     ),
 )
+@click.option(
+    "--skip-archive",
+    is_flag=True,
+    help="Skip archive requests; local_filepath will be 'skipped'.",
+)
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging.")
 def run(
     scraper: str,
     driver_name: str,
     db_path: str | None,
     workers: int,
+    max_workers: int | None,
     storage: str | None,
     no_resume: bool,
     params_json: str | None,
     headed: bool,
     browser_profile_path: str | None,
+    skip_archive: bool,
     verbose: bool,
 ) -> None:
     """Run a scraper with the chosen driver.
@@ -413,9 +429,20 @@ def run(
     click.echo(f"Driver:  {driver_name}")
 
     if driver_name == "sync":
-        _run_sync(scraper_instance, storage_dir, seed_params)
+        _run_sync(
+            scraper_instance,
+            storage_dir,
+            seed_params,
+            skip_archive=skip_archive,
+        )
     elif driver_name == "async":
-        _run_async(scraper_instance, storage_dir, workers, seed_params)
+        _run_async(
+            scraper_instance,
+            storage_dir,
+            workers,
+            seed_params,
+            skip_archive=skip_archive,
+        )
     elif driver_name == "persistent":
         _run_persistent(
             scraper_instance,
@@ -425,6 +452,8 @@ def run(
             workers,
             no_resume,
             seed_params,
+            max_workers=max_workers,
+            skip_archive=skip_archive,
         )
     elif driver_name == "playwright":
         _run_playwright(
@@ -437,6 +466,8 @@ def run(
             seed_params,
             headed=headed,
             browser_profile_path=browser_profile_path,
+            max_workers=max_workers,
+            skip_archive=skip_archive,
         )
 
 
@@ -449,10 +480,14 @@ def _run_sync(
     scraper: Any,
     storage_dir: Path | None,
     seed_params: list[dict[str, dict[str, Any]]] | None,
+    *,
+    skip_archive: bool = False,
 ) -> None:
     from kent.driver.sync_driver import SyncDriver
 
-    driver = SyncDriver(scraper=scraper, storage_dir=storage_dir)
+    driver = SyncDriver(
+        scraper=scraper, storage_dir=storage_dir, skip_archive=skip_archive
+    )
     driver.seed_params = seed_params
     driver.run()
     click.echo("Done.")
@@ -463,6 +498,8 @@ def _run_async(
     storage_dir: Path | None,
     workers: int,
     seed_params: list[dict[str, dict[str, Any]]] | None,
+    *,
+    skip_archive: bool = False,
 ) -> None:
     from kent.driver.async_driver import AsyncDriver
 
@@ -471,6 +508,7 @@ def _run_async(
             scraper=scraper,
             storage_dir=storage_dir,
             num_workers=workers,
+            skip_archive=skip_archive,
         )
         driver.seed_params = seed_params
         await driver.run()
@@ -487,6 +525,9 @@ def _run_persistent(
     workers: int,
     no_resume: bool,
     seed_params: list[dict[str, dict[str, Any]]] | None,
+    *,
+    max_workers: int | None = None,
+    skip_archive: bool = False,
 ) -> None:
     try:
         from kent.driver.persistent_driver import PersistentDriver
@@ -501,14 +542,18 @@ def _run_persistent(
     click.echo(f"Database: {resolved_db}")
 
     async def _go() -> None:
-        async with PersistentDriver.open(
-            scraper=scraper,
-            db_path=resolved_db,
-            storage_dir=storage_dir,
-            num_workers=workers,
-            resume=not no_resume,
-            seed_params=seed_params,
-        ) as driver:
+        open_kwargs: dict[str, Any] = {
+            "scraper": scraper,
+            "db_path": resolved_db,
+            "storage_dir": storage_dir,
+            "num_workers": workers,
+            "resume": not no_resume,
+            "seed_params": seed_params,
+        }
+        if max_workers is not None:
+            open_kwargs["max_workers"] = max_workers
+        async with PersistentDriver.open(**open_kwargs) as driver:
+            driver.skip_archive = skip_archive
             await driver.run()
 
     asyncio.run(_go())
@@ -526,6 +571,8 @@ def _run_playwright(
     *,
     headed: bool = False,
     browser_profile_path: str | None = None,
+    max_workers: int | None = None,
+    skip_archive: bool = False,
 ) -> None:
     try:
         from kent.driver.playwright_driver import PlaywrightDriver
@@ -553,16 +600,20 @@ def _run_playwright(
     click.echo(f"Database: {resolved_db}")
 
     async def _go() -> None:
-        async with PlaywrightDriver.open(
-            scraper=scraper,
-            db_path=resolved_db,
-            storage_dir=storage_dir,
-            num_workers=workers,
-            resume=not no_resume,
-            seed_params=seed_params,
-            headless=not headed,
-            browser_profile=browser_profile,
-        ) as driver:
+        open_kwargs: dict[str, Any] = {
+            "scraper": scraper,
+            "db_path": resolved_db,
+            "storage_dir": storage_dir,
+            "num_workers": workers,
+            "resume": not no_resume,
+            "seed_params": seed_params,
+            "headless": not headed,
+            "browser_profile": browser_profile,
+        }
+        if max_workers is not None:
+            open_kwargs["max_workers"] = max_workers
+        async with PlaywrightDriver.open(**open_kwargs) as driver:
+            driver.skip_archive = skip_archive
             await driver.run()
 
     asyncio.run(_go())
