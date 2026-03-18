@@ -49,14 +49,14 @@ def errors(ctx: click.Context, db_path: str | None) -> None:
     default=None,
     help="Filter by resolution status",
 )
-@click.option("--continuation", help="Filter by continuation (step name)")
+@click.option("--step", help="Filter by step name")
 @click.option("--limit", default=100, help="Maximum number of results")
 @click.option("--offset", default=0, help="Number of results to skip")
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["summary", "json", "jsonl"]),
+    default="summary",
     help="Output format",
 )
 @click.pass_context
@@ -65,7 +65,7 @@ def errors_list(
     db_path: str | None,
     error_type: str | None,
     resolved: bool | None,
-    continuation: str | None,
+    step: str | None,
     limit: int,
     offset: int,
     format_type: str,
@@ -74,9 +74,9 @@ def errors_list(
 
     \b
     Examples:
-        pdd errors list run.db
-        pdd errors list run.db --type xpath --unresolved
-        pdd errors list run.db --continuation step1
+        pdd errors list --db run.db
+        pdd errors list --db run.db --type xpath --unresolved
+        pdd errors list --db run.db --step step1
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -86,12 +86,12 @@ def errors_list(
             page = await debugger.list_errors(
                 error_type=error_type,
                 is_resolved=resolved,
-                continuation=continuation,
+                continuation=step,
                 limit=limit,
                 offset=offset,
             )
 
-            if format_type == "table":
+            if format_type == "summary":
                 click.echo(
                     f"Total: {page.total}, Showing: {len(page.items)}, "
                     f"Offset: {offset}, Limit: {limit}"
@@ -139,8 +139,8 @@ def errors_list(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["summary", "json", "jsonl"]),
+    default="summary",
     help="Output format",
 )
 @click.pass_context
@@ -151,8 +151,8 @@ def errors_show(
 
     \b
     Examples:
-        pdd errors show run.db 123
-        pdd errors show run.db 123 --format json
+        pdd errors show --db run.db 123
+        pdd errors show --db run.db 123 --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -164,7 +164,7 @@ def errors_show(
                 click.echo(f"Error {error_id} not found", err=True)
                 sys.exit(1)
 
-            if format_type == "table":
+            if format_type == "summary":
                 click.echo(f"ID: {error['id']}")
                 click.echo(f"Type: {error['error_type']}")
                 click.echo(f"Message: {error['message']}")
@@ -196,8 +196,8 @@ def errors_show(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["summary", "json", "jsonl"]),
+    default="summary",
     help="Output format",
 )
 @click.pass_context
@@ -208,8 +208,8 @@ def errors_summary(
 
     \b
     Examples:
-        pdd errors summary run.db
-        pdd errors summary run.db --format json
+        pdd errors summary --db run.db
+        pdd errors summary --db run.db --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -217,7 +217,7 @@ def errors_summary(
         async with LocalDevDriverDebugger.open(db_path) as debugger:
             summary = await debugger.get_error_summary()
 
-            if format_type == "table":
+            if format_type == "summary":
                 click.echo("=== Totals ===")
                 for key, value in summary["totals"].items():
                     click.echo(f"  {key}: {value}")
@@ -258,8 +258,8 @@ def errors_resolve(
 
     \b
     Examples:
-        pdd errors resolve run.db 123
-        pdd errors resolve run.db 123 --notes "Fixed XPath selector"
+        pdd errors resolve --db run.db 123
+        pdd errors resolve --db run.db 123 --notes "Fixed XPath selector"
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -298,8 +298,8 @@ def errors_requeue(
 
     \b
     Examples:
-        pdd errors requeue run.db 123
-        pdd errors requeue run.db 123 --notes "Fixed server issue"
+        pdd errors requeue --db run.db 123
+        pdd errors requeue --db run.db 123 --notes "Fixed server issue"
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -311,6 +311,115 @@ def errors_requeue(
                 new_id = await debugger.requeue_error(error_id, notes)
                 click.echo(f"Error {error_id} requeued as request {new_id}")
             except ValueError as e:
+                click.echo(str(e), err=True)
+                sys.exit(1)
+
+    asyncio.run(run())
+
+
+@errors.command("requeue-all")
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to the database file",
+)
+@click.option("--type", "error_type", help="Filter by error type")
+@click.option("--step", help="Filter by step name")
+@click.pass_context
+def errors_requeue_all(
+    ctx: click.Context,
+    db_path: str | None,
+    error_type: str | None,
+    step: str | None,
+) -> None:
+    """Batch requeue errors matching filter criteria.
+
+    \b
+    Examples:
+        pdd errors requeue-all --db run.db --type xpath
+        pdd errors requeue-all --db run.db --step step1
+    """
+
+    db_path = _resolve_db_path(ctx, db_path)
+
+    async def run() -> None:
+        async with LocalDevDriverDebugger.open(
+            db_path, read_only=False
+        ) as debugger:
+            count = await debugger.batch_requeue_errors(
+                error_type=error_type, continuation=step
+            )
+            click.echo(f"Requeued {count} errors")
+
+    asyncio.run(run())
+
+
+# =========================================================================
+# Diagnose Command (moved from compare.py)
+# =========================================================================
+
+
+@errors.command("diagnose")
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(exists=True),
+    default=None,
+    help="Path to the database file",
+)
+@click.argument("error_id", type=int)
+@click.option(
+    "--format",
+    "format_type",
+    type=click.Choice(["summary", "json", "jsonl"]),
+    default="summary",
+    help="Output format",
+)
+@click.pass_context
+def errors_diagnose(
+    ctx: click.Context, db_path: str | None, error_id: int, format_type: str
+) -> None:
+    """Diagnose an error by re-running XPath observation.
+
+    \b
+    Examples:
+        pdd errors diagnose --db run.db 123
+        pdd errors diagnose --db run.db 123 --format json
+    """
+    db_path = _resolve_db_path(ctx, db_path)
+
+    async def run() -> None:
+        async with LocalDevDriverDebugger.open(db_path) as debugger:
+            try:
+                result = await debugger.diagnose(error_id)
+
+                if format_type == "summary":
+                    click.echo("=== Error ===")
+                    click.echo(f"ID: {result['error']['id']}")
+                    click.echo(f"Type: {result['error']['error_type']}")
+                    click.echo(f"Message: {result['error']['message']}")
+
+                    click.echo("\n=== Response ===")
+                    click.echo(f"ID: {result['response']['id']}")
+                    click.echo(f"Status: {result['response']['status_code']}")
+                    click.echo(f"URL: {result['response']['url']}")
+                    click.echo(f"Size: {result['response']['size']} bytes")
+
+                    click.echo("\n=== Scraper ===")
+                    if result["scraper_info"]["class"]:
+                        click.echo(f"Class: {result['scraper_info']['class']}")
+                        click.echo(
+                            f"Module: {result['scraper_info']['module']}"
+                        )
+
+                    click.echo("\n=== Observations ===")
+                    for key, value in result["observations"].items():
+                        click.echo(f"{key}: {value}")
+                else:
+                    format_output(result, format_type)
+            except (ValueError, ImportError) as e:
                 click.echo(str(e), err=True)
                 sys.exit(1)
 

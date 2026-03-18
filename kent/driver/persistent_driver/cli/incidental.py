@@ -59,8 +59,8 @@ def incidental(ctx: click.Context, db_path: str | None) -> None:
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["summary", "json", "jsonl"]),
+    default="summary",
     help="Output format",
 )
 @click.pass_context
@@ -78,10 +78,10 @@ def incidental_list(
 
     \b
     Examples:
-        pdd incidental list run.db
-        pdd incidental list run.db --parent-id 123
-        pdd incidental list run.db --resource-type script
-        pdd incidental list run.db --from-cache
+        pdd incidental list --db run.db
+        pdd incidental list --db run.db --parent-id 123
+        pdd incidental list --db run.db --resource-type script
+        pdd incidental list --db run.db --from-cache
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -96,7 +96,7 @@ def incidental_list(
                 offset=offset,
             )
 
-            if format_type == "table":
+            if format_type == "summary":
                 click.echo(
                     f"Total: {page.total}, Showing: {len(page.items)}, "
                     f"Offset: {offset}, Limit: {limit}"
@@ -149,8 +149,8 @@ def incidental_list(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["summary", "json", "jsonl"]),
+    default="summary",
     help="Output format",
 )
 @click.pass_context
@@ -164,8 +164,8 @@ def incidental_show(
 
     \b
     Examples:
-        pdd incidental show run.db 456
-        pdd incidental show run.db 456 --format json
+        pdd incidental show --db run.db 456
+        pdd incidental show --db run.db 456 --format json
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -180,7 +180,7 @@ def incidental_show(
                 )
                 sys.exit(1)
 
-            if format_type == "table":
+            if format_type == "summary":
                 click.echo(f"ID: {inc['id']}")
                 click.echo(f"Parent Request ID: {inc['parent_request_id']}")
                 click.echo(f"Resource Type: {inc['resource_type']}")
@@ -229,8 +229,8 @@ def incidental_content(
 
     \b
     Examples:
-        pdd incidental content run.db 456
-        pdd incidental content run.db 456 -o script.js
+        pdd incidental content --db run.db 456
+        pdd incidental content --db run.db 456 -o script.js
     """
 
     db_path = _resolve_db_path(ctx, db_path)

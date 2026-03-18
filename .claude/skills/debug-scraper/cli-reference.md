@@ -125,7 +125,6 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  bulk-xpath   Gather XPath observation statistics across requests for a...
   cancel       Cancel pending or held requests.
   compare      Compare continuation output between stored and dry-run...
   compression  Inspect and manipulate compression.
@@ -140,46 +139,8 @@ Commands:
   requeue      Requeue requests or errors.
   responses    Inspect responses.
   results      Inspect and export results.
-```
-
-## pdd bulk-xpath
-
-```
-Usage: pdd bulk-xpath [OPTIONS] CONTINUATION
-
-  Gather XPath observation statistics across requests for a continuation.
-
-  Replays stored responses through current continuation code with XPath
-  observation active, then aggregates selector statistics across all processed
-  requests.
-
-  Examples:
-      # Stats for all requests of a continuation
-      pdd bulk-xpath parse_opinions
-
-      # Sample 20 requests     pdd bulk-xpath parse_opinions --sample 20
-
-      # Filter to a specific selector by description     pdd bulk-xpath
-      parse_opinions --xpath-name "case link"
-
-      # Show which requests had zero matches for a selector     pdd bulk-xpath
-      parse_opinions --xpath-name "case link" --list-non-matching
-
-      # JSON output     pdd bulk-xpath parse_opinions --format json
-
-Options:
-  --db PATH                Path to the database file
-  --request-id INTEGER     Run for a specific request ID only
-  --sample INTEGER         Sample N requests randomly
-  --limit INTEGER          Maximum number of requests to process
-  --scraper-class TEXT     Scraper class path (e.g., juriscraper.opinions.unit
-                           ed_states.federal_appellate.ca1.Site)
-  --format [summary|json]  Output format
-  --xpath-name TEXT        Filter output to selectors whose description
-                           matches this name
-  --list-non-matching      Include request IDs where the selector matched zero
-                           elements
-  --help                   Show this message and exit.
+  scrape       Scrape-level health checks and diagnostics.
+  step         Step-level development and debugging tools.
 ```
 
 ## pdd cancel
@@ -206,7 +167,7 @@ Usage: pdd cancel continuation [OPTIONS] CONTINUATION
   Cancel all pending/held requests for a continuation.
 
   Examples:
-      pdd cancel continuation run.db step1
+      ldd-debug cancel continuation run.db step1
 
 Options:
   --db PATH  Path to the database file
@@ -221,7 +182,7 @@ Usage: pdd cancel request [OPTIONS] REQUEST_ID
   Cancel a pending or held request.
 
   Examples:
-      pdd cancel request run.db 123
+      ldd-debug cancel request run.db 123
 
 Options:
   --db PATH  Path to the database file
@@ -240,22 +201,22 @@ Usage: pdd compare [OPTIONS] CONTINUATION
 
   Examples:
       # Compare all requests for a continuation
-      pdd compare run.db parse_opinions
+      ldd-debug compare run.db parse_opinions
 
-      # Compare a specific request     pdd compare run.db parse_opinions
+      # Compare a specific request     ldd-debug compare run.db parse_opinions
       --request-id 123
 
-      # Sample 10 terminal requests     pdd compare run.db parse_opinions
-      --sample 10
+      # Sample 10 terminal requests     ldd-debug compare run.db
+      parse_opinions --sample 10
 
-      # Show detailed output     pdd compare run.db parse_opinions --output-
-      mode detail
+      # Show detailed output     ldd-debug compare run.db parse_opinions
+      --output-mode detail
 
-      # Show only request changes     pdd compare run.db parse_opinions
+      # Show only request changes     ldd-debug compare run.db parse_opinions
       --show-requests
 
-      # Limit to 50 comparisons     pdd compare run.db parse_opinions --limit
-      50
+      # Limit to 50 comparisons     ldd-debug compare run.db parse_opinions
+      --limit 50
 
 Options:
   --db PATH                       Path to the database file
@@ -297,8 +258,8 @@ Usage: pdd compression recompress [OPTIONS] CONTINUATION
   Recompress responses with a compression dictionary.
 
   Examples:
-      pdd compression recompress run.db step1
-      pdd compression recompress run.db step1 --dict-id 5
+      ldd-debug compression recompress run.db step1
+      ldd-debug compression recompress run.db step1 --dict-id 5
 
 Options:
   --db PATH          Path to the database file
@@ -314,8 +275,8 @@ Usage: pdd compression stats [OPTIONS]
   Show compression statistics.
 
   Examples:
-      pdd compression stats run.db
-      pdd compression stats run.db --format json
+      ldd-debug compression stats run.db
+      ldd-debug compression stats run.db --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -331,8 +292,8 @@ Usage: pdd compression train [OPTIONS] CONTINUATION
   Train a new compression dictionary for a continuation.
 
   Examples:
-      pdd compression train run.db step1
-      pdd compression train run.db step1 --samples 500
+      ldd-debug compression train run.db step1
+      ldd-debug compression train run.db step1 --samples 500
 
 Options:
   --db PATH          Path to the database file
@@ -348,8 +309,8 @@ Usage: pdd diagnose [OPTIONS] ERROR_ID
   Diagnose an error by re-running XPath observation.
 
   Examples:
-      pdd diagnose run.db 123
-      pdd diagnose run.db 123 --format json
+      ldd-debug diagnose run.db 123
+      ldd-debug diagnose run.db 123 --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -365,10 +326,10 @@ Usage: pdd doctor [OPTIONS] COMMAND [ARGS]...
   Run health checks on database.
 
   Examples:
-      pdd doctor --db run.db health
-      pdd doctor health --db run.db
-      pdd doctor structure --db run.db
-      pdd doctor structure --db run.db --detailed
+      ldd-debug doctor --db run.db health
+      ldd-debug doctor health --db run.db
+      ldd-debug doctor structure --db run.db
+      ldd-debug doctor structure --db run.db --detailed
 
 Options:
   --db PATH  Path to the database file
@@ -394,9 +355,9 @@ Usage: pdd doctor estimates [OPTIONS]
   matches the estimates declared by scraper steps.
 
   Examples:
-      pdd doctor estimates --db run.db
-      pdd doctor --db run.db estimates --failures-only
-      pdd doctor estimates --db run.db --format json
+      ldd-debug doctor estimates --db run.db
+      ldd-debug doctor --db run.db estimates --failures-only
+      ldd-debug doctor estimates --db run.db --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -415,8 +376,8 @@ Usage: pdd doctor ghosts [OPTIONS]
   Ghost requests are completed requests with no child requests and no results.
 
   Examples:
-      pdd doctor ghosts --db run.db
-      pdd doctor --db run.db ghosts --continuation parse_index
+      ldd-debug doctor ghosts --db run.db
+      ldd-debug doctor --db run.db ghosts --continuation parse_index
 
 Options:
   --db PATH                    Path to the database file
@@ -436,8 +397,8 @@ Usage: pdd doctor health [OPTIONS]
   ghost request summary by step.
 
   Examples:
-      pdd doctor health --db run.db
-      pdd doctor --db run.db health
+      ldd-debug doctor health --db run.db
+      ldd-debug doctor --db run.db health
 
 Options:
   --db PATH                    Path to the database file
@@ -453,8 +414,8 @@ Usage: pdd doctor orphans [OPTIONS]
   List orphaned requests and responses with details.
 
   Examples:
-      pdd doctor orphans --db run.db
-      pdd doctor --db run.db orphans --format json
+      ldd-debug doctor orphans --db run.db
+      ldd-debug doctor --db run.db orphans --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -470,8 +431,8 @@ Usage: pdd doctor pending [OPTIONS]
   List pending requests with details.
 
   Examples:
-      pdd doctor pending --db run.db
-      pdd doctor --db run.db pending --limit 50
+      ldd-debug doctor pending --db run.db
+      ldd-debug doctor --db run.db pending --limit 50
 
 Options:
   --db PATH                    Path to the database file
@@ -496,10 +457,10 @@ Usage: pdd doctor structure [OPTIONS]
   --request or --response shows full validation error detail.
 
   Examples:
-      pdd doctor structure --db run.db
-      pdd doctor --db run.db structure --step parse_opinions_page
-      pdd doctor structure --db run.db --detailed
-      pdd doctor structure --db run.db --request 15
+      ldd-debug doctor structure --db run.db
+      ldd-debug doctor --db run.db structure --step parse_opinions_page
+      ldd-debug doctor structure --db run.db --detailed
+      ldd-debug doctor structure --db run.db --request 15
 
 Options:
   --db PATH                    Path to the database file
@@ -524,11 +485,30 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  list     List errors with optional filtering.
-  requeue  Requeue the request that caused an error.
-  resolve  Mark an error as resolved.
-  show     Show detailed error information.
-  summary  Show error counts by type and resolution status.
+  diagnose     Diagnose an error by re-running XPath observation.
+  list         List errors with optional filtering.
+  requeue      Requeue the request that caused an error.
+  requeue-all  Batch requeue errors matching filter criteria.
+  resolve      Mark an error as resolved.
+  show         Show detailed error information.
+  summary      Show error counts by type and resolution status.
+```
+
+### pdd errors diagnose
+
+```
+Usage: pdd errors diagnose [OPTIONS] ERROR_ID
+
+  Diagnose an error by re-running XPath observation.
+
+  Examples:
+      pdd errors diagnose --db run.db 123
+      pdd errors diagnose --db run.db 123 --format json
+
+Options:
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ### pdd errors list
@@ -539,19 +519,19 @@ Usage: pdd errors list [OPTIONS]
   List errors with optional filtering.
 
   Examples:
-      pdd errors list run.db
-      pdd errors list run.db --type xpath --unresolved
-      pdd errors list run.db --continuation step1
+      pdd errors list --db run.db
+      pdd errors list --db run.db --type xpath --unresolved
+      pdd errors list --db run.db --step step1
 
 Options:
-  --db PATH                    Path to the database file
-  --type TEXT                  Filter by error type
-  --resolved / --unresolved    Filter by resolution status
-  --continuation TEXT          Filter by continuation (step name)
-  --limit INTEGER              Maximum number of results
-  --offset INTEGER             Number of results to skip
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --type TEXT                    Filter by error type
+  --resolved / --unresolved      Filter by resolution status
+  --step TEXT                    Filter by step name
+  --limit INTEGER                Maximum number of results
+  --offset INTEGER               Number of results to skip
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ### pdd errors requeue
@@ -562,13 +542,31 @@ Usage: pdd errors requeue [OPTIONS] ERROR_ID
   Requeue the request that caused an error.
 
   Examples:
-      pdd errors requeue run.db 123
-      pdd errors requeue run.db 123 --notes "Fixed server issue"
+      pdd errors requeue --db run.db 123
+      pdd errors requeue --db run.db 123 --notes "Fixed server issue"
 
 Options:
   --db PATH     Path to the database file
   --notes TEXT  Resolution notes
   --help        Show this message and exit.
+```
+
+### pdd errors requeue-all
+
+```
+Usage: pdd errors requeue-all [OPTIONS]
+
+  Batch requeue errors matching filter criteria.
+
+  Examples:
+      pdd errors requeue-all --db run.db --type xpath
+      pdd errors requeue-all --db run.db --step step1
+
+Options:
+  --db PATH    Path to the database file
+  --type TEXT  Filter by error type
+  --step TEXT  Filter by step name
+  --help       Show this message and exit.
 ```
 
 ### pdd errors resolve
@@ -579,8 +577,8 @@ Usage: pdd errors resolve [OPTIONS] ERROR_ID
   Mark an error as resolved.
 
   Examples:
-      pdd errors resolve run.db 123
-      pdd errors resolve run.db 123 --notes "Fixed XPath selector"
+      pdd errors resolve --db run.db 123
+      pdd errors resolve --db run.db 123 --notes "Fixed XPath selector"
 
 Options:
   --db PATH     Path to the database file
@@ -596,13 +594,13 @@ Usage: pdd errors show [OPTIONS] ERROR_ID
   Show detailed error information.
 
   Examples:
-      pdd errors show run.db 123
-      pdd errors show run.db 123 --format json
+      pdd errors show --db run.db 123
+      pdd errors show --db run.db 123 --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ### pdd errors summary
@@ -613,13 +611,13 @@ Usage: pdd errors summary [OPTIONS]
   Show error counts by type and resolution status.
 
   Examples:
-      pdd errors summary run.db
-      pdd errors summary run.db --format json
+      pdd errors summary --db run.db
+      pdd errors summary --db run.db --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ## pdd export
@@ -646,8 +644,8 @@ Usage: pdd export jsonl [OPTIONS] OUTPUT_PATH
   Export results to JSONL (newline-delimited JSON) file.
 
   Examples:
-      pdd export jsonl run.db results.jsonl
-      pdd export jsonl run.db opinions.jsonl --type CourtOpinion --valid
+      ldd-debug export jsonl run.db results.jsonl
+      ldd-debug export jsonl run.db opinions.jsonl --type CourtOpinion --valid
 
 Options:
   --db PATH            Path to the database file
@@ -664,8 +662,8 @@ Usage: pdd export warc [OPTIONS] OUTPUT_PATH
   Export responses to WARC (Web ARChive) format.
 
   Examples:
-      pdd export warc run.db archive.warc.gz
-      pdd export warc run.db step1.warc --no-compress --continuation step1
+      ldd-debug export warc run.db archive.warc.gz
+      ldd-debug export warc run.db step1.warc --no-compress --continuation step1
 
 Options:
   --db PATH                   Path to the database file
@@ -710,8 +708,8 @@ Usage: pdd incidental content [OPTIONS] INCIDENTAL_ID
   Get decompressed incidental request content.
 
   Examples:
-      pdd incidental content run.db 456
-      pdd incidental content run.db 456 -o script.js
+      pdd incidental content --db run.db 456
+      pdd incidental content --db run.db 456 -o script.js
 
 Options:
   --db PATH          Path to the database file
@@ -727,10 +725,10 @@ Usage: pdd incidental list [OPTIONS]
   List incidental requests with optional filtering.
 
   Examples:
-      pdd incidental list run.db
-      pdd incidental list run.db --parent-id 123
-      pdd incidental list run.db --resource-type script
-      pdd incidental list run.db --from-cache
+      pdd incidental list --db run.db
+      pdd incidental list --db run.db --parent-id 123
+      pdd incidental list --db run.db --resource-type script
+      pdd incidental list --db run.db --from-cache
 
 Options:
   --db PATH                       Path to the database file
@@ -741,7 +739,7 @@ Options:
                                   Filter by cache status
   --limit INTEGER                 Maximum number of results
   --offset INTEGER                Number of results to skip
-  --format [table|json|jsonl]     Output format
+  --format [summary|json|jsonl]   Output format
   --help                          Show this message and exit.
 ```
 
@@ -753,13 +751,13 @@ Usage: pdd incidental show [OPTIONS] INCIDENTAL_ID
   Show detailed incidental request information.
 
   Examples:
-      pdd incidental show run.db 456
-      pdd incidental show run.db 456 --format json
+      pdd incidental show --db run.db 456
+      pdd incidental show --db run.db 456 --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ## pdd info
@@ -770,13 +768,13 @@ Usage: pdd info [OPTIONS]
   Show run metadata and statistics.
 
   Examples:
-      pdd info run.db
-      pdd info run.db --format json
+      pdd info --db run.db
+      pdd info --db run.db --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ## pdd requests
@@ -791,9 +789,123 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  list     List requests with optional filtering.
-  show     Show detailed request information.
-  summary  Show request counts by status and continuation.
+  cancel       Cancel a pending or held request.
+  cancel-all   Cancel all pending/held requests for a step.
+  compression  Inspect and manipulate compression.
+  content      Get decompressed response content for a request.
+  export       Export responses to WARC (Web ARChive) format.
+  ghosts       List ghost requests grouped by step.
+  list         List requests with optional filtering.
+  orphans      List orphaned requests and responses with details.
+  parents      Show the chain of parent requests from a request to the root.
+  pending      List pending requests with details.
+  requeue      Requeue a completed or failed request.
+  requeue-all  Requeue all requests for a step with a given status.
+  search       Search response content for matching patterns.
+  show         Show detailed request information.
+  summary      Show request counts by status and continuation.
+```
+
+### pdd requests cancel
+
+```
+Usage: pdd requests cancel [OPTIONS] REQUEST_ID
+
+  Cancel a pending or held request.
+
+  Examples:
+      pdd requests cancel --db run.db 123
+
+Options:
+  --db PATH  Path to the database file
+  --help     Show this message and exit.
+```
+
+### pdd requests cancel-all
+
+```
+Usage: pdd requests cancel-all [OPTIONS] STEP
+
+  Cancel all pending/held requests for a step.
+
+  Examples:
+      pdd requests cancel-all --db run.db step1
+
+Options:
+  --db PATH  Path to the database file
+  --help     Show this message and exit.
+```
+
+### pdd requests compression
+
+```
+Usage: pdd requests compression [OPTIONS] COMMAND [ARGS]...
+
+  Inspect and manipulate compression.
+
+Options:
+  --db PATH  Path to the database file
+  --help     Show this message and exit.
+
+Commands:
+  recompress  Recompress responses with a compression dictionary.
+  stats       Show compression statistics.
+  train       Train a new compression dictionary for a step.
+```
+
+### pdd requests content
+
+```
+Usage: pdd requests content [OPTIONS] REQUEST_ID
+
+  Get decompressed response content for a request.
+
+  Examples:
+      pdd requests content --db run.db 123
+      pdd requests content --db run.db 123 -o response.html
+
+Options:
+  --db PATH          Path to the database file
+  -o, --output TEXT  Output file path (default: stdout)
+  --help             Show this message and exit.
+```
+
+### pdd requests export
+
+```
+Usage: pdd requests export [OPTIONS] OUTPUT_PATH
+
+  Export responses to WARC (Web ARChive) format.
+
+  Examples:
+      pdd requests export --db run.db archive.warc.gz
+      pdd requests export --db run.db step1.warc --no-compress --step step1
+
+Options:
+  --db PATH                   Path to the database file
+  --compress / --no-compress  Gzip-compress the WARC file
+  --step TEXT                 Filter by step name
+  --help                      Show this message and exit.
+```
+
+### pdd requests ghosts
+
+```
+Usage: pdd requests ghosts [OPTIONS]
+
+  List ghost requests grouped by step.
+
+  Ghost requests are completed requests with no child requests and no results.
+
+  Examples:
+      pdd requests ghosts --db run.db
+      pdd requests --db run.db ghosts --step parse_index
+
+Options:
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --step TEXT                    Filter by step name
+  --help                         Show this message and exit.
 ```
 
 ### pdd requests list
@@ -804,19 +916,135 @@ Usage: pdd requests list [OPTIONS]
   List requests with optional filtering.
 
   Examples:
-      pdd requests list run.db
-      pdd requests list run.db --status failed
-      pdd requests list run.db --continuation step1 --limit 50
+      pdd requests list --db run.db
+      pdd requests list --db run.db --status failed
+      pdd requests list --db run.db --step step1 --limit 50
+
+Options:
+  --db PATH                      Path to the database file
+  --status TEXT                  Filter by status (pending, completed, failed,
+                                 held)
+  --step TEXT                    Filter by step name
+  --limit INTEGER                Maximum number of results
+  --offset INTEGER               Number of results to skip
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
+```
+
+### pdd requests orphans
+
+```
+Usage: pdd requests orphans [OPTIONS]
+
+  List orphaned requests and responses with details.
+
+  Examples:
+      pdd requests orphans --db run.db
+      pdd requests --db run.db orphans --format json
+
+Options:
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
+```
+
+### pdd requests parents
+
+```
+Usage: pdd requests parents [OPTIONS] REQUEST_ID
+
+  Show the chain of parent requests from a request to the root.
+
+  Walks up the parent_request_id links to show the full ancestry of a request,
+  from the given request to the entry-point request.
+
+  Examples:
+      pdd requests parents --db run.db 456
+      pdd requests parents --db run.db 456 --format json
+
+Options:
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
+```
+
+### pdd requests pending
+
+```
+Usage: pdd requests pending [OPTIONS]
+
+  List pending requests with details.
+
+  Examples:
+      pdd requests pending --db run.db
+      pdd requests --db run.db pending --limit 50
+
+Options:
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --limit INTEGER                Maximum number of results
+  --help                         Show this message and exit.
+```
+
+### pdd requests requeue
+
+```
+Usage: pdd requests requeue [OPTIONS] REQUEST_ID
+
+  Requeue a completed or failed request.
+
+  Examples:
+      pdd requests requeue --db run.db 123
+      pdd requests requeue --db run.db 123 --no-clear-downstream
+
+Options:
+  --db PATH                       Path to the database file
+  --clear-downstream / --no-clear-downstream
+                                  Clear downstream data (responses, results,
+                                  errors)
+  --help                          Show this message and exit.
+```
+
+### pdd requests requeue-all
+
+```
+Usage: pdd requests requeue-all [OPTIONS] STEP
+
+  Requeue all requests for a step with a given status.
+
+  Examples:
+      pdd requests requeue-all --db run.db step1
+      pdd requests requeue-all --db run.db step1 --status failed
 
 Options:
   --db PATH                    Path to the database file
-  --status TEXT                Filter by status (pending, completed, failed,
-                               held)
-  --continuation TEXT          Filter by continuation (step name)
-  --limit INTEGER              Maximum number of results
-  --offset INTEGER             Number of results to skip
-  --format [table|json|jsonl]  Output format
+  --status [completed|failed]  Which requests to requeue
   --help                       Show this message and exit.
+```
+
+### pdd requests search
+
+```
+Usage: pdd requests search [OPTIONS]
+
+  Search response content for matching patterns.
+
+  Searches through all response content (decompressed) for matches. Exactly
+  one of --text, --regex, or --xpath must be provided.
+
+  Examples:
+      pdd requests search --db run.db --text "error"
+      pdd requests search --db run.db --regex "case.*\\d{4}"
+      pdd requests search --db run.db --xpath "//div[@class='opinion']"
+
+Options:
+  --db PATH                      Path to the database file
+  --text TEXT                    Plain text to search for
+  --regex TEXT                   Regular expression pattern
+  --xpath TEXT                   XPath expression to evaluate
+  --step TEXT                    Filter by step name
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ### pdd requests show
@@ -827,13 +1055,13 @@ Usage: pdd requests show [OPTIONS] REQUEST_ID
   Show detailed request information.
 
   Examples:
-      pdd requests show run.db 123
-      pdd requests show run.db 123 --format json
+      pdd requests show --db run.db 123
+      pdd requests show --db run.db 123 --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ### pdd requests summary
@@ -844,13 +1072,13 @@ Usage: pdd requests summary [OPTIONS]
   Show request counts by status and continuation.
 
   Examples:
-      pdd requests summary run.db
-      pdd requests summary run.db --format json
+      pdd requests summary --db run.db
+      pdd requests summary --db run.db --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ## pdd requeue
@@ -878,8 +1106,8 @@ Usage: pdd requeue continuation [OPTIONS] CONTINUATION
   Requeue all requests for a continuation with a given status.
 
   Examples:
-      pdd requeue continuation run.db step1
-      pdd requeue continuation run.db step1 --status failed
+      ldd-debug requeue continuation run.db step1
+      ldd-debug requeue continuation run.db step1 --status failed
 
 Options:
   --db PATH                    Path to the database file
@@ -895,8 +1123,8 @@ Usage: pdd requeue errors [OPTIONS]
   Batch requeue errors matching filter criteria.
 
   Examples:
-      pdd requeue errors run.db --type xpath
-      pdd requeue errors run.db --continuation step1
+      ldd-debug requeue errors run.db --type xpath
+      ldd-debug requeue errors run.db --continuation step1
 
 Options:
   --db PATH            Path to the database file
@@ -913,8 +1141,8 @@ Usage: pdd requeue request [OPTIONS] REQUEST_ID
   Requeue a completed or failed request.
 
   Examples:
-      pdd requeue request run.db 123
-      pdd requeue request run.db 123 --no-clear-downstream
+      ldd-debug requeue request run.db 123
+      ldd-debug requeue request run.db 123 --no-clear-downstream
 
 Options:
   --db PATH                       Path to the database file
@@ -950,8 +1178,8 @@ Usage: pdd responses content [OPTIONS] REQUEST_ID
   Get decompressed response content.
 
   Examples:
-      pdd responses content run.db 123
-      pdd responses content run.db 123 -o response.html
+      ldd-debug responses content run.db 123
+      ldd-debug responses content run.db 123 -o response.html
 
 Options:
   --db PATH          Path to the database file
@@ -967,8 +1195,8 @@ Usage: pdd responses list [OPTIONS]
   List responses with optional filtering.
 
   Examples:
-      pdd responses list run.db
-      pdd responses list run.db --continuation step1
+      ldd-debug responses list run.db
+      ldd-debug responses list run.db --continuation step1
 
 Options:
   --db PATH                    Path to the database file
@@ -990,11 +1218,11 @@ Usage: pdd responses search [OPTIONS]
   one of --text, --regex, or --xpath must be provided.
 
   Examples:
-      pdd responses search run.db --text "error"
-      pdd responses search run.db --regex "case.*\\d{4}"
-      pdd responses search run.db --xpath "//div[@class='opinion']"
-      pdd responses search run.db --text "verdict" --format json
-      pdd responses search run.db --text "verdict" --format jsonl
+      ldd-debug responses search run.db --text "error"
+      ldd-debug responses search run.db --regex "case.*\\d{4}"
+      ldd-debug responses search run.db --xpath "//div[@class='opinion']"
+      ldd-debug responses search run.db --text "verdict" --format json
+      ldd-debug responses search run.db --text "verdict" --format jsonl
 
 Options:
   --db PATH                    Path to the database file
@@ -1014,8 +1242,8 @@ Usage: pdd responses show [OPTIONS] REQUEST_ID
   Show detailed response information.
 
   Examples:
-      pdd responses show run.db 123
-      pdd responses show run.db 123 --format json
+      ldd-debug responses show run.db 123
+      ldd-debug responses show run.db 123 --format json
 
 Options:
   --db PATH                    Path to the database file
@@ -1035,9 +1263,29 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  list     List results with optional filtering.
-  show     Show detailed result information.
-  summary  Show result counts by type and validity.
+  export    Export results to JSONL (newline-delimited JSON) file.
+  list      List results with optional filtering.
+  show      Show detailed result information.
+  summary   Show result counts by type and validity.
+  validate  Validate stored responses against step XSD/JSON model specs.
+```
+
+### pdd results export
+
+```
+Usage: pdd results export [OPTIONS] OUTPUT_PATH
+
+  Export results to JSONL (newline-delimited JSON) file.
+
+  Examples:
+      pdd --db run.db results export results.jsonl
+      pdd --db run.db results export opinions.jsonl --type CourtOpinion --valid
+
+Options:
+  --db PATH            Path to the database file
+  --type TEXT          Filter by result type
+  --valid / --invalid  Filter by validation status
+  --help               Show this message and exit.
 ```
 
 ### pdd results list
@@ -1048,17 +1296,17 @@ Usage: pdd results list [OPTIONS]
   List results with optional filtering.
 
   Examples:
-      pdd results list run.db
-      pdd results list run.db --type CourtOpinion --valid
+      pdd --db run.db results list
+      pdd --db run.db results list --type CourtOpinion --valid
 
 Options:
-  --db PATH                    Path to the database file
-  --type TEXT                  Filter by result type
-  --valid / --invalid          Filter by validation status
-  --limit INTEGER              Maximum number of results
-  --offset INTEGER             Number of results to skip
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --type TEXT                    Filter by result type
+  --valid / --invalid            Filter by validation status
+  --limit INTEGER                Maximum number of results
+  --offset INTEGER               Number of results to skip
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ### pdd results show
@@ -1069,13 +1317,13 @@ Usage: pdd results show [OPTIONS] RESULT_ID
   Show detailed result information.
 
   Examples:
-      pdd results show run.db 123
-      pdd results show run.db 123 --format json
+      pdd --db run.db results show 123
+      pdd --db run.db results show 123 --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
 ```
 
 ### pdd results summary
@@ -1086,11 +1334,212 @@ Usage: pdd results summary [OPTIONS]
   Show result counts by type and validity.
 
   Examples:
-      pdd results summary run.db
-      pdd results summary run.db --format json
+      pdd --db run.db results summary
+      pdd --db run.db results summary --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
+```
+
+### pdd results validate
+
+```
+Usage: pdd results validate [OPTIONS]
+
+  Validate stored responses against step XSD/JSON model specs.
+
+  Finds all steps with xsd or json_model annotations and validates stored
+  responses against those specs.
+
+  Default mode shows pass/fail statistics by continuation.
+  --step filters to a single step.
+  --detailed shows request_id/response_id pairs for failures.
+  --request or --response shows full validation error detail.
+
+  Examples:
+      pdd --db run.db results validate
+      pdd --db run.db results validate --step parse_opinions_page
+      pdd --db run.db results validate --detailed
+      pdd --db run.db results validate --request 15
+
+Options:
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --step TEXT                    Filter to a specific step name
+  --detailed                     Show request_id/response_id pairs for
+                                 failures
+  --request INTEGER              Show detailed validation for a specific
+                                 request
+  --response INTEGER             Show detailed validation for a specific
+                                 response
+  --help                         Show this message and exit.
+```
+
+## pdd scrape
+
+```
+Usage: pdd scrape [OPTIONS] COMMAND [ARGS]...
+
+  Scrape-level health checks and diagnostics.
+
+Options:
+  --db PATH  Path to the database file
+  --help     Show this message and exit.
+
+Commands:
+  estimates  Check EstimateData predictions against actual result counts.
+  health     Show comprehensive health report.
+```
+
+### pdd scrape estimates
+
+```
+Usage: pdd scrape estimates [OPTIONS]
+
+  Check EstimateData predictions against actual result counts.
+
+  Verifies that the actual number of results produced by downstream requests
+  matches the estimates declared by scraper steps.
+
+  Examples:
+      pdd scrape estimates --db run.db
+      pdd scrape --db run.db estimates --failures-only
+      pdd scrape estimates --db run.db --format json
+
+Options:
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --failures-only                Only show failed estimates
+  --help                         Show this message and exit.
+```
+
+### pdd scrape health
+
+```
+Usage: pdd scrape health [OPTIONS]
+
+  Show comprehensive health report.
+
+  Displays integrity check summary, error counts, pending/wrapped status, and
+  ghost request summary by step.
+
+  Examples:
+      pdd scrape health --db run.db
+      pdd scrape --db run.db health
+
+Options:
+  --db PATH                      Path to the database file
+  --format [summary|json|jsonl]  Output format
+  --help                         Show this message and exit.
+```
+
+## pdd step
+
+```
+Usage: pdd step [OPTIONS] COMMAND [ARGS]...
+
+  Step-level development and debugging tools.
+
+Options:
+  --db PATH  Path to the database file
+  --help     Show this message and exit.
+
+Commands:
+  re-evaluate  Compare step output between stored and dry-run execution.
+  xpath-stats  Gather XPath/selector statistics across requests for a step.
+```
+
+### pdd step re-evaluate
+
+```
+Usage: pdd step re-evaluate [OPTIONS] STEP_NAME
+
+  Compare step output between stored and dry-run execution.
+
+  Replays stored responses through current step code and compares the output
+  (child requests, ParsedData, errors) against stored results.
+
+  Examples:
+      # Compare all requests for a step
+      pdd step re-evaluate --db run.db parse_opinions
+
+      # Compare a specific request     pdd step re-evaluate --db run.db
+      parse_opinions --request-id 123
+
+      # Sample 10 request trees randomly     pdd step re-evaluate --db run.db
+      parse_opinions --sample 10
+
+      # Show detailed per-request changes     pdd step re-evaluate --db run.db
+      parse_opinions --verbose
+
+      # Show only request tree differences     pdd step re-evaluate --db
+      run.db parse_opinions --show-requests
+
+      # Show only data differences     pdd step re-evaluate --db run.db
+      parse_opinions --show-data
+
+      # Limit to 50 comparisons     pdd step re-evaluate --db run.db
+      parse_opinions --limit 50
+
+Options:
+  --db PATH                      Path to the database file
+  --request-id INTEGER           Compare specific request ID only
+  --sample INTEGER               Sample N requests and follow their entire
+                                 request trees
+  --format [summary|json|jsonl]  Output format
+  -v, --verbose                  Show detailed per-request changes
+  --show-requests                Show only request tree differences
+  --show-data                    Show only data differences
+  --limit INTEGER                Maximum number of requests to compare
+  --scraper-class TEXT           Scraper class path (e.g., juriscraper.opinion
+                                 s.united_states.federal_appellate.ca1.Site)
+  --help                         Show this message and exit.
+```
+
+### pdd step xpath-stats
+
+```
+Usage: pdd step xpath-stats [OPTIONS] STEP_NAME
+
+  Gather XPath/selector statistics across requests for a step.
+
+  Replays stored responses through current step code with XPath observation
+  active, then aggregates selector match statistics across all processed
+  requests.
+
+  Examples:
+      # Stats for all requests of a step
+      pdd step xpath-stats --db run.db parse_opinions
+
+      # Sample 20 requests randomly     pdd step xpath-stats --db run.db
+      parse_opinions --sample 20
+
+      # Filter to a specific selector by description     pdd step xpath-stats
+      --db run.db parse_opinions --xpath-name "case link"
+
+      # Show which requests had zero matches for a selector     pdd step
+      xpath-stats --db run.db parse_opinions --xpath-name "case link" --list-
+      non-matching
+
+      # JSON output     pdd step xpath-stats --db run.db parse_opinions
+      --format json
+
+      # Limit to 100 requests     pdd step xpath-stats --db run.db
+      parse_opinions --limit 100
+
+Options:
+  --db PATH                      Path to the database file
+  --request-id INTEGER           Run for a specific request ID only
+  --sample INTEGER               Sample N requests randomly
+  --limit INTEGER                Maximum number of requests to process
+  --scraper-class TEXT           Scraper class path (e.g., juriscraper.opinion
+                                 s.united_states.federal_appellate.ca1.Site)
+  --format [summary|json|jsonl]  Output format
+  --xpath-name TEXT              Filter output to selectors whose description
+                                 matches this name
+  --list-non-matching            Include request IDs where the selector
+                                 matched zero elements
+  --help                         Show this message and exit.
 ```

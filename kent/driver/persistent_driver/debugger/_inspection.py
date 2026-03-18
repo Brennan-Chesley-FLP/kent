@@ -80,6 +80,67 @@ class InspectionMixin:
         """
         return await self.sql.get_request(request_id)
 
+    async def get_parent_chain(self, request_id: int) -> list[dict[str, Any]]:
+        """Get the chain of parent requests from a request up to the root.
+
+        Walks up the parent_request_id links using a recursive CTE,
+        returning the chain from the given request to the root (entry point).
+
+        Args:
+            request_id: The starting request ID.
+
+        Returns:
+            List of dicts ordered from the given request to the root.
+            Each dict has: id, parent_request_id, status, continuation, url.
+            Empty list if request_id does not exist.
+        """
+        req = Request.__table__
+
+        # Base case: the starting request
+        base = (
+            select(
+                req.c.id,
+                req.c.parent_request_id,
+                req.c.status,
+                req.c.continuation,
+                req.c.url,
+                sa.literal(0).label("depth"),
+            )
+            .where(req.c.id == request_id)
+            .cte(name="ancestors", recursive=True)
+        )
+
+        # Recursive step: join parent
+        parent = req.alias("parent")
+        recursive = select(
+            parent.c.id,
+            parent.c.parent_request_id,
+            parent.c.status,
+            parent.c.continuation,
+            parent.c.url,
+            (base.c.depth + 1).label("depth"),
+        ).where(parent.c.id == base.c.parent_request_id)
+
+        ancestors_cte = base.union_all(recursive)
+
+        query = select(ancestors_cte).order_by(ancestors_cte.c.depth)
+
+        async with self._session_factory() as session:
+            result = await session.execute(query)
+            rows = result.all()
+
+        return [
+            {
+                "id": row[0],
+                "parent_request_id": row[1],
+                "status": row[2],
+                "continuation": row[3],
+                "url": row[4],
+                "depth": row[5],
+            }
+            for row in rows
+        ]
+
     async def get_request_summary(
         self,
     ) -> dict[str, dict[str, int]]:

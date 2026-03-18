@@ -4,29 +4,31 @@ This module provides a Click-based CLI for inspecting and manipulating
 LocalDevDriver run databases.
 
 Usage:
-    pdd --db run.db info                    # Show run metadata and stats
-    pdd --db run.db requests list           # List requests
-    pdd --db run.db requests show <id>      # Show request details
-    pdd --db run.db responses list          # List responses
-    pdd --db run.db responses search        # Search response content
-    pdd --db run.db errors list             # List errors
-    pdd --db run.db results list            # List results
-    pdd --db run.db requeue request <id>    # Requeue a request
-    pdd --db run.db cancel request <id>     # Cancel a request
-    pdd --db run.db compression stats       # Show compression stats
-    pdd --db run.db diagnose <error-id>     # Diagnose an error
-    pdd --db run.db export jsonl <output>   # Export results to JSONL
-    pdd --db run.db export warc <output>    # Export responses to WARC
-    pdd --db run.db doctor health           # Run health checks
-    pdd --db run.db doctor structure        # Validate response structure
+    pdd --db run.db info                        # Show run metadata and stats
+    pdd --db run.db requests list               # List requests (with responses)
+    pdd --db run.db requests show <id>          # Show request details
+    pdd --db run.db requests search <query>     # Search response content
+    pdd --db run.db requests cancel <id>        # Cancel a pending request
+    pdd --db run.db requests requeue <id>       # Requeue a request
+    pdd --db run.db requests export <output>    # Export to WARC
+    pdd --db run.db requests compression stats  # Compression statistics
+    pdd --db run.db errors list                 # List errors
+    pdd --db run.db errors diagnose <id>        # Diagnose an error
+    pdd --db run.db results list                # List results
+    pdd --db run.db results validate            # Validate response structure
+    pdd --db run.db results export <output>     # Export results to JSONL
+    pdd --db run.db scrape health               # Run health checks
+    pdd --db run.db scrape estimates            # Check estimate accuracy
+    pdd --db run.db step re-evaluate <step>     # Re-evaluate a step
+    pdd --db run.db step xpath-stats <step>     # XPath selector statistics
 
 The --db option can be placed at any level:
-    pdd --db run.db doctor structure
-    pdd doctor --db run.db structure
-    pdd doctor structure --db run.db
+    pdd --db run.db scrape health
+    pdd scrape --db run.db health
+    pdd scrape health --db run.db
 
 All commands support:
-    --format table|json|jsonl    Output format (default: table)
+    --format summary|json|jsonl    Output format (default: summary)
 """
 
 from __future__ import annotations
@@ -47,14 +49,14 @@ from kent.driver.persistent_driver.debugger import (
 
 
 def format_output(
-    data: Any, format_type: str = "table", headers: list[str] | None = None
+    data: Any, format_type: str = "summary", headers: list[str] | None = None
 ) -> None:
     """Format and print output based on format type.
 
     Args:
         data: Data to format (dict, list of dicts, or list of objects)
-        format_type: Output format ('table', 'json', 'jsonl')
-        headers: Column headers for table format
+        format_type: Output format ('summary', 'json', 'jsonl')
+        headers: Column headers for summary format
     """
     if format_type == "json":
         click.echo(json.dumps(data, indent=2))
@@ -64,7 +66,7 @@ def format_output(
                 click.echo(json.dumps(item))
         else:
             click.echo(json.dumps(data))
-    elif format_type == "table":
+    elif format_type == "summary":
         if isinstance(data, dict):
             # Single record - display as key-value pairs
             for key, value in data.items():
@@ -368,8 +370,8 @@ def _resolve_db_path(ctx: click.Context, db_path: str | None) -> str:
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["summary", "json", "jsonl"]),
+    default="summary",
     help="Output format",
 )
 @click.pass_context
@@ -378,8 +380,8 @@ def info(ctx: click.Context, db_path: str | None, format_type: str) -> None:
 
     \b
     Examples:
-        pdd info run.db
-        pdd info run.db --format json
+        pdd info --db run.db
+        pdd info --db run.db --format json
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -388,7 +390,7 @@ def info(ctx: click.Context, db_path: str | None, format_type: str) -> None:
             metadata = await debugger.get_run_metadata()
             stats = await debugger.get_stats()
 
-            if format_type == "table":
+            if format_type == "summary":
                 click.echo("=== Run Metadata ===")
                 if metadata:
                     for key, value in metadata.items():
@@ -454,9 +456,6 @@ def main() -> None:
 # (imports trigger @cli.group/@cli.command decorators)
 # =========================================================================
 from kent.driver.persistent_driver.cli import (
-    bulk_xpath as _bulk_xpath_mod,
-)
-from kent.driver.persistent_driver.cli import (
     compare as _compare_mod,
 )
 from kent.driver.persistent_driver.cli import (
@@ -485,6 +484,12 @@ from kent.driver.persistent_driver.cli import (
 )
 from kent.driver.persistent_driver.cli import (
     results as _results_mod,
+)
+from kent.driver.persistent_driver.cli import (
+    scrape as _scrape_mod,
+)
+from kent.driver.persistent_driver.cli import (
+    step as _step_mod,
 )
 
 if __name__ == "__main__":

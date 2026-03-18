@@ -1,4 +1,4 @@
-"""Tests for the requests and responses commands."""
+"""Tests for the requests commands."""
 
 from __future__ import annotations
 
@@ -46,10 +46,10 @@ class TestRequestsCommands:
         assert result.exit_code == 0
         assert "Total: 2" in result.output
 
-    def test_requests_list_filter_by_continuation(
+    def test_requests_list_filter_by_step(
         self, runner: CliRunner, populated_db: Path
     ) -> None:
-        """Test filtering requests by continuation."""
+        """Test filtering requests by step."""
         result = runner.invoke(
             cli,
             [
@@ -57,7 +57,7 @@ class TestRequestsCommands:
                 "list",
                 "--db",
                 str(populated_db),
-                "--continuation",
+                "--step",
                 "step1",
             ],
         )
@@ -166,72 +166,26 @@ class TestRequestsCommands:
         assert result.exit_code == 0
         assert "step1" in result.output or "step2" in result.output
 
-
-class TestResponsesCommands:
-    """Tests for the responses commands."""
-
-    def test_responses_list(
+    def test_requests_content(
         self, runner: CliRunner, populated_db: Path
     ) -> None:
-        """Test responses list command."""
+        """Test requests content command."""
         result = runner.invoke(
-            cli, ["responses", "list", "--db", str(populated_db)]
-        )
-
-        assert result.exit_code == 0
-        assert "Total: 2" in result.output
-
-    def test_responses_list_filter_by_continuation(
-        self, runner: CliRunner, populated_db: Path
-    ) -> None:
-        """Test filtering responses by continuation."""
-        result = runner.invoke(
-            cli,
-            [
-                "responses",
-                "list",
-                "--db",
-                str(populated_db),
-                "--continuation",
-                "step1",
-            ],
-        )
-
-        assert result.exit_code == 0
-        assert "Total: 2" in result.output
-
-    def test_responses_show(
-        self, runner: CliRunner, populated_db: Path
-    ) -> None:
-        """Test responses show command."""
-        result = runner.invoke(
-            cli, ["responses", "show", "--db", str(populated_db), "2"]
-        )
-
-        assert result.exit_code == 0
-        assert "ID: 2" in result.output
-        assert "Status Code:" in result.output
-
-    def test_responses_content(
-        self, runner: CliRunner, populated_db: Path, tmp_path: Path
-    ) -> None:
-        """Test responses content command."""
-        result = runner.invoke(
-            cli, ["responses", "content", "--db", str(populated_db), "2"]
+            cli, ["requests", "content", "--db", str(populated_db), "2"]
         )
 
         assert result.exit_code == 0
         assert "Response 1" in result.output
 
-    def test_responses_content_to_file(
+    def test_requests_content_to_file(
         self, runner: CliRunner, populated_db: Path, tmp_path: Path
     ) -> None:
-        """Test responses content command with output file."""
+        """Test requests content command with output file."""
         output_file = tmp_path / "response.html"
         result = runner.invoke(
             cli,
             [
-                "responses",
+                "requests",
                 "content",
                 "--db",
                 str(populated_db),

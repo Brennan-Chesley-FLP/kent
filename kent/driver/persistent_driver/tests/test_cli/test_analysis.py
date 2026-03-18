@@ -11,14 +11,14 @@ from kent.driver.persistent_driver.cli import cli
 
 
 class TestDiagnoseCommand:
-    """Tests for the diagnose command."""
+    """Tests for the errors diagnose command."""
 
     def test_diagnose_error_without_response(
         self, runner: CliRunner, populated_db: Path
     ) -> None:
         """Test diagnose command on error without response."""
         result = runner.invoke(
-            cli, ["diagnose", "--db", str(populated_db), "1"]
+            cli, ["errors", "diagnose", "--db", str(populated_db), "1"]
         )
 
         # Should fail because error 1 doesn't have a response
@@ -29,7 +29,7 @@ class TestDiagnoseCommand:
     ) -> None:
         """Test diagnose command on non-existent error."""
         result = runner.invoke(
-            cli, ["diagnose", "--db", str(populated_db), "9999"]
+            cli, ["errors", "diagnose", "--db", str(populated_db), "9999"]
         )
 
         assert result.exit_code != 0
@@ -42,11 +42,17 @@ class TestExportCommands:
     def test_export_jsonl(
         self, runner: CliRunner, populated_db: Path, tmp_path: Path
     ) -> None:
-        """Test export jsonl command."""
+        """Test results export command."""
         output_file = tmp_path / "results.jsonl"
         result = runner.invoke(
             cli,
-            ["export", "jsonl", "--db", str(populated_db), str(output_file)],
+            [
+                "results",
+                "export",
+                "--db",
+                str(populated_db),
+                str(output_file),
+            ],
         )
 
         assert result.exit_code == 0
@@ -63,13 +69,13 @@ class TestExportCommands:
     def test_export_jsonl_filtered(
         self, runner: CliRunner, populated_db: Path, tmp_path: Path
     ) -> None:
-        """Test export jsonl with filters."""
+        """Test results export with filters."""
         output_file = tmp_path / "valid_results.jsonl"
         result = runner.invoke(
             cli,
             [
+                "results",
                 "export",
-                "jsonl",
                 "--db",
                 str(populated_db),
                 str(output_file),
@@ -83,11 +89,17 @@ class TestExportCommands:
     def test_export_warc(
         self, runner: CliRunner, populated_db: Path, tmp_path: Path
     ) -> None:
-        """Test export warc command."""
+        """Test requests export (WARC) command."""
         output_file = tmp_path / "archive.warc.gz"
         result = runner.invoke(
             cli,
-            ["export", "warc", "--db", str(populated_db), str(output_file)],
+            [
+                "requests",
+                "export",
+                "--db",
+                str(populated_db),
+                str(output_file),
+            ],
         )
 
         assert result.exit_code == 0
@@ -97,13 +109,13 @@ class TestExportCommands:
     def test_export_warc_no_compress(
         self, runner: CliRunner, populated_db: Path, tmp_path: Path
     ) -> None:
-        """Test export warc without compression."""
+        """Test requests export without compression."""
         output_file = tmp_path / "archive.warc"
         result = runner.invoke(
             cli,
             [
+                "requests",
                 "export",
-                "warc",
                 "--db",
                 str(populated_db),
                 str(output_file),

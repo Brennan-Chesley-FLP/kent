@@ -59,8 +59,8 @@ def requeue_request(
 
     \b
     Examples:
-        pdd requeue request run.db 123
-        pdd requeue request run.db 123 --no-clear-downstream
+        ldd-debug requeue request run.db 123
+        ldd-debug requeue request run.db 123 --no-clear-downstream
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -106,8 +106,8 @@ def requeue_continuation(
 
     \b
     Examples:
-        pdd requeue continuation run.db step1
-        pdd requeue continuation run.db step1 --status failed
+        ldd-debug requeue continuation run.db step1
+        ldd-debug requeue continuation run.db step1 --status failed
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -147,8 +147,8 @@ def requeue_errors(
 
     \b
     Examples:
-        pdd requeue errors run.db --type xpath
-        pdd requeue errors run.db --continuation step1
+        ldd-debug requeue errors run.db --type xpath
+        ldd-debug requeue errors run.db --continuation step1
     """
 
     db_path = _resolve_db_path(ctx, db_path)
@@ -203,7 +203,7 @@ def cancel_request(
 
     \b
     Examples:
-        pdd cancel request run.db 123
+        ldd-debug cancel request run.db 123
     """
     db_path = _resolve_db_path(ctx, db_path)
 
@@ -242,7 +242,7 @@ def cancel_continuation(
 
     \b
     Examples:
-        pdd cancel continuation run.db step1
+        ldd-debug cancel continuation run.db step1
     """
     db_path = _resolve_db_path(ctx, db_path)
 

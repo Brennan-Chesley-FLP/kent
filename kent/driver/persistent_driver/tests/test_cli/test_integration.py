@@ -33,7 +33,7 @@ class TestIntegration:
 
         # Then requeue it (request ID 3 is failed)
         result = runner.invoke(
-            cli, ["requeue", "request", "--db", str(populated_db), "3"]
+            cli, ["requests", "requeue", "--db", str(populated_db), "3"]
         )
         assert result.exit_code == 0
 
@@ -99,8 +99,8 @@ class TestIntegration:
         result = runner.invoke(
             cli,
             [
+                "results",
                 "export",
-                "jsonl",
                 "--db",
                 str(populated_db),
                 str(output_file),
