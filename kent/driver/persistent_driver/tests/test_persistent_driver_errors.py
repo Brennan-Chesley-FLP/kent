@@ -479,7 +479,7 @@ class TestExponentialBackoff:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
-            TestRequestManager,
+            MockRequestManager,
         )
 
         class AlwaysFailScraper(BaseScraper[str]):
@@ -496,7 +496,7 @@ class TestExponentialBackoff:
             def parse(self, response: Response) -> Generator[None, None, None]:
                 yield None
 
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_error(
             "https://example.com/always-fail",
             RequestTimeoutException(
@@ -556,7 +556,7 @@ class TestRequeueErroredRequests:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
-            TestRequestManager,
+            MockRequestManager,
             create_html_response,
         )
 
@@ -587,7 +587,7 @@ class TestRequeueErroredRequests:
                     )
                 yield None
 
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/requeue-test",
             create_html_response("<html>Test</html>"),

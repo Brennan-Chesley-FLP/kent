@@ -29,7 +29,7 @@ class TestRequestStatusMarking:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
-            TestRequestManager,
+            MockRequestManager,
             create_html_response,
         )
 
@@ -47,7 +47,7 @@ class TestRequestStatusMarking:
             def parse(self, response: Response) -> Generator[None, None, None]:
                 yield None
 
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/page",
             create_html_response("<html>Success</html>"),
@@ -94,7 +94,7 @@ class TestRequestStatusMarking:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
-            TestRequestManager,
+            MockRequestManager,
             create_html_response,
         )
 
@@ -121,7 +121,7 @@ class TestRequestStatusMarking:
                     request_url=response.url,
                 )
 
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/fail",
             create_html_response("<html>No element here</html>"),
@@ -170,7 +170,7 @@ class TestDataStorage:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
-            TestRequestManager,
+            MockRequestManager,
             create_html_response,
         )
 
@@ -205,7 +205,7 @@ class TestDataStorage:
                     }
                 )
 
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/case",
             create_html_response("<html>Case data</html>"),
@@ -260,8 +260,8 @@ class TestHeadersOnlyResponse:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         class SimpleScraper(BaseScraper[str]):
@@ -280,7 +280,7 @@ class TestHeadersOnlyResponse:
                 return []
 
         scraper = SimpleScraper()
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
 
         # Add a mock response with no content (headers only)
         request_manager.add_response(
@@ -373,8 +373,8 @@ class TestDeferredValidationHandling:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         class CaseData(BaseModel):
@@ -413,7 +413,7 @@ class TestDeferredValidationHandling:
             received_data.append(data)
 
         scraper = ValidDataScraper()
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/case",
             MockResponse(
@@ -469,8 +469,8 @@ class TestDeferredValidationHandling:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         class StrictCaseData(BaseModel):
@@ -516,7 +516,7 @@ class TestDeferredValidationHandling:
             invalid_data_received.append(data)
 
         scraper = InvalidDataScraper()
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/case",
             MockResponse(
@@ -579,8 +579,8 @@ class TestNonNavigatingHandling:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         collected_data: list[dict] = []
@@ -622,7 +622,7 @@ class TestNonNavigatingHandling:
             collected_data.append(data)
 
         scraper = NonNavScraper()
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/main",
             MockResponse(content=b"<html>Main page</html>", status_code=200),
@@ -683,8 +683,8 @@ class TestNonNavigatingHandling:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         class AccumulatingScraper(BaseScraper[dict]):
@@ -730,7 +730,7 @@ class TestNonNavigatingHandling:
             results.append(data)
 
         scraper = AccumulatingScraper()
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/listing",
             MockResponse(content=b"<html>Listing</html>", status_code=200),

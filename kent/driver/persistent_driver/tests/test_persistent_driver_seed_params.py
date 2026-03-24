@@ -32,7 +32,7 @@ from kent.data_types import (
 )
 from kent.driver.persistent_driver.persistent_driver import PersistentDriver
 from kent.driver.persistent_driver.testing import (
-    TestRequestManager,
+    MockRequestManager,
     create_html_response,
 )
 
@@ -108,9 +108,9 @@ class MixedEntryScraper(BaseScraper[dict]):
 # ---------------------------------------------------------------------------
 
 
-def _make_request_manager() -> TestRequestManager:
-    """Build a TestRequestManager that responds to all expected URLs."""
-    manager = TestRequestManager()
+def _make_request_manager() -> MockRequestManager:
+    """Build a MockRequestManager that responds to all expected URLs."""
+    manager = MockRequestManager()
     manager.add_response(
         "https://example.com/justices",
         create_html_response("<html>Justices</html>"),
@@ -152,7 +152,7 @@ async def _store_seed_params(
         await session.commit()
 
 
-def _requested_urls(manager: TestRequestManager) -> set[str]:
+def _requested_urls(manager: MockRequestManager) -> set[str]:
     """Return the set of URLs that were requested."""
     return {r.request.url for r in manager.requests}
 

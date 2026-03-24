@@ -542,8 +542,8 @@ class TestGracefulShutdownSigterm:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         # Track how many requests were processed
@@ -581,7 +581,7 @@ class TestGracefulShutdownSigterm:
                 return []
 
         scraper = MultiPageScraper()
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
 
         # Add mock responses for many pages
         for i in range(1, 20):
@@ -657,8 +657,8 @@ class TestGracefulShutdownSigterm:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         class SimpleScraper(BaseScraper[str]):
@@ -676,7 +676,7 @@ class TestGracefulShutdownSigterm:
                 return []
 
         scraper = SimpleScraper()
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com",
             MockResponse(content=b"<html></html>", status_code=200),
@@ -725,8 +725,8 @@ class TestGracefulShutdownSigterm:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         completed_urls: list[str] = []
@@ -760,7 +760,7 @@ class TestGracefulShutdownSigterm:
                 return []
 
         scraper = MultiStepScraper()
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
 
         # Add responses
         request_manager.add_response(
@@ -803,7 +803,7 @@ class TestGracefulShutdownSigterm:
         # Second run - should pick up where we left off
         # Need a fresh scraper instance
         scraper2 = MultiStepScraper()
-        request_manager2 = TestRequestManager()
+        request_manager2 = MockRequestManager()
 
         request_manager2.add_response(
             "https://example.com/start",

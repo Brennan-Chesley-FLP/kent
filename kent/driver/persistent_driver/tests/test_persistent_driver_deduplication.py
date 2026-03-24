@@ -625,7 +625,7 @@ class TestRequestLineageTracking:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
-            TestRequestManager,
+            MockRequestManager,
             create_html_response,
         )
 
@@ -663,7 +663,7 @@ class TestRequestLineageTracking:
                 yield None
 
         # Create request manager with mock responses
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/listing",
             create_html_response("<html>Listing</html>"),
@@ -733,8 +733,8 @@ class TestRequestLineageTracking:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
             create_html_response,
         )
 
@@ -773,7 +773,7 @@ class TestRequestLineageTracking:
                 yield None
 
         # Create request manager with mock responses
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/index",
             create_html_response("<html>Index</html>"),

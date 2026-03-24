@@ -1,7 +1,7 @@
 """Testing utilities for LocalDevDriver.
 
 This module provides testing infrastructure for LocalDevDriver tests:
-- TestRequestManager: A mock request manager for testing
+- MockRequestManager: A mock request manager for testing
 - Helper functions for creating test fixtures
 """
 
@@ -41,7 +41,7 @@ class MockResponse:
             self.text = self.content.decode("utf-8", errors="replace")
 
 
-class TestRequestManager(AsyncRequestManager):
+class MockRequestManager(AsyncRequestManager):
     """Mock request manager for testing that provides canned responses.
 
     This request manager allows tests to:
@@ -51,7 +51,7 @@ class TestRequestManager(AsyncRequestManager):
     - Verify request ordering and parameters
 
     Example:
-        manager = TestRequestManager()
+        manager = MockRequestManager()
         manager.add_response(
             "https://example.com/page1",
             MockResponse(content=b"<html>Page 1</html>")

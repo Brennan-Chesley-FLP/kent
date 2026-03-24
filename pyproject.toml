@@ -74,6 +74,8 @@ markers = [
 ]
 filterwarnings = [
     "ignore:'count' is passed as positional argument:DeprecationWarning",
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+    "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning",
 ]
 
 [tool.setuptools]

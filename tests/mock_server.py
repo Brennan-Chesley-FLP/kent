@@ -16,8 +16,8 @@ from datetime import date
 
 from aiohttp import web
 
-same_url_search_count_key: web.AppKey[int] = web.AppKey(
-    "same_url_search_count", int
+same_url_search_count_key: web.AppKey[list[int]] = web.AppKey(
+    "same_url_search_count", list
 )
 
 
@@ -940,7 +940,7 @@ async def handle_session_tree_leaf(request: web.Request) -> web.Response:
 
 async def handle_same_url_search_get(request: web.Request) -> web.Response:
     """GET /same-url-search — form with a submit button that POSTs to the same URL."""
-    request.app[same_url_search_count_key] += 1
+    request.app[same_url_search_count_key][0] += 1
     html = """<html>
 <head><title>Same URL Search</title></head>
 <body>
@@ -956,7 +956,7 @@ async def handle_same_url_search_get(request: web.Request) -> web.Response:
 
 async def handle_same_url_search_post(request: web.Request) -> web.Response:
     """POST /same-url-search — returns search results page."""
-    request.app[same_url_search_count_key] += 1
+    request.app[same_url_search_count_key][0] += 1
     html = """<html>
 <head><title>Same URL Search Results</title></head>
 <body>
@@ -974,7 +974,7 @@ def create_app() -> web.Application:
         Configured aiohttp Application.
     """
     app = web.Application()
-    app[same_url_search_count_key] = 0
+    app[same_url_search_count_key] = [0]
     app.router.add_get("/cases", handle_cases_list)
     app.router.add_get("/cases/{docket}", handle_case_detail)
     app.router.add_get("/api/cases/{docket}", handle_case_api)

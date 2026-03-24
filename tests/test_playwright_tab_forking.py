@@ -276,4 +276,4 @@ class TestPlaywrightUnroute:
                 # 1 GET (entry point) + 1 POST (form submit).
                 # If route interception leaked, the POST would have been
                 # served from cache and this count would be 1.
-                assert bug_court_server.app[same_url_search_count_key] == 2
+                assert bug_court_server.app[same_url_search_count_key][0] == 2

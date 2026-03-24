@@ -26,10 +26,42 @@ from kent.common.exceptions import (
 from kent.data_types import BaseRequest, Response
 
 if TYPE_CHECKING:
+    from http.cookiejar import CookieJar
+
     from pyrate_limiter import Limiter, Rate
 
 
 logger = logging.getLogger(__name__)
+
+
+def _merge_cookies_into_headers(
+    cookies: dict[str, str] | CookieJar | None,
+    headers: dict[str, Any],
+) -> None:
+    """Merge per-request cookies into a Cookie header.
+
+    httpx deprecated the per-request ``cookies`` kwarg.  This helper
+    serialises cookies into the ``Cookie`` header instead.
+    """
+    if not cookies:
+        return
+
+    from http.cookiejar import CookieJar
+
+    if isinstance(cookies, CookieJar):
+        pairs = [f"{c.name}={c.value}" for c in cookies]
+    else:
+        pairs = [f"{k}={v}" for k, v in cookies.items()]
+
+    if not pairs:
+        return
+
+    cookie_str = "; ".join(pairs)
+    for k in headers:
+        if k.lower() == "cookie":
+            headers[k] = f"{headers[k]}; {cookie_str}"
+            return
+    headers["Cookie"] = cookie_str
 
 
 class SyncRequestManager:
@@ -180,12 +212,14 @@ class SyncRequestManager:
         else:
             client = self._client_for(http_params.verify)
 
+        headers = dict(http_params.headers) if http_params.headers else {}
+        _merge_cookies_into_headers(http_params.cookies, headers)
+
         try:
             http_response = client.request(
                 method=http_params.method.value,
                 url=http_params.url,
-                headers=http_params.headers,
-                cookies=http_params.cookies,
+                headers=headers,
                 content=http_params.data
                 if isinstance(http_params.data, bytes)
                 else None,
@@ -381,13 +415,15 @@ class AsyncRequestManager:
             else None
         )
 
+        headers = dict(http_params.headers) if http_params.headers else {}
+        _merge_cookies_into_headers(http_params.cookies, headers)
+
         # Make the HTTP request
         try:
             http_response = await client.request(
                 method=http_params.method.value,
                 url=http_params.url,
-                headers=http_params.headers,
-                cookies=http_params.cookies,
+                headers=headers,
                 content=content_param,
                 data=data_param,
             )

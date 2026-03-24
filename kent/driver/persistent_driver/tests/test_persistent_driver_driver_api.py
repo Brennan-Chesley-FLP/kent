@@ -29,8 +29,8 @@ class TestDevDriverVsOtherDrivers:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         # Track results from each driver
@@ -71,8 +71,8 @@ class TestDevDriverVsOtherDrivers:
                     }
                 )
 
-        def create_request_manager() -> TestRequestManager:
-            request_manager = TestRequestManager()
+        def create_request_manager() -> MockRequestManager:
+            request_manager = MockRequestManager()
             request_manager.add_response(
                 "https://example.com/cases",
                 MockResponse(
@@ -152,8 +152,8 @@ class TestDevDriverVsOtherDrivers:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
+            MockRequestManager,
             MockResponse,
-            TestRequestManager,
         )
 
         class ResultProducingScraper(BaseScraper[dict]):
@@ -172,7 +172,7 @@ class TestDevDriverVsOtherDrivers:
                     yield ParsedData({"id": i, "value": f"item_{i}"})
 
         scraper = ResultProducingScraper()
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/data",
             MockResponse(content=b"<html>Data</html>", status_code=200),

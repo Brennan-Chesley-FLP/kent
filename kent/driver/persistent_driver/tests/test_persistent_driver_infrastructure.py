@@ -462,7 +462,7 @@ class TestCompressionRoundTrip:
             PersistentDriver,
         )
         from kent.driver.persistent_driver.testing import (
-            TestRequestManager,
+            MockRequestManager,
             create_html_response,
         )
 
@@ -483,7 +483,7 @@ class TestCompressionRoundTrip:
             def parse(self, response: Response) -> Generator[None, None, None]:
                 yield None
 
-        request_manager = TestRequestManager()
+        request_manager = MockRequestManager()
         request_manager.add_response(
             "https://example.com/large",
             create_html_response(large_html),
