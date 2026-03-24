@@ -63,6 +63,7 @@ dev = [
     "sphinx-autobuild>=2024.10.3",
     "pytest-xdist>=3.8.0",
     "freezegun>=1.5.5",
+    "hypothesis>=6.151.9",
 ]
 
 [tool.pytest.ini_options]

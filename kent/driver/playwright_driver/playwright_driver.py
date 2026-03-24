@@ -235,7 +235,12 @@ class WorkerPage:
 
     async def reset_for_reuse(self) -> None:
         """Lightweight cleanup between requests."""
+        # Clear before navigation to discard stale events from the prior
+        # page's in-flight sub-resources that may land during the goto.
+        self.clear_request_state()
         await self.page.goto("about:blank", wait_until="commit")
+        # Clear again to remove any events fired by the about:blank
+        # navigation itself.
         self.clear_request_state()
 
     async def close(self) -> None:
@@ -705,7 +710,14 @@ class PlaywrightDriver(
             worker_id: Identifier of the calling worker.
         """
         wp = await self._acquire_worker_page(worker_id)
-        await wp.reset_for_reuse()
+        try:
+            await wp.reset_for_reuse()
+        except Exception as e:
+            # about:blank navigation can fail if the prior page's JS
+            # triggered a navigation.  Clear state anyway and proceed —
+            # the upcoming real navigation will replace the page content.
+            logger.debug(f"reset_for_reuse failed for worker {worker_id}: {e}")
+            wp.clear_request_state()
         wp.current_parent_request_id = request_id
         page = wp.page
 
@@ -835,6 +847,7 @@ class PlaywrightDriver(
                     )
 
                 # Process await_list if continuation has one (skip on nav error)
+                await_list_error: PlaywrightTimeoutError | None = None
                 if continuation_name and nav_error is None:
                     continuation = getattr(
                         self.scraper, continuation_name, None
@@ -842,11 +855,14 @@ class PlaywrightDriver(
                     if continuation:
                         metadata = get_step_metadata(continuation)
                         if metadata and metadata.await_list:
-                            await self._process_await_list(
-                                page, metadata.await_list
-                            )
+                            try:
+                                await self._process_await_list(
+                                    page, metadata.await_list
+                                )
+                            except PlaywrightTimeoutError as e:
+                                await_list_error = e
 
-                # Snapshot DOM (always — even on nav error, for debugging)
+                # Snapshot DOM (always — even on timeout, for debugging)
                 html_content = await page.content()
 
                 # Create Response object
@@ -867,8 +883,10 @@ class PlaywrightDriver(
                     speculation_outcome=None,
                 )
 
-                # Store incidental requests from this worker's page
-                for incidental in wp.incidental_requests:
+                # Store incidental requests from this worker's page.
+                # Snapshot the list to avoid iterating a live list that
+                # on_response callbacks may still be appending to.
+                for incidental in list(wp.incidental_requests):
                     await self.db.insert_incidental_request(
                         parent_request_id=request_id, **incidental
                     )
@@ -876,6 +894,10 @@ class PlaywrightDriver(
                 # Re-raise navigation error after storing response
                 if nav_error is not None:
                     raise nav_error
+
+                # Re-raise await_list timeout after storing response
+                if await_list_error is not None:
+                    raise await_list_error
 
                 # Process continuation if present
                 if continuation_name:
