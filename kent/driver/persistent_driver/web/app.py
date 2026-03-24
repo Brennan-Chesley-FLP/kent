@@ -179,8 +179,8 @@ class RunManager:
             SQLManager,
         )
         from kent.driver.persistent_driver.web.archive import (
+            UuidAsyncArchiveHandler,
             get_storage_dir_for_run,
-            uuid_archive_callback,
         )
 
         async with self._lock:
@@ -233,8 +233,7 @@ class RunManager:
                 **driver_kwargs,
             )
 
-            # Set the custom archive callback
-            driver.on_archive = uuid_archive_callback
+            driver.archive_handler = UuidAsyncArchiveHandler(storage_dir)
 
             run_info = RunInfo(
                 run_id=run_id,
@@ -276,8 +275,8 @@ class RunManager:
             SQLManager,
         )
         from kent.driver.persistent_driver.web.archive import (
+            UuidAsyncArchiveHandler,
             get_storage_dir_for_run,
-            uuid_archive_callback,
         )
 
         # Close any read-only connection before loading (driver will take over)
@@ -344,8 +343,7 @@ class RunManager:
                 **driver_kwargs,
             )
 
-            # Set the custom archive callback
-            driver.on_archive = uuid_archive_callback
+            driver.archive_handler = UuidAsyncArchiveHandler(storage_dir)
 
             run_info.driver = driver
             run_info.status = "loaded"

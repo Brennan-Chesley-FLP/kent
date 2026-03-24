@@ -321,16 +321,19 @@ class TestSyncDriverArchiving:
             assert ".pdf" in file_path.name
 
     def test_save_file_method_with_explicit_filename(self, temp_storage: Path):
-        """The default_archive_callback shall extract filename from URL path."""
-        from kent.driver.sync_driver import (
-            default_archive_callback,
-        )
+        """The LocalSyncArchiveHandler shall extract filename from URL path."""
+        from kent.driver.archive_handler import LocalSyncArchiveHandler
 
+        handler = LocalSyncArchiveHandler(temp_storage)
         content = b"test content"
         url = "http://example.com/files/test.pdf"
 
-        file_url = default_archive_callback(
-            content, url, expected_type="pdf", storage_dir=temp_storage
+        file_url = handler.save(
+            url=url,
+            deduplication_key=None,
+            expected_type="pdf",
+            hash_header_value=None,
+            content=content,
         )
 
         file_path = Path(file_url)
@@ -339,16 +342,19 @@ class TestSyncDriverArchiving:
         assert file_path.read_bytes() == content
 
     def test_save_file_method_generates_filename(self, temp_storage: Path):
-        """The default_archive_callback shall generate filename when URL has no path."""
-        from kent.driver.sync_driver import (
-            default_archive_callback,
-        )
+        """The LocalSyncArchiveHandler shall generate filename when URL has no path."""
+        from kent.driver.archive_handler import LocalSyncArchiveHandler
 
+        handler = LocalSyncArchiveHandler(temp_storage)
         content = b"test content"
         url = "http://example.com/"
 
-        file_url = default_archive_callback(
-            content, url, expected_type="pdf", storage_dir=temp_storage
+        file_url = handler.save(
+            url=url,
+            deduplication_key=None,
+            expected_type="pdf",
+            hash_header_value=None,
+            content=content,
         )
 
         file_path = Path(file_url)
@@ -358,16 +364,19 @@ class TestSyncDriverArchiving:
         assert file_path.read_bytes() == content
 
     def test_save_file_method_handles_audio_type(self, temp_storage: Path):
-        """The default_archive_callback shall use .mp3 extension for audio type."""
-        from kent.driver.sync_driver import (
-            default_archive_callback,
-        )
+        """The LocalSyncArchiveHandler shall use .mp3 extension for audio type."""
+        from kent.driver.archive_handler import LocalSyncArchiveHandler
 
+        handler = LocalSyncArchiveHandler(temp_storage)
         content = b"test audio"
         url = "http://example.com/"
 
-        file_url = default_archive_callback(
-            content, url, expected_type="audio", storage_dir=temp_storage
+        file_url = handler.save(
+            url=url,
+            deduplication_key=None,
+            expected_type="audio",
+            hash_header_value=None,
+            content=content,
         )
 
         file_path = Path(file_url)

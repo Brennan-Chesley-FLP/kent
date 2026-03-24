@@ -483,10 +483,14 @@ def _run_sync(
     *,
     skip_archive: bool = False,
 ) -> None:
+    from kent.driver.archive_handler import NoDownloadsSyncArchiveHandler
     from kent.driver.sync_driver import SyncDriver
 
+    archive_handler = NoDownloadsSyncArchiveHandler() if skip_archive else None
     driver = SyncDriver(
-        scraper=scraper, storage_dir=storage_dir, skip_archive=skip_archive
+        scraper=scraper,
+        storage_dir=storage_dir,
+        archive_handler=archive_handler,
     )
     driver.seed_params = seed_params
     driver.run()
@@ -501,14 +505,19 @@ def _run_async(
     *,
     skip_archive: bool = False,
 ) -> None:
+    from kent.driver.archive_handler import NoDownloadsAsyncArchiveHandler
     from kent.driver.async_driver import AsyncDriver
+
+    archive_handler = (
+        NoDownloadsAsyncArchiveHandler() if skip_archive else None
+    )
 
     async def _go() -> None:
         driver = AsyncDriver(
             scraper=scraper,
             storage_dir=storage_dir,
             num_workers=workers,
-            skip_archive=skip_archive,
+            archive_handler=archive_handler,
         )
         driver.seed_params = seed_params
         await driver.run()
@@ -553,7 +562,12 @@ def _run_persistent(
         if max_workers is not None:
             open_kwargs["max_workers"] = max_workers
         async with PersistentDriver.open(**open_kwargs) as driver:
-            driver.skip_archive = skip_archive
+            if skip_archive:
+                from kent.driver.archive_handler import (
+                    NoDownloadsAsyncArchiveHandler,
+                )
+
+                driver.archive_handler = NoDownloadsAsyncArchiveHandler()
             await driver.run()
 
     asyncio.run(_go())
@@ -613,7 +627,12 @@ def _run_playwright(
         if max_workers is not None:
             open_kwargs["max_workers"] = max_workers
         async with PlaywrightDriver.open(**open_kwargs) as driver:
-            driver.skip_archive = skip_archive
+            if skip_archive:
+                from kent.driver.archive_handler import (
+                    NoDownloadsAsyncArchiveHandler,
+                )
+
+                driver.archive_handler = NoDownloadsAsyncArchiveHandler()
             await driver.run()
 
     asyncio.run(_go())

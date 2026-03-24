@@ -734,15 +734,29 @@ class PlaywrightDriver(
             # Archive requests: click triggers a download, not a navigation
             is_archive = getattr(request, "archive", False)
             if is_archive and parent_request_id and request.via is not None:
-                if self.skip_archive:
+                dedup_key = (
+                    request.deduplication_key
+                    if isinstance(request.deduplication_key, str)
+                    else None
+                )
+                expected_type = getattr(request, "expected_type", None)
+
+                decision = await self.archive_handler.should_download(
+                    url=request.request.url,
+                    deduplication_key=dedup_key,
+                    expected_type=expected_type,
+                    hash_header_value=None,
+                )
+
+                if not decision.download:
                     response: Response = ArchiveResponse(
-                        status_code=0,
+                        status_code=200,
                         url=request.request.url,
                         content=b"",
                         text="",
                         headers={},
                         request=request,
-                        file_url="skipped",
+                        file_url=decision.file_url,
                     )
                 else:
                     success = await self._setup_tab_with_parent_response(
@@ -755,7 +769,6 @@ class PlaywrightDriver(
 
                     download = await self._execute_via_download(request, page)
 
-                    # Read downloaded content and save via on_archive callback
                     import hashlib as _hashlib
 
                     download_path = await download.path()
@@ -764,22 +777,20 @@ class PlaywrightDriver(
                             f"Archive request {request_id}: download produced no file"
                         )
                     file_content = download_path.read_bytes()
-                    expected_type = getattr(request, "expected_type", None)
 
-                    # Build a unique URL so on_archive derives a unique filename.
-                    # Use the download's suggested_filename (from Content-Disposition)
-                    # for the extension, with a SHA-256 content hash to avoid collisions.
+                    # Build a unique URL so the handler derives a unique filename.
                     suggested = download.suggested_filename
                     ext = Path(suggested).suffix if suggested else ""
                     content_hash = _hashlib.sha256(file_content).hexdigest()
                     unique_filename = f"{content_hash}{ext}"
                     archive_url = f"{request.request.url}/{unique_filename}"
 
-                    file_url = await self.on_archive(
-                        file_content,
-                        archive_url,
-                        expected_type,
-                        self.storage_dir,
+                    file_url = await self.archive_handler.save(
+                        url=archive_url,
+                        deduplication_key=dedup_key,
+                        expected_type=expected_type,
+                        hash_header_value=None,
+                        content=file_content,
                     )
 
                     response = ArchiveResponse(

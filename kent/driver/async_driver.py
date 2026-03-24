@@ -18,7 +18,6 @@ from collections.abc import Awaitable, Callable, Generator
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Any, Generic, TypeVar
-from urllib.parse import urlparse
 
 from typing_extensions import assert_never
 
@@ -51,11 +50,17 @@ from kent.data_types import (
     BaseRequest,
     BaseScraper,
     EstimateData,
+    HttpMethod,
+    HTTPRequestParams,
     ParsedData,
     Request,
     Response,
     ScraperYield,
     SkipDeduplicationCheck,
+)
+from kent.driver.archive_handler import (
+    AsyncArchiveHandler,
+    LocalAsyncArchiveHandler,
 )
 from kent.driver.sync_driver import SpeculationState
 
@@ -93,41 +98,6 @@ def log_and_validate_invalid_data(data: DeferredValidation) -> None:
         )
 
 
-async def default_archive_callback(
-    content: bytes, url: str, expected_type: str | None, storage_dir: Path
-) -> str:
-    """Default async callback for archiving downloaded files.
-
-    This callback extracts a filename from the URL or generates one based on
-    the expected file type, then saves the file to the storage directory.
-
-    Args:
-        content: The binary file content.
-        url: The URL the file was downloaded from.
-        expected_type: Optional hint about the file type.
-        storage_dir: Directory where files should be saved.
-
-    Returns:
-        The local file path where the file was saved.
-    """
-    # Extract filename from URL or generate one
-    parsed_url = urlparse(url)
-    path_parts = Path(parsed_url.path).parts
-    # Filter out empty strings, '.', and '/' from path parts
-    valid_parts = [p for p in path_parts if p and p not in (".", "/")]
-
-    if valid_parts:
-        filename = valid_parts[-1]
-    else:
-        # Generate a filename based on expected_type
-        ext = {"pdf": ".pdf", "audio": ".mp3"}.get(expected_type or "", "")
-        filename = f"download_{hash(url)}{ext}"
-
-    file_path = storage_dir / filename
-    file_path.write_bytes(content)
-    return str(file_path)
-
-
 class AsyncDriver(Generic[ScraperReturnDatatype]):
     """Asynchronous driver for running scrapers with multiple workers.
 
@@ -163,9 +133,7 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         | None = None,
         on_transient_exception: Callable[[TransientException], Awaitable[bool]]
         | None = None,
-        on_archive: Callable[[bytes, str, str | None, Path], Awaitable[str]]
-        | None = None,
-        skip_archive: bool = False,
+        archive_handler: AsyncArchiveHandler | None = None,
         on_run_start: Callable[[str], Awaitable[None]] | None = None,
         on_run_complete: Callable[
             [str, str, Exception | None], Awaitable[None]
@@ -195,11 +163,8 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
                 during HTTP requests. The callback receives the exception and should return True
                 to continue scraping or False to stop. If not provided, exceptions propagate
                 normally and stop the scraper.
-            on_archive: Optional async callback invoked when files are archived. Receives content
-                (bytes), url (str), expected_type (str | None), and storage_dir (Path). Should return
-                the local file path where the file was saved. If not provided, uses default_archive_callback.
-            skip_archive: If True, archive requests return immediately with an empty mock
-                response and ``file_url="skipped"`` instead of fetching the file.
+            archive_handler: Handler for archive requests. Controls whether files are
+                downloaded and how they are saved. If not provided, uses LocalAsyncArchiveHandler.
             on_run_start: Optional async callback invoked when the scraper run starts. Receives
                 scraper_name (str).
             on_run_complete: Optional async callback invoked when the scraper run completes. Receives
@@ -242,8 +207,9 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         self.on_structural_error = on_structural_error
         self.on_invalid_data = on_invalid_data
         self.on_transient_exception = on_transient_exception
-        self.on_archive = on_archive or default_archive_callback
-        self.skip_archive = skip_archive
+        self.archive_handler = archive_handler or LocalAsyncArchiveHandler(
+            self.storage_dir
+        )
         self.on_run_start = on_run_start
         self.on_run_complete = on_run_complete
         self.duplicate_check = duplicate_check
@@ -765,12 +731,9 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
     ) -> ArchiveResponse:
         """Fetch an archive Request, download the file, and return an ArchiveResponse.
 
-        This method fetches the file, calls the on_archive callback to save it
-        to local storage, and returns an ArchiveResponse with the file_url field
-        populated.
-
-        If ``skip_archive`` is True, the HTTP fetch is skipped entirely and a
-        mock response with empty content and ``file_url="skipped"`` is returned.
+        Uses the archive_handler to decide whether to download. If the request
+        has an archive_hash_header, a HEAD request is issued first to extract
+        the header value for the handler's decision.
 
         Args:
             request: The archive Request to fetch (must have archive=True).
@@ -778,25 +741,56 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         Returns:
             ArchiveResponse containing the HTTP response data and local file path.
         """
-        if self.skip_archive:
+        # Extract hash header value via HEAD if requested
+        hash_header_value = None
+        if request.archive_hash_header:
+            try:
+                head_request = BaseRequest(
+                    request=HTTPRequestParams(
+                        method=HttpMethod.HEAD,
+                        url=request.request.url,
+                    ),
+                    continuation="",
+                )
+                head_response = await self.resolve_request(head_request)
+                hash_header_value = head_response.headers.get(
+                    request.archive_hash_header
+                )
+            except Exception:
+                pass
+
+        dedup_key = (
+            request.deduplication_key
+            if isinstance(request.deduplication_key, str)
+            else None
+        )
+
+        decision = await self.archive_handler.should_download(
+            url=request.request.url,
+            deduplication_key=dedup_key,
+            expected_type=request.expected_type,
+            hash_header_value=hash_header_value,
+        )
+
+        if not decision.download:
             return ArchiveResponse(
-                status_code=0,
+                status_code=200,
                 headers={},
                 content=b"",
                 text="",
                 url=request.request.url,
                 request=request,
-                file_url="skipped",
+                file_url=decision.file_url,
             )
 
         http_response = await self.resolve_request(request)
 
-        # Use on_archive callback to save the file
-        file_url = await self.on_archive(
-            http_response.content,
-            request.request.url,
-            request.expected_type,
-            self.storage_dir,
+        file_url = await self.archive_handler.save(
+            url=request.request.url,
+            deduplication_key=dedup_key,
+            expected_type=request.expected_type,
+            hash_header_value=hash_header_value,
+            content=http_response.content,
         )
 
         return ArchiveResponse(

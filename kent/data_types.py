@@ -1057,6 +1057,7 @@ class Request(BaseRequest):
     nonnavigating: bool = False
     archive: bool = False
     expected_type: str | None = None
+    archive_hash_header: str | None = None
 
     def __post_init__(self) -> None:
         # If archive=True and priority was left at the BaseRequest default (9),
@@ -1097,6 +1098,7 @@ class Request(BaseRequest):
             nonnavigating=self.nonnavigating,
             archive=self.archive,
             expected_type=self.expected_type,
+            archive_hash_header=self.archive_hash_header,
             bypass_rate_limit=self.bypass_rate_limit,
         )
 
@@ -1129,6 +1131,7 @@ class Request(BaseRequest):
             nonnavigating=self.nonnavigating,
             archive=self.archive,
             expected_type=self.expected_type,
+            archive_hash_header=self.archive_hash_header,
             bypass_rate_limit=self.bypass_rate_limit,
         )
 
@@ -1170,6 +1173,20 @@ class ArchiveResponse(Response):
         file_url: Local file system path where the downloaded file was stored.
     """
 
+    file_url: str = ""
+
+
+@dataclass
+class ArchiveDecision:
+    """Decision from an ArchiveHandler about whether to download a file.
+
+    Attributes:
+        download: If True, the driver should proceed with downloading.
+        file_url: When download=False, the location of the existing file.
+            When download=True, may be empty (save() determines final path).
+    """
+
+    download: bool
     file_url: str = ""
 
 
