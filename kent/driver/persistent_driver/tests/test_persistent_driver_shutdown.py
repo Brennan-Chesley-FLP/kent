@@ -775,7 +775,7 @@ class TestGracefulShutdownSigterm:
                 ),
             )
 
-        # First run - interrupt early
+        # First run - interrupt after at least one request completes
         async with PersistentDriver.open(
             scraper,
             db_path,
@@ -783,13 +783,18 @@ class TestGracefulShutdownSigterm:
             request_manager=request_manager,
         ) as driver:
 
-            async def stop_early():
-                await asyncio.sleep(0.05)
+            async def stop_after_first_completion():
+                # Poll until at least one request has completed, then stop.
+                # This avoids a fixed sleep that races with request processing.
+                for _ in range(200):  # 200 × 10ms = 2s max
+                    await asyncio.sleep(0.01)
+                    if completed_urls:
+                        break
                 driver.stop()
 
             await asyncio.gather(
                 driver.run(setup_signal_handlers=False),
-                stop_early(),
+                stop_after_first_completion(),
             )
 
         initial_count = len(completed_urls)
