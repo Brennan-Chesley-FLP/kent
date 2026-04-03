@@ -275,7 +275,7 @@ class TestSyncDriverArchiving:
         for result in opinion_results:
             file_path = Path(result["opinion_file"])
             assert file_path.exists()
-            assert file_path.parent == temp_storage
+            assert temp_storage in file_path.parents
             assert file_path.suffix == ".pdf"
             # Verify PDF content
             content = file_path.read_bytes()
@@ -298,7 +298,7 @@ class TestSyncDriverArchiving:
         for result in oral_arg_results:
             file_path = Path(result["oral_argument_file"])
             assert file_path.exists()
-            assert file_path.parent == temp_storage
+            assert temp_storage in file_path.parents
             assert file_path.suffix == ".mp3"
             # Verify MP3 content (should have MP3 sync word)
             content = file_path.read_bytes()
@@ -576,12 +576,12 @@ class TestIntegration:
         for result in opinion_results:
             file_path = Path(result["opinion_file"])
             assert file_path.exists()
-            assert file_path.parent == storage_dir
+            assert storage_dir in file_path.parents
 
         for result in oral_arg_results:
             file_path = Path(result["oral_argument_file"])
             assert file_path.exists()
-            assert file_path.parent == storage_dir
+            assert storage_dir in file_path.parents
 
     def test_archive_request_ancestry_preserved(
         self, server_url: str, tmp_path: Path

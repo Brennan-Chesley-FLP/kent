@@ -130,6 +130,11 @@ class LocalSyncArchiveHandler:
         expected_type: str | None,
         hash_header_value: str | None,
     ) -> ArchiveDecision:
+        if deduplication_key:
+            dedup_dir = self.storage_dir / deduplication_key
+            if dedup_dir.is_dir() and any(dedup_dir.iterdir()):
+                existing = next(dedup_dir.iterdir())
+                return ArchiveDecision(download=False, file_url=str(existing))
         return ArchiveDecision(download=True)
 
     def save(
@@ -141,7 +146,12 @@ class LocalSyncArchiveHandler:
         content: bytes,
     ) -> str:
         filename = _filename_from_url(url, expected_type)
-        file_path = self.storage_dir / filename
+        if deduplication_key:
+            target_dir = self.storage_dir / deduplication_key
+            target_dir.mkdir(parents=True, exist_ok=True)
+            file_path = target_dir / filename
+        else:
+            file_path = self.storage_dir / filename
         file_path.write_bytes(content)
         return str(file_path)
 
@@ -159,6 +169,11 @@ class LocalAsyncArchiveHandler:
         expected_type: str | None,
         hash_header_value: str | None,
     ) -> ArchiveDecision:
+        if deduplication_key:
+            dedup_dir = self.storage_dir / deduplication_key
+            if dedup_dir.is_dir() and any(dedup_dir.iterdir()):
+                existing = next(dedup_dir.iterdir())
+                return ArchiveDecision(download=False, file_url=str(existing))
         return ArchiveDecision(download=True)
 
     async def save(
@@ -170,6 +185,11 @@ class LocalAsyncArchiveHandler:
         content: bytes,
     ) -> str:
         filename = _filename_from_url(url, expected_type)
-        file_path = self.storage_dir / filename
+        if deduplication_key:
+            target_dir = self.storage_dir / deduplication_key
+            target_dir.mkdir(parents=True, exist_ok=True)
+            file_path = target_dir / filename
+        else:
+            file_path = self.storage_dir / filename
         file_path.write_bytes(content)
         return str(file_path)

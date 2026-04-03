@@ -444,6 +444,8 @@ class PersistentDriver(
                         bypass_rate_limit=request_data.get(
                             "bypass_rate_limit", False
                         ),
+                        request_type=request_data["request_type"],
+                        expected_type=request_data.get("expected_type"),
                     )
 
             # Discover @speculate functions and seed the queue

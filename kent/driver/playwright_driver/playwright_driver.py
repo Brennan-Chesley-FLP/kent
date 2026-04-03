@@ -1001,91 +1001,127 @@ class PlaywrightDriver(
         Returns:
             The Playwright Download object.
         """
-        if not isinstance(request.via, ViaFormSubmit):
-            raise ValueError(
-                f"Archive download requires ViaFormSubmit, got {type(request.via)}"
-            )
+        if isinstance(request.via, ViaLink):
+            # Link download: click the link, expect a download
+            link_via = request.via
 
-        form_via = request.via
-
-        # Locate form
-        form_element = await page.wait_for_selector(
-            form_via.form_selector, timeout=5000
-        )
-        if not form_element:
-            raise HTMLStructuralAssumptionException(
-                selector=form_via.form_selector,
-                selector_type="form",
-                description=f"Form selector not found: {form_via.form_selector}",
-                expected_min=1,
-                expected_max=1,
-                actual_count=0,
-                request_url=request.request.url,
-            )
-
-        # Fill form fields (same as _execute_via_navigation)
-        for field_name, field_value in form_via.field_data.items():
-            field_selector = f'[name="{field_name}"]'
-            field_element = await form_element.query_selector(field_selector)
-            if field_element:
-                tag = await field_element.evaluate(
-                    "el => el.tagName.toLowerCase()"
+            try:
+                link_element = await page.wait_for_selector(
+                    link_via.selector, timeout=5000
                 )
-                input_type = await field_element.get_attribute("type")
-                is_visible = await field_element.is_visible()
-                str_value = str(field_value)
-
-                if tag == "select":
-                    await field_element.select_option(value=str_value)
-                elif input_type == "radio":
-                    radio = await form_element.query_selector(
-                        f'[name="{field_name}"][value="{str_value}"]'
+                if not link_element:
+                    raise HTMLStructuralAssumptionException(
+                        selector=link_via.selector,
+                        selector_type="link",
+                        description=f"Link selector not found: {link_via.selector}",
+                        expected_min=1,
+                        expected_max=1,
+                        actual_count=0,
+                        request_url=request.request.url,
                     )
-                    if radio:
-                        await radio.evaluate("(el) => el.checked = true")
-                elif input_type in ("hidden", "submit") or not is_visible:
-                    await field_element.evaluate(
-                        "(el, val) => el.value = val", str_value
-                    )
-                else:
-                    await field_element.fill(str_value)
-
-        # Click submit button, expecting a download instead of navigation
-        if form_via.submit_selector:
-            submit_element = await form_element.query_selector(
-                form_via.submit_selector
-            )
-            if not submit_element:
+            except PlaywrightTimeoutError as e:
                 raise HTMLStructuralAssumptionException(
-                    selector=form_via.submit_selector,
-                    selector_type="submit",
-                    description=f"Submit selector not found: {form_via.submit_selector}",
+                    selector=link_via.selector,
+                    selector_type="link",
+                    description=f"Link selector timeout: {link_via.selector}",
                     expected_min=1,
                     expected_max=1,
                     actual_count=0,
                     request_url=request.request.url,
-                )
+                ) from e
+
             async with page.expect_download() as download_info:
-                await submit_element.click()
+                await link_element.click()
             return await download_info.value
-        else:
-            # Fallback: click first submit element
-            submit_element = await form_element.query_selector(
-                'button[type="submit"], input[type="submit"]'
+
+        elif isinstance(request.via, ViaFormSubmit):
+            form_via = request.via
+
+            # Locate form
+            form_element = await page.wait_for_selector(
+                form_via.form_selector, timeout=5000
             )
-            if not submit_element:
+            if not form_element:
                 raise HTMLStructuralAssumptionException(
                     selector=form_via.form_selector,
                     selector_type="form",
-                    description="No submit button found in form for download",
+                    description=f"Form selector not found: {form_via.form_selector}",
                     expected_min=1,
                     expected_max=1,
                     actual_count=0,
                     request_url=request.request.url,
                 )
-            async with page.expect_download() as download_info:
-                await submit_element.click()
-            return await download_info.value
+
+            # Fill form fields (same as _execute_via_navigation)
+            for field_name, field_value in form_via.field_data.items():
+                field_selector = f'[name="{field_name}"]'
+                field_element = await form_element.query_selector(
+                    field_selector
+                )
+                if field_element:
+                    tag = await field_element.evaluate(
+                        "el => el.tagName.toLowerCase()"
+                    )
+                    input_type = await field_element.get_attribute("type")
+                    is_visible = await field_element.is_visible()
+                    str_value = str(field_value)
+
+                    if tag == "select":
+                        await field_element.select_option(value=str_value)
+                    elif input_type == "radio":
+                        radio = await form_element.query_selector(
+                            f'[name="{field_name}"][value="{str_value}"]'
+                        )
+                        if radio:
+                            await radio.evaluate("(el) => el.checked = true")
+                    elif input_type in ("hidden", "submit") or not is_visible:
+                        await field_element.evaluate(
+                            "(el, val) => el.value = val", str_value
+                        )
+                    else:
+                        await field_element.fill(str_value)
+
+            # Click submit button, expecting a download instead of navigation
+            if form_via.submit_selector:
+                submit_element = await form_element.query_selector(
+                    form_via.submit_selector
+                )
+                if not submit_element:
+                    raise HTMLStructuralAssumptionException(
+                        selector=form_via.submit_selector,
+                        selector_type="submit",
+                        description=f"Submit selector not found: {form_via.submit_selector}",
+                        expected_min=1,
+                        expected_max=1,
+                        actual_count=0,
+                        request_url=request.request.url,
+                    )
+                async with page.expect_download() as download_info:
+                    await submit_element.click()
+                return await download_info.value
+            else:
+                # Fallback: click first submit element
+                submit_element = await form_element.query_selector(
+                    'button[type="submit"], input[type="submit"]'
+                )
+                if not submit_element:
+                    raise HTMLStructuralAssumptionException(
+                        selector=form_via.form_selector,
+                        selector_type="form",
+                        description="No submit button found in form for download",
+                        expected_min=1,
+                        expected_max=1,
+                        actual_count=0,
+                        request_url=request.request.url,
+                    )
+                async with page.expect_download() as download_info:
+                    await submit_element.click()
+                return await download_info.value
+
+        else:
+            raise ValueError(
+                f"Archive download requires ViaLink or ViaFormSubmit, got {type(request.via)}"
+            )
 
     async def _execute_via_navigation(
         self, request: BaseRequest, page: Page

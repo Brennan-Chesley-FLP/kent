@@ -251,10 +251,10 @@ class QueueMixin:
             return None
 
         request_id = row[0]
-        parent_request_id = row[19]  # Last column in RETURNING clause
+        parent_request_id = row[20]  # Last column in RETURNING clause
 
-        # Deserialize using the first 19 columns (excluding parent_request_id)
-        request = self._deserialize_request(row[:19])
+        # Deserialize using the first 20 columns (excluding parent_request_id)
+        request = self._deserialize_request(row[:20])
         return (request_id, request, parent_request_id)
 
     def _deserialize_request(self, row: tuple[Any, ...]) -> BaseRequest:
@@ -287,6 +287,7 @@ class QueueMixin:
             verify_raw,
             via_json_raw,
             bypass_rate_limit_raw,
+            deduplication_key_raw,
         ) = row
 
         # Parse JSON fields
@@ -364,6 +365,7 @@ class QueueMixin:
                 aux_data=aux_data,
                 permanent=permanent,
                 priority=priority,
+                deduplication_key=deduplication_key_raw,
                 archive=True,
                 expected_type=expected_type,
                 via=via,
@@ -378,6 +380,7 @@ class QueueMixin:
                 aux_data=aux_data,
                 permanent=permanent,
                 priority=priority,
+                deduplication_key=deduplication_key_raw,
                 nonnavigating=True,
                 via=via,
                 bypass_rate_limit=bypass_rate_limit,
@@ -391,6 +394,7 @@ class QueueMixin:
                 aux_data=aux_data,
                 permanent=permanent,
                 priority=priority,
+                deduplication_key=deduplication_key_raw,
                 is_speculative=bool(is_speculative),
                 speculation_id=speculation_id,
                 via=via,

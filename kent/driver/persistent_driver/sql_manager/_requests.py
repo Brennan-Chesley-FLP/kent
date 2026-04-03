@@ -166,6 +166,8 @@ class RequestQueueMixin:
         dedup_key: str | None,
         verify: str | None = None,
         bypass_rate_limit: bool = False,
+        request_type: str = "navigating",
+        expected_type: str | None = None,
     ) -> int:
         """Insert an entry point request.
 
@@ -183,6 +185,8 @@ class RequestQueueMixin:
             permanent_json: JSON-encoded permanent data.
             dedup_key: Deduplication key.
             bypass_rate_limit: If True, skip rate limiting for this request.
+            request_type: Type of request (navigating, non_navigating, archive).
+            expected_type: Expected type for archive requests.
 
         Returns:
             The ID of the newly inserted request.
@@ -196,6 +200,7 @@ class RequestQueueMixin:
                     status="pending",
                     priority=priority,
                     queue_counter=queue_counter,
+                    request_type=request_type,
                     method=method,
                     url=url,
                     headers_json=headers_json,
@@ -207,6 +212,7 @@ class RequestQueueMixin:
                     aux_data_json=aux_data_json,
                     permanent_json=permanent_json,
                     deduplication_key=dedup_key,
+                    expected_type=expected_type,
                     created_at_ns=created_at_ns,
                     verify=verify,
                     bypass_rate_limit=bypass_rate_limit,
@@ -248,6 +254,7 @@ class RequestQueueMixin:
                     Request.verify,
                     Request.via_json,
                     Request.bypass_rate_limit,
+                    Request.deduplication_key,
                 )
                 .where(
                     Request.status == "pending",
@@ -327,6 +334,7 @@ class RequestQueueMixin:
                     Request.verify,
                     Request.via_json,
                     Request.bypass_rate_limit,
+                    Request.deduplication_key,
                     Request.parent_request_id,
                 )
             )

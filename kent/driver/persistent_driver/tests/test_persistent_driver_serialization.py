@@ -95,7 +95,7 @@ class TestRequestTypeRoundTrip:
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
-                       bypass_rate_limit
+                       bypass_rate_limit, deduplication_key
                 FROM requests WHERE id = 1
                 """)
             )
@@ -209,7 +209,7 @@ class TestRequestTypeRoundTrip:
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
-                       bypass_rate_limit
+                       bypass_rate_limit, deduplication_key
                 FROM requests WHERE id = 1
                 """)
             )
@@ -318,7 +318,7 @@ class TestRequestTypeRoundTrip:
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
-                       bypass_rate_limit
+                       bypass_rate_limit, deduplication_key
                 FROM requests WHERE id = 1
                 """)
             )
@@ -422,7 +422,7 @@ class TestRequestTypeRoundTrip:
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
-                       bypass_rate_limit
+                       bypass_rate_limit, deduplication_key
                 FROM requests WHERE id = 1
                 """)
             )
@@ -507,7 +507,7 @@ class TestRequestTypeRoundTrip:
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
-                       bypass_rate_limit
+                       bypass_rate_limit, deduplication_key
                 FROM requests WHERE id = 1
                 """)
             )
@@ -599,7 +599,7 @@ class TestRequestTypeRoundTrip:
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
-                       bypass_rate_limit
+                       bypass_rate_limit, deduplication_key
                 FROM requests WHERE id = 1
                 """)
             )
@@ -688,7 +688,7 @@ class TestRequestTypeRoundTrip:
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
-                       bypass_rate_limit
+                       bypass_rate_limit, deduplication_key
                 FROM requests WHERE id = 1
                 """)
             )
@@ -770,7 +770,7 @@ class TestRequestTypeRoundTrip:
                        accumulated_data_json, aux_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
-                       bypass_rate_limit
+                       bypass_rate_limit, deduplication_key
                 FROM requests WHERE id = 1
                 """)
             )
