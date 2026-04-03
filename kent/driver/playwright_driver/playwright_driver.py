@@ -35,6 +35,9 @@ from playwright.async_api import (
     async_playwright,
 )
 from playwright.async_api import (
+    Error as PlaywrightError,
+)
+from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
 from pyrate_limiter import Limiter
@@ -830,7 +833,11 @@ class PlaywrightDriver(
 
                 # Navigate: route-intercept parent's cached page then via,
                 # or navigate directly
-                nav_error: HTMLStructuralAssumptionException | None = None
+                nav_error: (
+                    HTMLStructuralAssumptionException
+                    | TransientException
+                    | None
+                ) = None
                 if parent_request_id and request.via is not None:
                     success = await self._setup_tab_with_parent_response(
                         page, parent_request_id
@@ -841,6 +848,14 @@ class PlaywrightDriver(
                             await self._execute_via_navigation(request, page)
                         except HTMLStructuralAssumptionException as e:
                             nav_error = e
+                        except PlaywrightError as e:
+                            if "NS_ERROR_ABORT" in str(e):
+                                nav_error = TransientException(
+                                    f"Navigation aborted: {e}"
+                                )
+                                nav_error.__cause__ = e
+                            else:
+                                raise
                     else:
                         # Parent has no stored response — fall back to direct URL
                         await page.goto(
@@ -858,7 +873,9 @@ class PlaywrightDriver(
                     )
 
                 # Process await_list if continuation has one (skip on nav error)
-                await_list_error: PlaywrightTimeoutError | None = None
+                await_list_error: (
+                    PlaywrightTimeoutError | TransientException | None
+                ) = None
                 if continuation_name and nav_error is None:
                     continuation = getattr(
                         self.scraper, continuation_name, None
@@ -870,7 +887,10 @@ class PlaywrightDriver(
                                 await self._process_await_list(
                                     page, metadata.await_list
                                 )
-                            except PlaywrightTimeoutError as e:
+                            except (
+                                PlaywrightTimeoutError,
+                                TransientException,
+                            ) as e:
                                 await_list_error = e
 
                 # Snapshot DOM (always — even on timeout, for debugging)
@@ -950,6 +970,14 @@ class PlaywrightDriver(
             # Timeout waiting for selector/load state
             logger.warning(f"Playwright timeout for request {request_id}: {e}")
             raise TransientException(f"Playwright timeout: {e}") from e
+
+        except PlaywrightError as e:
+            if "NS_ERROR_ABORT" in str(e):
+                logger.warning(
+                    f"Navigation aborted for request {request_id}: {e}"
+                )
+                raise TransientException(f"Navigation aborted: {e}") from e
+            raise
 
         except HTMLStructuralAssumptionException:
             # Structural failure - will be handled by autowait if enabled
