@@ -1,0 +1,21 @@
+{% from "_macros.jinja2" import section %}
+{{ section("Totals") }}
+{% for key, value in data.totals.items() %}
+  {{ key }}: {{ value }}
+{% endfor %}
+
+{{ section("By Type") }}
+{% for error_type, counts in data.by_type.items() %}
+
+{{ error_type }}:
+{% for status, count in counts.items() %}
+  {{ status }}: {{ count }}
+{% endfor %}
+{% endfor %}
+{% if data.by_continuation %}
+
+{{ section("By Continuation") }}
+{% for continuation, count in data.by_continuation.items() %}
+  {{ continuation }}: {{ count }}
+{% endfor %}
+{% endif %}

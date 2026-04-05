@@ -1,0 +1,18 @@
+{% from "_macros.jinja2" import section %}
+{{ section("Run Metadata") }}
+{% if data.metadata %}
+{% for key, value in data.metadata.items() %}
+{{ key }}: {{ value }}
+{% endfor %}
+{% else %}
+No metadata found
+{% endif %}
+
+{{ section("Statistics") }}
+Queue Total: {{ data.stats.queue.total }}
+Queue Pending: {{ data.stats.queue.pending }}
+Queue Completed: {{ data.stats.queue.completed }}
+Queue Failed: {{ data.stats.queue.failed }}
+Results Total: {{ data.stats.results.total }}
+Errors Total: {{ data.stats.errors.total }}
+Errors Unresolved: {{ data.stats.errors.unresolved }}

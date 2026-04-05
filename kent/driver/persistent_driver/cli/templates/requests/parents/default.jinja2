@@ -1,0 +1,13 @@
+Ancestry for request {{ data.request_id }} ({{ data["items"] | length }} levels):
+
+{% for entry in data["items"] %}
+{% set indent = "  " * entry.depth %}
+{% set marker = "*" if entry.depth == 0 else " " %}
+{% if entry.parent_request_id is not none %}
+{% set parent_info = " (parent: " ~ entry.parent_request_id ~ ")" %}
+{% else %}
+{% set parent_info = " (root)" %}
+{% endif %}
+{{ indent }}{{ marker }} [{{ entry.id }}] {{ entry.continuation }} [{{ entry.status }}]{{ parent_info }}
+{{ indent }}  {{ entry.url }}
+{% endfor %}

@@ -1,0 +1,7 @@
+{% for continuation, status_counts in data["items"].items() %}
+
+=== {{ continuation }} ===
+{% for status, count in status_counts.items() %}
+  {{ status }}: {{ count }}
+{% endfor %}
+{% endfor %}

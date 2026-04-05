@@ -1,0 +1,11 @@
+ID: {{ data.id }}
+Status: {{ data.status }}
+URL: {{ data.url }}
+Method: {{ data.method }}
+Continuation: {{ data.continuation }}
+Priority: {{ data.priority }}
+Retry Count: {{ data.retry_count }}
+Created At: {{ data.created_at }}
+{% if data.completed_at %}
+Completed At: {{ data.completed_at }}
+{% endif %}

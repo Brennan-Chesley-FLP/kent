@@ -1,0 +1,16 @@
+{% from "_macros.jinja2" import section %}
+{{ section("Estimate Checks") }}
+
+{% if not data["items"] %}
+{% if data.failures_only %}
+No failed estimates.
+{% else %}
+No estimates recorded.
+{% endif %}
+{% else %}
+{% for est in data["items"] %}
+  [{{ "PASS" if est.status == "pass" else "FAIL" }}] request_id={{ est.request_id }} types=[{{ est.expected_types | join(", ") }}] expected={{ est.min_count }}-{{ est.max_count if est.max_count is not none else "unbounded" }} actual={{ est.actual_count }}
+{% endfor %}
+
+Summary: {{ data.summary.total }} estimates, {{ data.summary.passed }} passed, {{ data.summary.failed }} failed
+{% endif %}

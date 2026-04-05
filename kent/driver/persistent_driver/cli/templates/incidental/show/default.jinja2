@@ -1,0 +1,19 @@
+ID: {{ data.id }}
+Parent Request ID: {{ data.parent_request_id }}
+Resource Type: {{ data.resource_type }}
+Method: {{ data.method }}
+URL: {{ data.url }}
+{% if data.status_code %}
+Status Code: {{ data.status_code }}
+{% endif %}
+{% if data.content_size_original %}
+Original Size: {{ data.content_size_original }} bytes
+{% endif %}
+{% if data.content_size_compressed %}
+Compressed Size: {{ data.content_size_compressed }} bytes
+{% endif %}
+From Cache: {{ "Yes" if data.from_cache else "No" }}
+{% if data.failure_reason %}
+Failure Reason: {{ data.failure_reason }}
+{% endif %}
+Created At: {{ data.created_at }}

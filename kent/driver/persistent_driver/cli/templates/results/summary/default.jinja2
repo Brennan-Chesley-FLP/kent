@@ -1,0 +1,7 @@
+{% for result_type, counts in data.items() %}
+
+{{ result_type }}:
+{% for status, count in counts.items() %}
+  {{ status }}: {{ count }}
+{% endfor %}
+{% endfor %}

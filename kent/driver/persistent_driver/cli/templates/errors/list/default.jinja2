@@ -1,0 +1,12 @@
+{% from "_macros.jinja2" import pagination %}
+{% set rows = data["items"] %}
+{{ pagination(data.total, rows | length, data.offset, data.limit) }}
+{% if rows %}
+{{ "id" | ljust(15) }}  {{ "type" | ljust(15) }}  {{ "message" | ljust(50) }}  {{ "resolved" | ljust(15) }}
+{{ "-" * 101 }}
+{% for e in rows %}
+{{ e.id | string | ljust(15) }}  {{ e.error_type | string | ljust(15) }}  {{ e.message | truncate_str(50) | ljust(50) }}  {{ e.is_resolved | checkmark | ljust(15) }}
+{% endfor %}
+{% else %}
+No errors found
+{% endif %}

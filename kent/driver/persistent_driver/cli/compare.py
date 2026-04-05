@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 
 import click
@@ -12,8 +11,8 @@ from kent.driver.persistent_driver.cli import (
     _format_data_diff,
     _resolve_db_path,
     cli,
-    format_output,
 )
+from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 # =========================================================================
@@ -39,10 +38,14 @@ from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
     help="Sample N requests and follow their entire request trees",
 )
 @click.option(
-    "--output-mode",
-    type=click.Choice(["summary", "detail", "json"]),
-    default="summary",
-    help="Output mode",
+    "--format",
+    "format_type",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
+    help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.option(
     "--show-requests",
@@ -64,7 +67,8 @@ def compare(
     continuation: str,
     request_id: int | None,
     sample: int | None,
-    output_mode: str,
+    format_type: str,
+    template_name: str | None,
     show_requests: bool,
     show_data: bool,
     limit: int | None,
@@ -87,7 +91,7 @@ def compare(
         ldd-debug compare run.db parse_opinions --sample 10
 
         # Show detailed output
-        ldd-debug compare run.db parse_opinions --output-mode detail
+        ldd-debug compare run.db parse_opinions --template detail
 
         # Show only request changes
         ldd-debug compare run.db parse_opinions --show-requests
@@ -209,167 +213,93 @@ def compare(
                     )
                     continue
 
-            # Output results
-            if output_mode == "json":
-                # JSON output
-                output = {
-                    "summary": {
-                        "total_requests": summary.total_requests,
-                        "identical_outputs": summary.identical_outputs,
-                        "requests_with_request_changes": summary.requests_with_request_changes,
-                        "requests_with_data_changes": summary.requests_with_data_changes,
-                        "errors_introduced": summary.errors_introduced,
-                        "errors_resolved": summary.errors_resolved,
-                        "errors_changed": summary.errors_changed,
-                        "total_request_adds": summary.total_request_adds,
-                        "total_request_removes": summary.total_request_removes,
-                        "total_request_modifications": summary.total_request_modifications,
-                        "total_data_adds": summary.total_data_adds,
-                        "total_data_removes": summary.total_data_removes,
-                        "total_data_changes": summary.total_data_changes,
+            # Build unified data dict
+            def _result_to_dict(r: ComparisonResult) -> dict:
+                item: dict = {
+                    "request_id": r.request_id,
+                    "request_url": r.request_url,
+                    "continuation": r.continuation,
+                    "has_changes": r.has_changes,
+                    "request_diff": {
+                        "added": len(r.request_diff.added),
+                        "removed": len(r.request_diff.removed),
+                        "modified": len(r.request_diff.modified),
+                        "unchanged": r.request_diff.unchanged_count,
+                        "has_changes": r.request_diff.has_changes,
+                        "added_count": len(r.request_diff.added),
+                        "removed_count": len(r.request_diff.removed),
+                        "modified_count": len(r.request_diff.modified),
+                        "added_urls": [
+                            req.url for req in r.request_diff.added[:5]
+                        ],
+                        "removed_urls": [
+                            req.url for req in r.request_diff.removed[:5]
+                        ],
+                        "modified_urls": [
+                            orig.url
+                            for orig, _new in r.request_diff.modified[:5]
+                        ],
                     },
-                    "results": [
-                        {
-                            "request_id": r.request_id,
-                            "request_url": r.request_url,
-                            "continuation": r.continuation,
-                            "has_changes": r.has_changes,
-                            "request_diff": {
-                                "added": len(r.request_diff.added),
-                                "removed": len(r.request_diff.removed),
-                                "modified": len(r.request_diff.modified),
-                                "unchanged": r.request_diff.unchanged_count,
-                            },
-                            "data_diff": {
-                                "identical_pairs": r.data_diff.identical_pairs,
-                                "changed_pairs": len(
-                                    r.data_diff.changed_pairs
-                                ),
-                                "added": len(r.data_diff.added),
-                                "removed": len(r.data_diff.removed),
-                            },
-                            "error_diff": {
-                                "status": r.error_diff.status,
-                            },
-                        }
-                        for r in results
-                    ],
+                    "data_diff": {
+                        "identical_pairs": r.data_diff.identical_pairs,
+                        "changed_pairs": len(r.data_diff.changed_pairs),
+                        "added": len(r.data_diff.added),
+                        "removed": len(r.data_diff.removed),
+                        "has_changes": r.data_diff.has_changes,
+                        "added_count": len(r.data_diff.added),
+                        "removed_count": len(r.data_diff.removed),
+                        "changed_count": len(r.data_diff.changed_pairs),
+                        "changed_texts": [
+                            _format_data_diff(orig_data.data, new_data.data)
+                            for orig_data, new_data, _diffs in r.data_diff.changed_pairs[
+                                :3
+                            ]
+                        ],
+                    },
+                    "error_diff": {
+                        "status": r.error_diff.status,
+                        "has_change": r.error_diff.has_change,
+                        "original_error_type": (
+                            r.error_diff.original_error.error_type
+                            if r.error_diff.original_error
+                            else None
+                        ),
+                        "new_error_type": (
+                            r.error_diff.new_error.error_type
+                            if r.error_diff.new_error
+                            else None
+                        ),
+                    },
                 }
-                click.echo(json.dumps(output, indent=2))
+                return item
 
-            elif output_mode == "detail":
-                # Detailed output
-                for result in results:
-                    if not result.has_changes:
-                        continue  # Skip identical outputs in detail mode
+            output = {
+                "summary": {
+                    "total_requests": summary.total_requests,
+                    "identical_outputs": summary.identical_outputs,
+                    "requests_with_request_changes": summary.requests_with_request_changes,
+                    "requests_with_data_changes": summary.requests_with_data_changes,
+                    "errors_introduced": summary.errors_introduced,
+                    "errors_resolved": summary.errors_resolved,
+                    "errors_changed": summary.errors_changed,
+                    "total_request_adds": summary.total_request_adds,
+                    "total_request_removes": summary.total_request_removes,
+                    "total_request_modifications": summary.total_request_modifications,
+                    "total_data_adds": summary.total_data_adds,
+                    "total_data_removes": summary.total_data_removes,
+                    "total_data_changes": summary.total_data_changes,
+                },
+                "items": [_result_to_dict(r) for r in results],
+                "show_data": show_data,
+                "show_requests": show_requests,
+            }
 
-                    click.echo(f"\n{'=' * 60}")
-                    click.echo(f"Request ID: {result.request_id}")
-                    click.echo(f"URL: {result.request_url}")
-                    click.echo(f"Continuation: {result.continuation}")
-
-                    # Request changes
-                    if result.request_diff.has_changes and not show_data:
-                        click.echo("\n  Request Changes:")
-                        if result.request_diff.added:
-                            click.echo(
-                                f"    Added: {len(result.request_diff.added)} requests"
-                            )
-                            for req in result.request_diff.added[:5]:
-                                click.echo(f"      + {req.url}")
-                        if result.request_diff.removed:
-                            click.echo(
-                                f"    Removed: {len(result.request_diff.removed)} requests"
-                            )
-                            for req in result.request_diff.removed[:5]:
-                                click.echo(f"      - {req.url}")
-                        if result.request_diff.modified:
-                            click.echo(
-                                f"    Modified: {len(result.request_diff.modified)} requests"
-                            )
-                            for orig, _new in result.request_diff.modified[:5]:
-                                click.echo(f"      ~ {orig.url}")
-
-                    # Data changes
-                    if result.data_diff.has_changes and not show_requests:
-                        click.echo("\n  Data Changes:")
-                        if result.data_diff.added:
-                            click.echo(
-                                f"    Added: {len(result.data_diff.added)} results"
-                            )
-                        if result.data_diff.removed:
-                            click.echo(
-                                f"    Removed: {len(result.data_diff.removed)} results"
-                            )
-                        if result.data_diff.changed_pairs:
-                            click.echo(
-                                f"    Changed: {len(result.data_diff.changed_pairs)} results"
-                            )
-                            for (
-                                orig_data,
-                                new_data,
-                                _diffs,
-                            ) in result.data_diff.changed_pairs[:3]:
-                                changes_text = _format_data_diff(
-                                    orig_data.data, new_data.data
-                                )
-                                if changes_text:
-                                    click.echo(changes_text)
-
-                    # Error changes
-                    if result.error_diff.has_change:
-                        click.echo("\n  Error Changes:")
-                        click.echo(f"    Status: {result.error_diff.status}")
-                        if result.error_diff.original_error:
-                            click.echo(
-                                f"    Original: {result.error_diff.original_error.error_type}"
-                            )
-                        if result.error_diff.new_error:
-                            click.echo(
-                                f"    New: {result.error_diff.new_error.error_type}"
-                            )
-
-            else:
-                # Summary output (default)
-                click.echo(f"\n{'=' * 60}")
-                click.echo("Comparison Summary")
-                click.echo(f"{'=' * 60}")
-                click.echo(f"Total Requests: {summary.total_requests}")
-                click.echo(f"Identical Outputs: {summary.identical_outputs}")
-                click.echo(
-                    f"Requests with Changes: {summary.total_requests - summary.identical_outputs}"
-                )
-
-                if not show_data:
-                    click.echo("\nRequest Tree Changes:")
-                    click.echo(
-                        f"  Requests with changes: {summary.requests_with_request_changes}"
-                    )
-                    click.echo(f"  Total added: {summary.total_request_adds}")
-                    click.echo(
-                        f"  Total removed: {summary.total_request_removes}"
-                    )
-                    click.echo(
-                        f"  Total modified: {summary.total_request_modifications}"
-                    )
-
-                if not show_requests:
-                    click.echo("\nData Changes:")
-                    click.echo(
-                        f"  Requests with changes: {summary.requests_with_data_changes}"
-                    )
-                    click.echo(f"  Total added: {summary.total_data_adds}")
-                    click.echo(
-                        f"  Total removed: {summary.total_data_removes}"
-                    )
-                    click.echo(
-                        f"  Total changed: {summary.total_data_changes}"
-                    )
-
-                click.echo("\nError Changes:")
-                click.echo(f"  Errors introduced: {summary.errors_introduced}")
-                click.echo(f"  Errors resolved: {summary.errors_resolved}")
-                click.echo(f"  Errors changed: {summary.errors_changed}")
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="compare/compare",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -391,13 +321,20 @@ def compare(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["default", "table", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def diagnose(
-    ctx: click.Context, db_path: str | None, error_id: int, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    error_id: int,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Diagnose an error by re-running XPath observation.
 
@@ -413,30 +350,12 @@ def diagnose(
             try:
                 result = await debugger.diagnose(error_id)
 
-                if format_type == "table":
-                    click.echo("=== Error ===")
-                    click.echo(f"ID: {result['error']['id']}")
-                    click.echo(f"Type: {result['error']['error_type']}")
-                    click.echo(f"Message: {result['error']['message']}")
-
-                    click.echo("\n=== Response ===")
-                    click.echo(f"ID: {result['response']['id']}")
-                    click.echo(f"Status: {result['response']['status_code']}")
-                    click.echo(f"URL: {result['response']['url']}")
-                    click.echo(f"Size: {result['response']['size']} bytes")
-
-                    click.echo("\n=== Scraper ===")
-                    if result["scraper_info"]["class"]:
-                        click.echo(f"Class: {result['scraper_info']['class']}")
-                        click.echo(
-                            f"Module: {result['scraper_info']['module']}"
-                        )
-
-                    click.echo("\n=== Observations ===")
-                    for key, value in result["observations"].items():
-                        click.echo(f"{key}: {value}")
-                else:
-                    format_output(result, format_type)
+                render_output(
+                    result,
+                    format_type=format_type,
+                    template_path="compare/diagnose",
+                    template_name=template_name or "default",
+                )
             except (ValueError, ImportError) as e:
                 click.echo(str(e), err=True)
                 sys.exit(1)

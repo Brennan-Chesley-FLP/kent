@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from pathlib import Path
 
@@ -12,8 +11,8 @@ import click
 from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
-    format_output,
 )
+from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 # =========================================================================
@@ -51,9 +50,12 @@ def responses(ctx: click.Context, db_path: str | None) -> None:
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["default", "table", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def responses_list(
@@ -63,6 +65,7 @@ def responses_list(
     limit: int,
     offset: int,
     format_type: str,
+    template_name: str | None,
 ) -> None:
     """List responses with optional filtering.
 
@@ -80,52 +83,30 @@ def responses_list(
                 continuation=continuation, limit=limit, offset=offset
             )
 
-            if format_type == "table":
-                click.echo(
-                    f"Total: {page.total}, Showing: {len(page.items)}, "
-                    f"Offset: {offset}, Limit: {limit}"
-                )
-                if page.items:
-                    headers = [
-                        "id",
-                        "status_code",
-                        "url",
-                        "continuation",
-                        "size",
-                    ]
-                    items = [
-                        {
-                            "id": r.id,
-                            "status_code": r.status_code,
-                            "url": r.url[:50] if r.url else "",
-                            "continuation": r.continuation,
-                            "size": r.content_size_original,
-                        }
-                        for r in page.items
-                    ]
-                    format_output(items, format_type, headers)
-                else:
-                    click.echo("No responses found")
-            else:
-                output = {
-                    "total": page.total,
-                    "items": [
-                        {
-                            "id": r.id,
-                            "status_code": r.status_code,
-                            "url": r.url,
-                            "continuation": r.continuation,
-                            "content_size_original": r.content_size_original,
-                            "content_size_compressed": r.content_size_compressed,
-                            "compression_ratio": r.compression_ratio,
-                        }
-                        for r in page.items
-                    ],
-                    "limit": limit,
-                    "offset": offset,
-                    "has_more": page.has_more,
-                }
-                format_output(output, format_type)
+            output = {
+                "total": page.total,
+                "items": [
+                    {
+                        "id": r.id,
+                        "status_code": r.status_code,
+                        "url": r.url,
+                        "continuation": r.continuation,
+                        "content_size_original": r.content_size_original,
+                        "content_size_compressed": r.content_size_compressed,
+                        "compression_ratio": r.compression_ratio,
+                    }
+                    for r in page.items
+                ],
+                "limit": limit,
+                "offset": offset,
+                "has_more": page.has_more,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="responses/list",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -142,13 +123,20 @@ def responses_list(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["default", "table", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def responses_show(
-    ctx: click.Context, db_path: str | None, request_id: int, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    request_id: int,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Show detailed response information.
 
@@ -169,31 +157,22 @@ def responses_show(
                 )
                 sys.exit(1)
 
-            if format_type == "table":
-                click.echo(f"ID: {response.id}")
-                click.echo(f"Status Code: {response.status_code}")
-                click.echo(f"URL: {response.url}")
-                click.echo(f"Continuation: {response.continuation}")
-                click.echo(f"Original Size: {response.content_size_original}")
-                click.echo(
-                    f"Compressed Size: {response.content_size_compressed}"
-                )
-                click.echo(
-                    f"Compression Ratio: {response.compression_ratio:.2f}x"
-                )
-                click.echo(f"Created At: {response.created_at}")
-            else:
-                output = {
-                    "id": response.id,
-                    "status_code": response.status_code,
-                    "url": response.url,
-                    "continuation": response.continuation,
-                    "content_size_original": response.content_size_original,
-                    "content_size_compressed": response.content_size_compressed,
-                    "compression_ratio": response.compression_ratio,
-                    "created_at": response.created_at,
-                }
-                format_output(output, format_type)
+            output = {
+                "id": response.id,
+                "status_code": response.status_code,
+                "url": response.url,
+                "continuation": response.continuation,
+                "content_size_original": response.content_size_original,
+                "content_size_compressed": response.content_size_compressed,
+                "compression_ratio": response.compression_ratio,
+                "created_at": response.created_at,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="responses/show",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -263,9 +242,12 @@ def responses_content(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["default", "table", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def responses_search(
@@ -276,6 +258,7 @@ def responses_search(
     xpath_expr: str | None,
     continuation: str | None,
     format_type: str,
+    template_name: str | None,
 ) -> None:
     """Search response content for matching patterns.
 
@@ -312,18 +295,13 @@ def responses_search(
                     continuation=continuation,
                 )
 
-                if format_type == "table":
-                    if matches:
-                        click.echo(f"Found {len(matches)} matching responses:")
-                        for match in matches:
-                            click.echo(f"  request_id={match['request_id']}")
-                    else:
-                        click.echo("No matching responses found")
-                elif format_type == "json":
-                    click.echo(json.dumps(matches, indent=2))
-                elif format_type == "jsonl":
-                    for match in matches:
-                        click.echo(json.dumps(match))
+                output = {"items": matches}
+                render_output(
+                    output,
+                    format_type=format_type,
+                    template_path="responses/search",
+                    template_name=template_name or "default",
+                )
 
             except ValueError as e:
                 click.echo(f"Error: {e}", err=True)

@@ -68,13 +68,12 @@ class TestHealthCommands:
         )
 
         assert result.exit_code == 0
-        lines = result.output.strip().split("\n")
-        assert len(lines) == 5  # status, integrity, ghosts, errors, estimates
-
-        # Each line should be valid JSON with section field
-        for line in lines:
-            data = json.loads(line)
-            assert "section" in data
+        data = json.loads(result.output.strip())
+        assert "status" in data
+        assert "integrity" in data
+        assert "ghosts" in data
+        assert "error_stats" in data
+        assert "estimates" in data
 
     def test_scrape_db_on_group(
         self, runner: CliRunner, populated_db: Path
@@ -227,7 +226,7 @@ class TestHealthCommands:
         data = json.loads(result.output)
         assert "total_count" in data
         assert "by_continuation" in data
-        assert "ghosts" in data
+        assert "items" in data
 
     def test_requests_ghosts_jsonl_format(
         self, runner: CliRunner, populated_db: Path
@@ -345,7 +344,7 @@ class TestHealthCommands:
 
         assert result.exit_code == 0
         data = json.loads(result.output)
-        assert "estimates" in data
+        assert "items" in data
         assert "summary" in data
 
     def test_scrape_estimates_failures_only(

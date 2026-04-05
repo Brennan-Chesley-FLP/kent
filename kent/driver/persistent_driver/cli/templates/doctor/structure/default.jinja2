@@ -1,0 +1,36 @@
+{% from "_macros.jinja2" import section %}
+{% if data.detail %}
+{{ section("Validation Detail for " + data.target) }}
+
+  Step: {{ data.detail.continuation }}
+  Spec: {{ data.detail.spec_path or "N/A" }} ({{ data.detail.spec_type or "N/A" }})
+  Status: {{ data.detail.status }}
+{% if data.detail.errors %}
+
+  Validation Errors:
+  {% for err in data.detail.errors %}
+    - {{ err }}
+  {% endfor %}
+{% elif data.detail.status == "VALID" %}
+
+  No validation errors.
+{% endif %}
+{% else %}
+{{ section("Structure Validation") }}
+
+{% if not data.steps %}
+No steps with xsd or json_model specs found.
+{% else %}
+{% for step in data.steps %}
+{{ step.continuation }} ({{ step.spec_type }}):
+  Total: {{ step.total_responses }}  Valid: {{ step.valid }}  Invalid: {{ step.invalid }}
+{% if data.detailed and step.invalid > 0 %}
+{% for i in range(step.invalid_request_ids | length) %}
+    request_id={{ step.invalid_request_ids[i] }}  response_id={{ step.invalid_response_ids[i] if i < step.invalid_response_ids | length else "?" }}
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+Summary: {{ data.summary.total_responses_checked }} responses checked, {{ data.summary.total_valid }} valid, {{ data.summary.total_invalid }} invalid
+{% endif %}
+{% endif %}

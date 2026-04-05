@@ -1,0 +1,14 @@
+{% from "_macros.jinja2" import table %}
+Total Pending: {{ data.total }}
+Showing: {{ data["items"] | length }}
+{% if data["items"] %}
+{{ table(data["items"], [
+    {"key": "id", "width": 15, "header": "id"},
+    {"key": "url", "width": 15, "header": "url"},
+    {"key": "continuation", "width": 15, "header": "continuation"},
+    {"key": "priority", "width": 15, "header": "priority"},
+    {"key": "retry_count", "width": 15, "header": "retry_count"},
+]) }}
+{% else %}
+No pending requests found
+{% endif %}

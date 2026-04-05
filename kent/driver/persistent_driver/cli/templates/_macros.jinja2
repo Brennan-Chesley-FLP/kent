@@ -1,0 +1,30 @@
+{#- Shared macros for PDD CLI templates -#}
+
+{#- Pagination header for list commands -#}
+{% macro pagination(total, count, offset=0, limit=100) %}
+Total: {{ total }}, Showing: {{ count }}, Offset: {{ offset }}, Limit: {{ limit }}
+{% endmacro %}
+
+{#- Section header (=== Title ===) -#}
+{% macro section(title) %}
+=== {{ title }} ===
+{% endmacro %}
+
+{#- Key-value line -#}
+{% macro kv(key, value) %}
+{{ key }}: {{ value }}
+{% endmacro %}
+
+{#- Table with fixed-width columns.
+    items:   list of dicts
+    columns: list of {"key": str, "width": int, "header": str}
+-#}
+{% macro table(items, columns) %}
+{% for col in columns %}{{ col.header | ljust(col.width) }}  {% endfor %}
+
+{{ '-' * (columns | sum(attribute='width') + (columns | length - 1) * 2) }}
+{% for item in items %}
+{% for col in columns %}{{ item[col.key] | string | truncate_str(col.width) | ljust(col.width) }}  {% endfor %}
+
+{% endfor %}
+{% endmacro %}

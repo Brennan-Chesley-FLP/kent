@@ -1,0 +1,9 @@
+{% set matches = data["items"] %}
+{% if matches %}
+Found {{ matches | length }} matching responses:
+{% for match in matches %}
+  request_id={{ match.request_id }}
+{% endfor %}
+{% else %}
+No matching responses found
+{% endif %}

@@ -1,0 +1,88 @@
+
+============================================================
+Comparison Summary
+============================================================
+Total Requests: {{ data.summary.total_requests }}
+Identical Outputs: {{ data.summary.identical_outputs }}
+Requests with Changes: {{ data.summary.total_requests - data.summary.identical_outputs }}
+{% if not data.show_data %}
+
+Request Tree Changes:
+  Requests with changes: {{ data.summary.requests_with_request_changes }}
+  Total added: {{ data.summary.total_request_adds }}
+  Total removed: {{ data.summary.total_request_removes }}
+  Total modified: {{ data.summary.total_request_modifications }}
+{% endif %}
+{% if not data.show_requests %}
+
+Data Changes:
+  Requests with changes: {{ data.summary.requests_with_data_changes }}
+  Total added: {{ data.summary.total_data_adds }}
+  Total removed: {{ data.summary.total_data_removes }}
+  Total changed: {{ data.summary.total_data_changes }}
+{% endif %}
+
+Error Changes:
+  Errors introduced: {{ data.summary.errors_introduced }}
+  Errors resolved: {{ data.summary.errors_resolved }}
+  Errors changed: {{ data.summary.errors_changed }}
+{% for item in data["items"] %}
+{% if item.has_changes %}
+
+============================================================
+Request ID: {{ item.request_id }}
+URL: {{ item.request_url }}
+Step: {{ item.continuation }}
+{% if item.request_diff.has_changes and not data.show_data %}
+
+  Request Changes:
+{% if item.request_diff.added_count %}
+    Added: {{ item.request_diff.added_count }} requests
+{% for url in item.request_diff.added_urls %}
+      + {{ url }}
+{% endfor %}
+{% endif %}
+{% if item.request_diff.removed_count %}
+    Removed: {{ item.request_diff.removed_count }} requests
+{% for url in item.request_diff.removed_urls %}
+      - {{ url }}
+{% endfor %}
+{% endif %}
+{% if item.request_diff.modified_count %}
+    Modified: {{ item.request_diff.modified_count }} requests
+{% for url in item.request_diff.modified_urls %}
+      ~ {{ url }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if item.data_diff.has_changes and not data.show_requests %}
+
+  Data Changes:
+{% if item.data_diff.added_count %}
+    Added: {{ item.data_diff.added_count }} results
+{% endif %}
+{% if item.data_diff.removed_count %}
+    Removed: {{ item.data_diff.removed_count }} results
+{% endif %}
+{% if item.data_diff.changed_count %}
+    Changed: {{ item.data_diff.changed_count }} results
+{% for text in item.data_diff.changed_texts %}
+{% if text %}
+{{ text }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if item.error_diff.has_change %}
+
+  Error Changes:
+    Status: {{ item.error_diff.status }}
+{% if item.error_diff.original_error_type %}
+    Original: {{ item.error_diff.original_error_type }}
+{% endif %}
+{% if item.error_diff.new_error_type %}
+    New: {{ item.error_diff.new_error_type }}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endfor %}

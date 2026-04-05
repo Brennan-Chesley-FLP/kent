@@ -1,0 +1,38 @@
+{% from "_macros.jinja2" import section %}
+{{ section("Health Report") }}
+
+Run Status:
+  Status: {{ data.status.status }}
+{% if data.status.is_running %}
+  Pending Requests: {{ data.status.pending_count }}
+{% endif %}
+
+Integrity Check:
+{% if data.integrity.has_issues %}
+  Orphaned Requests: {{ data.integrity.orphaned_requests.count }}
+  Orphaned Responses: {{ data.integrity.orphaned_responses.count }}
+{% else %}
+  No integrity issues found
+{% endif %}
+
+Errors:
+  Total: {{ data.error_stats.total }}
+  Unresolved: {{ data.error_stats.unresolved }}
+
+Ghost Requests:
+{% if data.ghosts.total_count > 0 %}
+  Total: {{ data.ghosts.total_count }}
+  By Continuation:
+  {% for continuation, count in data.ghosts.by_continuation.items() %}
+    {{ continuation }}: {{ count }}
+  {% endfor %}
+{% else %}
+  No ghost requests found
+{% endif %}
+
+Estimates:
+{% if data.estimates.summary.total > 0 %}
+  Total: {{ data.estimates.summary.total }}  Passed: {{ data.estimates.summary.passed }}  Failed: {{ data.estimates.summary.failed }}
+{% else %}
+  No estimates recorded
+{% endif %}

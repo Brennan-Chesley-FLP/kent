@@ -1,0 +1,14 @@
+{% from "_macros.jinja2" import pagination, table %}
+{{ pagination(data.total, data["items"] | length, data.offset, data.limit) }}
+{% if data["items"] %}
+{{ table(data["items"], [
+    {"key": "id", "width": 15, "header": "id"},
+    {"key": "parent_id", "width": 15, "header": "parent_id"},
+    {"key": "type", "width": 15, "header": "type"},
+    {"key": "url", "width": 15, "header": "url"},
+    {"key": "status", "width": 15, "header": "status"},
+    {"key": "cached", "width": 15, "header": "cached"},
+]) }}
+{% else %}
+No incidental requests found
+{% endif %}

@@ -1,0 +1,12 @@
+Total Pending: {{ data.total }}
+Showing: {{ data["items"] | length }}
+{% set rows = data["items"] %}
+{% if rows %}
+{{ "id" | ljust(15) }}  {{ "url" | ljust(15) }}  {{ "continuation" | ljust(15) }}  {{ "priority" | ljust(15) }}  {{ "retry_count" | ljust(15) }}
+{{ "-" * 85 }}
+{% for r in rows %}
+{{ r.id | string | ljust(15) }}  {{ r.url | truncate_str(15) | ljust(15) }}  {{ r.continuation | string | truncate_str(15) | ljust(15) }}  {{ r.priority | string | ljust(15) }}  {{ r.retry_count | string | ljust(15) }}
+{% endfor %}
+{% else %}
+No pending requests found
+{% endif %}

@@ -39,6 +39,7 @@ from typing import Any
 
 import click
 
+from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import (
     LocalDevDriverDebugger,
 )
@@ -370,12 +371,20 @@ def _resolve_db_path(ctx: click.Context, db_path: str | None) -> str:
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
 )
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
+)
 @click.pass_context
-def info(ctx: click.Context, db_path: str | None, format_type: str) -> None:
+def info(
+    ctx: click.Context,
+    db_path: str | None,
+    format_type: str,
+    template_name: str | None,
+) -> None:
     """Show run metadata and statistics.
 
     \b
@@ -390,27 +399,13 @@ def info(ctx: click.Context, db_path: str | None, format_type: str) -> None:
             metadata = await debugger.get_run_metadata()
             stats = await debugger.get_stats()
 
-            if format_type == "summary":
-                click.echo("=== Run Metadata ===")
-                if metadata:
-                    for key, value in metadata.items():
-                        click.echo(f"{key}: {value}")
-                else:
-                    click.echo("No metadata found")
-
-                click.echo("\n=== Statistics ===")
-                click.echo(f"Queue Total: {stats['queue']['total']}")
-                click.echo(f"Queue Pending: {stats['queue']['pending']}")
-                click.echo(f"Queue Completed: {stats['queue']['completed']}")
-                click.echo(f"Queue Failed: {stats['queue']['failed']}")
-                click.echo(f"Results Total: {stats['results']['total']}")
-                click.echo(f"Errors Total: {stats['errors']['total']}")
-                click.echo(
-                    f"Errors Unresolved: {stats['errors']['unresolved']}"
-                )
-            else:
-                output = {"metadata": metadata, "stats": stats}
-                format_output(output, format_type)
+            output = {"metadata": metadata, "stats": stats}
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="info",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 

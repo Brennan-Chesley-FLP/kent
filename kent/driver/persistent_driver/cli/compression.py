@@ -10,8 +10,8 @@ import click
 from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
-    format_output,
 )
+from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 # =========================================================================
@@ -46,13 +46,19 @@ def compression(ctx: click.Context, db_path: str | None) -> None:
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["table", "json", "jsonl"]),
-    default="table",
+    type=click.Choice(["default", "table", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def compression_stats(
-    ctx: click.Context, db_path: str | None, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Show compression statistics.
 
@@ -67,22 +73,12 @@ def compression_stats(
         async with LocalDevDriverDebugger.open(db_path) as debugger:
             stats = await debugger.get_compression_stats()
 
-            if format_type == "table":
-                click.echo("=== Compression Statistics ===")
-                click.echo(f"Total Responses: {stats['total']}")
-                click.echo(
-                    f"Total Original Size: {stats['total_original']} bytes"
-                )
-                click.echo(
-                    f"Total Compressed Size: {stats['total_compressed']} bytes"
-                )
-                click.echo(f"With Dict: {stats['with_dict']}")
-                click.echo(f"No Dict: {stats['no_dict']}")
-                click.echo(
-                    f"Compression Ratio: {stats['compression_ratio']:.2f}x"
-                )
-            else:
-                format_output(stats, format_type)
+            render_output(
+                stats,
+                format_type=format_type,
+                template_path="compression/stats",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 

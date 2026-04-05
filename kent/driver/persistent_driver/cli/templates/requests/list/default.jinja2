@@ -1,0 +1,12 @@
+{% from "_macros.jinja2" import pagination %}
+{% set rows = data["items"] %}
+{{ pagination(data.total, rows | length, data.offset, data.limit) }}
+{% if rows %}
+{{ "id" | ljust(15) }}  {{ "status" | ljust(15) }}  {{ "url" | ljust(50) }}  {{ "continuation" | ljust(15) }}  {{ "retry_count" | ljust(15) }}
+{{ "-" * 107 }}
+{% for r in rows %}
+{{ r.id | string | ljust(15) }}  {{ r.status | ljust(15) }}  {{ r.url | truncate_str(50) | ljust(50) }}  {{ r.continuation | truncate_str(15) | ljust(15) }}  {{ r.retry_count | string | ljust(15) }}
+{% endfor %}
+{% else %}
+No requests found
+{% endif %}

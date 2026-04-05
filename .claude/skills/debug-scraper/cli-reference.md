@@ -210,7 +210,7 @@ Usage: pdd compare [OPTIONS] CONTINUATION
       parse_opinions --sample 10
 
       # Show detailed output     ldd-debug compare run.db parse_opinions
-      --output-mode detail
+      --template detail
 
       # Show only request changes     ldd-debug compare run.db parse_opinions
       --show-requests
@@ -223,8 +223,9 @@ Options:
   --request-id INTEGER            Compare specific request ID only
   --sample INTEGER                Sample N requests and follow their entire
                                   request trees
-  --output-mode [summary|detail|json]
-                                  Output mode
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
   --show-requests                 Show only request tree differences
   --show-data                     Show only data differences
   --limit INTEGER                 Maximum number of requests to compare
@@ -279,9 +280,11 @@ Usage: pdd compression stats [OPTIONS]
       ldd-debug compression stats run.db --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd compression train
@@ -313,9 +316,11 @@ Usage: pdd diagnose [OPTIONS] ERROR_ID
       ldd-debug diagnose run.db 123 --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ## pdd doctor
@@ -360,10 +365,12 @@ Usage: pdd doctor estimates [OPTIONS]
       ldd-debug doctor estimates --db run.db --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --failures-only              Only show failed estimates
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --failures-only                 Only show failed estimates
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd doctor ghosts
@@ -380,10 +387,12 @@ Usage: pdd doctor ghosts [OPTIONS]
       ldd-debug doctor --db run.db ghosts --continuation parse_index
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --continuation TEXT          Filter by continuation (step name)
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --continuation TEXT             Filter by continuation (step name)
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd doctor health
@@ -401,9 +410,11 @@ Usage: pdd doctor health [OPTIONS]
       ldd-debug doctor --db run.db health
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd doctor orphans
@@ -418,9 +429,11 @@ Usage: pdd doctor orphans [OPTIONS]
       ldd-debug doctor --db run.db orphans --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd doctor pending
@@ -435,10 +448,12 @@ Usage: pdd doctor pending [OPTIONS]
       ldd-debug doctor --db run.db pending --limit 50
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --limit INTEGER              Maximum number of results
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --limit INTEGER                 Maximum number of results
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd doctor structure
@@ -463,14 +478,18 @@ Usage: pdd doctor structure [OPTIONS]
       ldd-debug doctor structure --db run.db --request 15
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --step TEXT                  Filter to a specific step name
-  --detailed                   Show request_id/response_id pairs for failures
-  --request INTEGER            Show detailed validation for a specific request
-  --response INTEGER           Show detailed validation for a specific
-                               response
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --step TEXT                     Filter to a specific step name
+  --detailed                      Show request_id/response_id pairs for
+                                  failures
+  --request INTEGER               Show detailed validation for a specific
+                                  request
+  --response INTEGER              Show detailed validation for a specific
+                                  response
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ## pdd errors
@@ -506,9 +525,11 @@ Usage: pdd errors diagnose [OPTIONS] ERROR_ID
       pdd errors diagnose --db run.db 123 --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd errors list
@@ -524,14 +545,16 @@ Usage: pdd errors list [OPTIONS]
       pdd errors list --db run.db --step step1
 
 Options:
-  --db PATH                      Path to the database file
-  --type TEXT                    Filter by error type
-  --resolved / --unresolved      Filter by resolution status
-  --step TEXT                    Filter by step name
-  --limit INTEGER                Maximum number of results
-  --offset INTEGER               Number of results to skip
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --type TEXT                     Filter by error type
+  --resolved / --unresolved       Filter by resolution status
+  --step TEXT                     Filter by step name
+  --limit INTEGER                 Maximum number of results
+  --offset INTEGER                Number of results to skip
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd errors requeue
@@ -598,9 +621,11 @@ Usage: pdd errors show [OPTIONS] ERROR_ID
       pdd errors show --db run.db 123 --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd errors summary
@@ -615,9 +640,11 @@ Usage: pdd errors summary [OPTIONS]
       pdd errors summary --db run.db --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ## pdd export
@@ -739,7 +766,9 @@ Options:
                                   Filter by cache status
   --limit INTEGER                 Maximum number of results
   --offset INTEGER                Number of results to skip
-  --format [summary|json|jsonl]   Output format
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
   --help                          Show this message and exit.
 ```
 
@@ -755,9 +784,11 @@ Usage: pdd incidental show [OPTIONS] INCIDENTAL_ID
       pdd incidental show --db run.db 456 --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ## pdd info
@@ -772,9 +803,11 @@ Usage: pdd info [OPTIONS]
       pdd info --db run.db --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ## pdd requests
@@ -902,10 +935,12 @@ Usage: pdd requests ghosts [OPTIONS]
       pdd requests --db run.db ghosts --step parse_index
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --step TEXT                    Filter by step name
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --step TEXT                     Filter by step name
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd requests list
@@ -921,14 +956,16 @@ Usage: pdd requests list [OPTIONS]
       pdd requests list --db run.db --step step1 --limit 50
 
 Options:
-  --db PATH                      Path to the database file
-  --status TEXT                  Filter by status (pending, completed, failed,
-                                 held)
-  --step TEXT                    Filter by step name
-  --limit INTEGER                Maximum number of results
-  --offset INTEGER               Number of results to skip
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --status TEXT                   Filter by status (pending, completed,
+                                  failed, held)
+  --step TEXT                     Filter by step name
+  --limit INTEGER                 Maximum number of results
+  --offset INTEGER                Number of results to skip
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd requests orphans
@@ -943,9 +980,11 @@ Usage: pdd requests orphans [OPTIONS]
       pdd requests --db run.db orphans --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd requests parents
@@ -963,9 +1002,11 @@ Usage: pdd requests parents [OPTIONS] REQUEST_ID
       pdd requests parents --db run.db 456 --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd requests pending
@@ -980,10 +1021,12 @@ Usage: pdd requests pending [OPTIONS]
       pdd requests --db run.db pending --limit 50
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --limit INTEGER                Maximum number of results
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --limit INTEGER                 Maximum number of results
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd requests requeue
@@ -1038,13 +1081,15 @@ Usage: pdd requests search [OPTIONS]
       pdd requests search --db run.db --xpath "//div[@class='opinion']"
 
 Options:
-  --db PATH                      Path to the database file
-  --text TEXT                    Plain text to search for
-  --regex TEXT                   Regular expression pattern
-  --xpath TEXT                   XPath expression to evaluate
-  --step TEXT                    Filter by step name
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --text TEXT                     Plain text to search for
+  --regex TEXT                    Regular expression pattern
+  --xpath TEXT                    XPath expression to evaluate
+  --step TEXT                     Filter by step name
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd requests show
@@ -1059,9 +1104,11 @@ Usage: pdd requests show [OPTIONS] REQUEST_ID
       pdd requests show --db run.db 123 --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd requests summary
@@ -1076,9 +1123,11 @@ Usage: pdd requests summary [OPTIONS]
       pdd requests summary --db run.db --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ## pdd requeue
@@ -1199,12 +1248,14 @@ Usage: pdd responses list [OPTIONS]
       ldd-debug responses list run.db --continuation step1
 
 Options:
-  --db PATH                    Path to the database file
-  --continuation TEXT          Filter by continuation (step name)
-  --limit INTEGER              Maximum number of results
-  --offset INTEGER             Number of results to skip
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --continuation TEXT             Filter by continuation (step name)
+  --limit INTEGER                 Maximum number of results
+  --offset INTEGER                Number of results to skip
+  --format [default|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd responses search
@@ -1225,13 +1276,15 @@ Usage: pdd responses search [OPTIONS]
       ldd-debug responses search run.db --text "verdict" --format jsonl
 
 Options:
-  --db PATH                    Path to the database file
-  --text TEXT                  Plain text to search for
-  --regex TEXT                 Regular expression pattern
-  --xpath TEXT                 XPath expression to evaluate
-  --continuation TEXT          Filter by continuation (step name)
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --text TEXT                     Plain text to search for
+  --regex TEXT                    Regular expression pattern
+  --xpath TEXT                    XPath expression to evaluate
+  --continuation TEXT             Filter by continuation (step name)
+  --format [default|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd responses show
@@ -1246,9 +1299,11 @@ Usage: pdd responses show [OPTIONS] REQUEST_ID
       ldd-debug responses show run.db 123 --format json
 
 Options:
-  --db PATH                    Path to the database file
-  --format [table|json|jsonl]  Output format
-  --help                       Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ## pdd results
@@ -1300,13 +1355,15 @@ Usage: pdd results list [OPTIONS]
       pdd --db run.db results list --type CourtOpinion --valid
 
 Options:
-  --db PATH                      Path to the database file
-  --type TEXT                    Filter by result type
-  --valid / --invalid            Filter by validation status
-  --limit INTEGER                Maximum number of results
-  --offset INTEGER               Number of results to skip
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --type TEXT                     Filter by result type
+  --valid / --invalid             Filter by validation status
+  --limit INTEGER                 Maximum number of results
+  --offset INTEGER                Number of results to skip
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd results show
@@ -1321,9 +1378,11 @@ Usage: pdd results show [OPTIONS] RESULT_ID
       pdd --db run.db results show 123 --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd results summary
@@ -1338,9 +1397,11 @@ Usage: pdd results summary [OPTIONS]
       pdd --db run.db results summary --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd results validate
@@ -1365,16 +1426,18 @@ Usage: pdd results validate [OPTIONS]
       pdd --db run.db results validate --request 15
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --step TEXT                    Filter to a specific step name
-  --detailed                     Show request_id/response_id pairs for
-                                 failures
-  --request INTEGER              Show detailed validation for a specific
-                                 request
-  --response INTEGER             Show detailed validation for a specific
-                                 response
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --step TEXT                     Filter to a specific step name
+  --detailed                      Show request_id/response_id pairs for
+                                  failures
+  --request INTEGER               Show detailed validation for a specific
+                                  request
+  --response INTEGER              Show detailed validation for a specific
+                                  response
+  --help                          Show this message and exit.
 ```
 
 ## pdd scrape
@@ -1409,10 +1472,12 @@ Usage: pdd scrape estimates [OPTIONS]
       pdd scrape estimates --db run.db --format json
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --failures-only                Only show failed estimates
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --failures-only                 Only show failed estimates
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ### pdd scrape health
@@ -1430,9 +1495,11 @@ Usage: pdd scrape health [OPTIONS]
       pdd scrape --db run.db health
 
 Options:
-  --db PATH                      Path to the database file
-  --format [summary|json|jsonl]  Output format
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --format [default|summary|table|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --help                          Show this message and exit.
 ```
 
 ## pdd step
@@ -1484,18 +1551,20 @@ Usage: pdd step re-evaluate [OPTIONS] STEP_NAME
       parse_opinions --limit 50
 
 Options:
-  --db PATH                      Path to the database file
-  --request-id INTEGER           Compare specific request ID only
-  --sample INTEGER               Sample N requests and follow their entire
-                                 request trees
-  --format [summary|json|jsonl]  Output format
-  -v, --verbose                  Show detailed per-request changes
-  --show-requests                Show only request tree differences
-  --show-data                    Show only data differences
-  --limit INTEGER                Maximum number of requests to compare
-  --scraper-class TEXT           Scraper class path (e.g., juriscraper.opinion
-                                 s.united_states.federal_appellate.ca1.Site)
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --request-id INTEGER            Compare specific request ID only
+  --sample INTEGER                Sample N requests and follow their entire
+                                  request trees
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  -v, --verbose                   Show detailed per-request changes
+  --show-requests                 Show only request tree differences
+  --show-data                     Show only data differences
+  --limit INTEGER                 Maximum number of requests to compare
+  --scraper-class TEXT            Scraper class path (e.g., juriscraper.opinio
+                                  ns.united_states.federal_appellate.ca1.Site)
+  --help                          Show this message and exit.
 ```
 
 ### pdd step xpath-stats
@@ -1530,16 +1599,18 @@ Usage: pdd step xpath-stats [OPTIONS] STEP_NAME
       parse_opinions --limit 100
 
 Options:
-  --db PATH                      Path to the database file
-  --request-id INTEGER           Run for a specific request ID only
-  --sample INTEGER               Sample N requests randomly
-  --limit INTEGER                Maximum number of requests to process
-  --scraper-class TEXT           Scraper class path (e.g., juriscraper.opinion
-                                 s.united_states.federal_appellate.ca1.Site)
-  --format [summary|json|jsonl]  Output format
-  --xpath-name TEXT              Filter output to selectors whose description
-                                 matches this name
-  --list-non-matching            Include request IDs where the selector
-                                 matched zero elements
-  --help                         Show this message and exit.
+  --db PATH                       Path to the database file
+  --request-id INTEGER            Run for a specific request ID only
+  --sample INTEGER                Sample N requests randomly
+  --limit INTEGER                 Maximum number of requests to process
+  --scraper-class TEXT            Scraper class path (e.g., juriscraper.opinio
+                                  ns.united_states.federal_appellate.ca1.Site)
+  --format [default|summary|json|jsonl]
+                                  Output format
+  --template TEXT                 Template name
+  --xpath-name TEXT               Filter output to selectors whose description
+                                  matches this name
+  --list-non-matching             Include request IDs where the selector
+                                  matched zero elements
+  --help                          Show this message and exit.
 ```

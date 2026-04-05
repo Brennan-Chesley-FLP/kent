@@ -1,0 +1,22 @@
+
+============================================================
+Bulk XPath Statistics: {{ data.continuation }}
+============================================================
+Requests processed: {{ data.requests_processed }}
+Requests with errors: {{ data.requests_with_errors }}
+Requests with selector failures: {{ data.requests_with_selector_failures }}
+{% if data.selectors %}
+
+Selector Statistics:
+{% for s in data.selectors %}
+
+  {{ s.selector }} "{{ s.description }}"
+    Seen: {{ s.times_seen }}  Matches: min={{ s.min_matches }} max={{ s.max_matches }} avg={{ "%.1f" | format(s.avg_matches) }}  Failures: {{ s.failures }}/{{ s.times_seen }} ({{ "%.1f%%" | format(s.failure_rate * 100) }})
+{% if s.zero_match_request_ids is defined and s.zero_match_request_ids %}
+    Zero-match requests: {{ s.zero_match_request_ids }}
+{% endif %}
+{% endfor %}
+{% else %}
+
+No selector observations recorded.
+{% endif %}

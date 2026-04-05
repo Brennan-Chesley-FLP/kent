@@ -1,0 +1,8 @@
+{% from "_macros.jinja2" import section %}
+{{ section("Compression Statistics") }}
+Total Responses: {{ data.total }}
+Total Original Size: {{ data.total_original }} bytes
+Total Compressed Size: {{ data.total_compressed }} bytes
+With Dict: {{ data.with_dict }}
+No Dict: {{ data.no_dict }}
+Compression Ratio: {{ "%.2f" | format(data.compression_ratio) }}x

@@ -1,0 +1,12 @@
+ID: {{ data.id }}
+Type: {{ data.error_type }}
+Message: {{ data.message }}
+Request ID: {{ data.request_id }}
+Resolved: {{ "Yes" if data.is_resolved else "No" }}
+{% if data.selector %}
+Selector: {{ data.selector }}
+{% endif %}
+{% if data.resolution_notes %}
+Resolution Notes: {{ data.resolution_notes }}
+{% endif %}
+Created At: {{ data.created_at }}

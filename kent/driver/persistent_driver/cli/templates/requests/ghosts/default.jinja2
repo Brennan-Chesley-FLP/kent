@@ -1,0 +1,20 @@
+=== Ghost Requests ===
+Total: {{ data.total_count }}
+{% if data.total_count > 0 %}
+
+By Continuation:
+{% for cont, count in data.by_continuation.items() %}
+  {{ cont }}: {{ count }}
+{% endfor %}
+{% if data["items"] %}
+
+Details:
+{{ "id" | ljust(15) }}  {{ "url" | ljust(15) }}  {{ "continuation" | ljust(15) }}
+{{ "-" * 51 }}
+{% for g in data["items"] %}
+{{ g.id | string | ljust(15) }}  {{ g.url | truncate_str(15) | ljust(15) }}  {{ g.continuation | string | truncate_str(15) | ljust(15) }}
+{% endfor %}
+{% endif %}
+{% else %}
+No ghost requests found
+{% endif %}

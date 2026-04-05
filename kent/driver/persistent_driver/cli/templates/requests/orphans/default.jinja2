@@ -1,0 +1,23 @@
+=== Orphaned Requests ===
+{% if data.orphaned_requests %}
+Count: {{ data.orphaned_requests | length }}
+{{ "id" | ljust(15) }}  {{ "url" | ljust(15) }}  {{ "continuation" | ljust(15) }}  {{ "completed_at" | ljust(15) }}
+{{ "-" * 68 }}
+{% for r in data.orphaned_requests %}
+{{ r.id | string | ljust(15) }}  {{ r.url | string | truncate_str(15) | ljust(15) }}  {{ r.continuation | string | truncate_str(15) | ljust(15) }}  {{ r.completed_at | string | truncate_str(15) | ljust(15) }}
+{% endfor %}
+{% else %}
+No orphaned requests found
+{% endif %}
+
+=== Orphaned Responses ===
+{% if data.orphaned_responses %}
+Count: {{ data.orphaned_responses | length }}
+{{ "id" | ljust(15) }}  {{ "request_id" | ljust(15) }}  {{ "url" | ljust(15) }}  {{ "created_at" | ljust(15) }}
+{{ "-" * 68 }}
+{% for r in data.orphaned_responses %}
+{{ r.id | string | ljust(15) }}  {{ r.request_id | string | ljust(15) }}  {{ r.url | string | truncate_str(15) | ljust(15) }}  {{ r.created_at | string | truncate_str(15) | ljust(15) }}
+{% endfor %}
+{% else %}
+No orphaned responses found
+{% endif %}

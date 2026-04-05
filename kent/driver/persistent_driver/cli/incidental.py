@@ -11,8 +11,8 @@ import click
 from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
-    format_output,
 )
+from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 # =========================================================================
@@ -59,9 +59,12 @@ def incidental(ctx: click.Context, db_path: str | None) -> None:
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def incidental_list(
@@ -73,6 +76,7 @@ def incidental_list(
     limit: int,
     offset: int,
     format_type: str,
+    template_name: str | None,
 ) -> None:
     """List incidental requests with optional filtering.
 
@@ -96,43 +100,29 @@ def incidental_list(
                 offset=offset,
             )
 
-            if format_type == "summary":
-                click.echo(
-                    f"Total: {page.total}, Showing: {len(page.items)}, "
-                    f"Offset: {offset}, Limit: {limit}"
-                )
-                if page.items:
-                    headers = [
-                        "id",
-                        "parent_id",
-                        "type",
-                        "url",
-                        "status",
-                        "cached",
-                    ]
-                    items = [
-                        {
-                            "id": r["id"],
-                            "parent_id": r["parent_request_id"],
-                            "type": r["resource_type"],
-                            "url": r["url"][:40] if r["url"] else "",
-                            "status": r["status_code"] or "failed",
-                            "cached": "\u2713" if r["from_cache"] else "",
-                        }
-                        for r in page.items
-                    ]
-                    format_output(items, format_type, headers)
-                else:
-                    click.echo("No incidental requests found")
-            else:
-                output = {
-                    "total": page.total,
-                    "items": page.items,
-                    "limit": limit,
-                    "offset": offset,
-                    "has_more": page.has_more,
-                }
-                format_output(output, format_type)
+            output = {
+                "total": page.total,
+                "items": [
+                    {
+                        "id": r["id"],
+                        "parent_id": r["parent_request_id"],
+                        "type": r["resource_type"],
+                        "url": r["url"][:40] if r["url"] else "",
+                        "status": r["status_code"] or "failed",
+                        "cached": "\u2713" if r["from_cache"] else "",
+                    }
+                    for r in page.items
+                ],
+                "limit": limit,
+                "offset": offset,
+                "has_more": page.has_more,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="incidental/list",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -149,9 +139,12 @@ def incidental_list(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def incidental_show(
@@ -159,6 +152,7 @@ def incidental_show(
     db_path: str | None,
     incidental_id: int,
     format_type: str,
+    template_name: str | None,
 ) -> None:
     """Show detailed incidental request information.
 
@@ -180,30 +174,12 @@ def incidental_show(
                 )
                 sys.exit(1)
 
-            if format_type == "summary":
-                click.echo(f"ID: {inc['id']}")
-                click.echo(f"Parent Request ID: {inc['parent_request_id']}")
-                click.echo(f"Resource Type: {inc['resource_type']}")
-                click.echo(f"Method: {inc['method']}")
-                click.echo(f"URL: {inc['url']}")
-                if inc["status_code"]:
-                    click.echo(f"Status Code: {inc['status_code']}")
-                if inc["content_size_original"]:
-                    click.echo(
-                        f"Original Size: {inc['content_size_original']} bytes"
-                    )
-                if inc["content_size_compressed"]:
-                    click.echo(
-                        f"Compressed Size: {inc['content_size_compressed']} bytes"
-                    )
-                click.echo(
-                    f"From Cache: {'Yes' if inc['from_cache'] else 'No'}"
-                )
-                if inc["failure_reason"]:
-                    click.echo(f"Failure Reason: {inc['failure_reason']}")
-                click.echo(f"Created At: {inc['created_at']}")
-            else:
-                format_output(inc, format_type)
+            render_output(
+                inc,
+                format_type=format_type,
+                template_path="incidental/show",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 

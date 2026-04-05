@@ -10,8 +10,8 @@ import click
 from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
-    format_output,
 )
+from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 # =========================================================================
@@ -55,9 +55,12 @@ def errors(ctx: click.Context, db_path: str | None) -> None:
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def errors_list(
@@ -69,6 +72,7 @@ def errors_list(
     limit: int,
     offset: int,
     format_type: str,
+    template_name: str | None,
 ) -> None:
     """List errors with optional filtering.
 
@@ -91,38 +95,19 @@ def errors_list(
                 offset=offset,
             )
 
-            if format_type == "summary":
-                click.echo(
-                    f"Total: {page.total}, Showing: {len(page.items)}, "
-                    f"Offset: {offset}, Limit: {limit}"
-                )
-                if page.items:
-                    headers = ["id", "type", "message", "resolved"]
-                    items = [
-                        {
-                            "id": e["id"],
-                            "type": e["error_type"],
-                            "message": e["message"][:50]
-                            if e.get("message")
-                            else "",
-                            "resolved": "\u2713"
-                            if e["is_resolved"]
-                            else "\u2717",
-                        }
-                        for e in page.items
-                    ]
-                    format_output(items, format_type, headers)
-                else:
-                    click.echo("No errors found")
-            else:
-                output = {
-                    "total": page.total,
-                    "items": page.items,
-                    "limit": limit,
-                    "offset": offset,
-                    "has_more": page.has_more,
-                }
-                format_output(output, format_type)
+            output = {
+                "total": page.total,
+                "items": page.items,
+                "limit": limit,
+                "offset": offset,
+                "has_more": page.has_more,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="errors/list",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -139,13 +124,20 @@ def errors_list(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def errors_show(
-    ctx: click.Context, db_path: str | None, error_id: int, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    error_id: int,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Show detailed error information.
 
@@ -164,23 +156,12 @@ def errors_show(
                 click.echo(f"Error {error_id} not found", err=True)
                 sys.exit(1)
 
-            if format_type == "summary":
-                click.echo(f"ID: {error['id']}")
-                click.echo(f"Type: {error['error_type']}")
-                click.echo(f"Message: {error['message']}")
-                click.echo(f"Request ID: {error['request_id']}")
-                click.echo(
-                    f"Resolved: {'Yes' if error['is_resolved'] else 'No'}"
-                )
-                if error.get("selector"):
-                    click.echo(f"Selector: {error['selector']}")
-                if error.get("resolution_notes"):
-                    click.echo(
-                        f"Resolution Notes: {error['resolution_notes']}"
-                    )
-                click.echo(f"Created At: {error['created_at']}")
-            else:
-                format_output(error, format_type)
+            render_output(
+                error,
+                format_type=format_type,
+                template_path="errors/show",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -196,13 +177,19 @@ def errors_show(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def errors_summary(
-    ctx: click.Context, db_path: str | None, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Show error counts by type and resolution status.
 
@@ -217,25 +204,12 @@ def errors_summary(
         async with LocalDevDriverDebugger.open(db_path) as debugger:
             summary = await debugger.get_error_summary()
 
-            if format_type == "summary":
-                click.echo("=== Totals ===")
-                for key, value in summary["totals"].items():
-                    click.echo(f"  {key}: {value}")
-
-                click.echo("\n=== By Type ===")
-                for error_type, counts in summary["by_type"].items():
-                    click.echo(f"\n{error_type}:")
-                    for status, count in counts.items():
-                        click.echo(f"  {status}: {count}")
-
-                if summary["by_continuation"]:
-                    click.echo("\n=== By Continuation ===")
-                    for continuation, count in summary[
-                        "by_continuation"
-                    ].items():
-                        click.echo(f"  {continuation}: {count}")
-            else:
-                format_output(summary, format_type)
+            render_output(
+                summary,
+                format_type=format_type,
+                template_path="errors/summary",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -373,13 +347,20 @@ def errors_requeue_all(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def errors_diagnose(
-    ctx: click.Context, db_path: str | None, error_id: int, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    error_id: int,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Diagnose an error by re-running XPath observation.
 
@@ -395,30 +376,12 @@ def errors_diagnose(
             try:
                 result = await debugger.diagnose(error_id)
 
-                if format_type == "summary":
-                    click.echo("=== Error ===")
-                    click.echo(f"ID: {result['error']['id']}")
-                    click.echo(f"Type: {result['error']['error_type']}")
-                    click.echo(f"Message: {result['error']['message']}")
-
-                    click.echo("\n=== Response ===")
-                    click.echo(f"ID: {result['response']['id']}")
-                    click.echo(f"Status: {result['response']['status_code']}")
-                    click.echo(f"URL: {result['response']['url']}")
-                    click.echo(f"Size: {result['response']['size']} bytes")
-
-                    click.echo("\n=== Scraper ===")
-                    if result["scraper_info"]["class"]:
-                        click.echo(f"Class: {result['scraper_info']['class']}")
-                        click.echo(
-                            f"Module: {result['scraper_info']['module']}"
-                        )
-
-                    click.echo("\n=== Observations ===")
-                    for key, value in result["observations"].items():
-                        click.echo(f"{key}: {value}")
-                else:
-                    format_output(result, format_type)
+                render_output(
+                    result,
+                    format_type=format_type,
+                    template_path="errors/diagnose",
+                    template_name=template_name or "default",
+                )
             except (ValueError, ImportError) as e:
                 click.echo(str(e), err=True)
                 sys.exit(1)

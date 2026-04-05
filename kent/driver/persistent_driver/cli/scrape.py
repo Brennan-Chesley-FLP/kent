@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 import click
 
 from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
-    format_output,
 )
+from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
@@ -42,13 +41,19 @@ def scrape(ctx: click.Context, db_path: str | None) -> None:
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def scrape_health(
-    ctx: click.Context, db_path: str | None, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Show comprehensive health report.
 
@@ -71,81 +76,19 @@ def scrape_health(
             stats = await debugger.get_stats()
             estimates = await debugger.check_estimates()
 
-            if format_type == "json":
-                # JSON output
-                output = {
-                    "status": status,
-                    "integrity": integrity,
-                    "ghosts": ghosts,
-                    "error_stats": stats["errors"],
-                    "estimates": estimates,
-                }
-                format_output(output, format_type)
-            elif format_type == "jsonl":
-                # JSONL output (one line per section)
-                click.echo(json.dumps({"section": "status", **status}))
-                click.echo(json.dumps({"section": "integrity", **integrity}))
-                click.echo(json.dumps({"section": "ghosts", **ghosts}))
-                click.echo(
-                    json.dumps({"section": "errors", **stats["errors"]})
-                )
-                click.echo(json.dumps({"section": "estimates", **estimates}))
-            else:
-                # Table output (default)
-                click.echo("=== Health Report ===\n")
-
-                # Run Status
-                click.echo("Run Status:")
-                click.echo(f"  Status: {status['status']}")
-                if status.get("is_running"):
-                    click.echo(
-                        f"  Pending Requests: {status['pending_count']}"
-                    )
-                click.echo()
-
-                # Integrity Check Summary
-                click.echo("Integrity Check:")
-                if integrity["has_issues"]:
-                    click.echo(
-                        f"  Orphaned Requests: {integrity['orphaned_requests']['count']}"
-                    )
-                    click.echo(
-                        f"  Orphaned Responses: {integrity['orphaned_responses']['count']}"
-                    )
-                else:
-                    click.echo("  No integrity issues found")
-                click.echo()
-
-                # Error Summary
-                click.echo("Errors:")
-                click.echo(f"  Total: {stats['errors']['total']}")
-                click.echo(f"  Unresolved: {stats['errors']['unresolved']}")
-                click.echo()
-
-                # Ghost Request Summary
-                click.echo("Ghost Requests:")
-                if ghosts["total_count"] > 0:
-                    click.echo(f"  Total: {ghosts['total_count']}")
-                    click.echo("  By Continuation:")
-                    for continuation, count in ghosts[
-                        "by_continuation"
-                    ].items():
-                        click.echo(f"    {continuation}: {count}")
-                else:
-                    click.echo("  No ghost requests found")
-                click.echo()
-
-                # Estimate Check Summary
-                click.echo("Estimates:")
-                est_summary = estimates["summary"]
-                if est_summary["total"] > 0:
-                    click.echo(
-                        f"  Total: {est_summary['total']}  "
-                        f"Passed: {est_summary['passed']}  "
-                        f"Failed: {est_summary['failed']}"
-                    )
-                else:
-                    click.echo("  No estimates recorded")
+            output = {
+                "status": status,
+                "integrity": integrity,
+                "ghosts": ghosts,
+                "error_stats": stats["errors"],
+                "estimates": estimates,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="scrape/health",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -161,8 +104,8 @@ def scrape_health(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
+    default="default",
     help="Output format",
 )
 @click.option(
@@ -170,12 +113,16 @@ def scrape_health(
     is_flag=True,
     help="Only show failed estimates",
 )
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
+)
 @click.pass_context
 def scrape_estimates(
     ctx: click.Context,
     db_path: str | None,
     format_type: str,
     failures_only: bool,
+    template_name: str | None,
 ) -> None:
     """Check EstimateData predictions against actual result counts.
 
@@ -198,46 +145,16 @@ def scrape_estimates(
             if failures_only:
                 estimates = [e for e in estimates if e["status"] == "fail"]
 
-            if format_type == "json":
-                format_output(result, format_type)
-            elif format_type == "jsonl":
-                for est in estimates:
-                    click.echo(json.dumps(est))
-                click.echo(
-                    json.dumps({"section": "summary", **result["summary"]})
-                )
-            else:
-                click.echo("=== Estimate Checks ===\n")
-
-                if not estimates:
-                    if failures_only:
-                        click.echo("No failed estimates.")
-                    else:
-                        click.echo("No estimates recorded.")
-                    return
-
-                for est in estimates:
-                    types_str = ", ".join(est["expected_types"])
-                    max_str = (
-                        str(est["max_count"])
-                        if est["max_count"] is not None
-                        else "unbounded"
-                    )
-                    status_marker = (
-                        "PASS" if est["status"] == "pass" else "FAIL"
-                    )
-                    click.echo(
-                        f"  [{status_marker}] request_id={est['request_id']} "
-                        f"types=[{types_str}] "
-                        f"expected={est['min_count']}-{max_str} "
-                        f"actual={est['actual_count']}"
-                    )
-
-                click.echo()
-                s = result["summary"]
-                click.echo(
-                    f"Summary: {s['total']} estimates, "
-                    f"{s['passed']} passed, {s['failed']} failed"
-                )
+            output = {
+                "items": estimates,
+                "summary": result["summary"],
+                "failures_only": failures_only,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="scrape/estimates",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())

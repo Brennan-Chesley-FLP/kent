@@ -1,0 +1,60 @@
+{% for item in data["items"] %}
+{% if item.has_changes %}
+
+============================================================
+Request ID: {{ item.request_id }}
+URL: {{ item.request_url }}
+Continuation: {{ item.continuation }}
+{% if item.request_diff.has_changes and not data.show_data %}
+
+  Request Changes:
+{% if item.request_diff.added_count %}
+    Added: {{ item.request_diff.added_count }} requests
+{% for url in item.request_diff.added_urls %}
+      + {{ url }}
+{% endfor %}
+{% endif %}
+{% if item.request_diff.removed_count %}
+    Removed: {{ item.request_diff.removed_count }} requests
+{% for url in item.request_diff.removed_urls %}
+      - {{ url }}
+{% endfor %}
+{% endif %}
+{% if item.request_diff.modified_count %}
+    Modified: {{ item.request_diff.modified_count }} requests
+{% for url in item.request_diff.modified_urls %}
+      ~ {{ url }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if item.data_diff.has_changes and not data.show_requests %}
+
+  Data Changes:
+{% if item.data_diff.added_count %}
+    Added: {{ item.data_diff.added_count }} results
+{% endif %}
+{% if item.data_diff.removed_count %}
+    Removed: {{ item.data_diff.removed_count }} results
+{% endif %}
+{% if item.data_diff.changed_count %}
+    Changed: {{ item.data_diff.changed_count }} results
+{% for text in item.data_diff.changed_texts %}
+{% if text %}
+{{ text }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if item.error_diff.has_change %}
+
+  Error Changes:
+    Status: {{ item.error_diff.status }}
+{% if item.error_diff.original_error_type %}
+    Original: {{ item.error_diff.original_error_type }}
+{% endif %}
+{% if item.error_diff.new_error_type %}
+    New: {{ item.error_diff.new_error_type }}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endfor %}

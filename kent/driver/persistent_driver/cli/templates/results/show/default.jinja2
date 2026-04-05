@@ -1,0 +1,9 @@
+ID: {{ data.id }}
+Request ID: {{ data.request_id }}
+Type: {{ data.result_type }}
+Valid: {{ "Yes" if data.is_valid else "No" }}
+Data: {{ json_dumps(data.data, indent=2) }}
+{% if data.validation_errors %}
+Validation Errors: {{ json_dumps(data.validation_errors, indent=2) }}
+{% endif %}
+Created At: {{ data.created_at }}

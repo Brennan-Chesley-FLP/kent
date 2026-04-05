@@ -1,0 +1,8 @@
+ID: {{ data.id }}
+Status Code: {{ data.status_code }}
+URL: {{ data.url }}
+Continuation: {{ data.continuation }}
+Original Size: {{ data.content_size_original }}
+Compressed Size: {{ data.content_size_compressed }}
+Compression Ratio: {{ "%.2f" | format(data.compression_ratio) }}x
+Created At: {{ data.created_at }}

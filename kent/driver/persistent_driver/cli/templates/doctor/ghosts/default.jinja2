@@ -1,0 +1,21 @@
+{% from "_macros.jinja2" import section, table %}
+{{ section("Ghost Requests") }}
+Total: {{ data.total_count }}
+{% if data.total_count > 0 %}
+
+By Continuation:
+{% for cont, count in data.by_continuation.items() %}
+  {{ cont }}: {{ count }}
+{% endfor %}
+{% if data.ghosts %}
+
+Details:
+{{ table(data.ghosts, [
+    {"key": "id", "width": 15, "header": "id"},
+    {"key": "url", "width": 15, "header": "url"},
+    {"key": "continuation", "width": 15, "header": "continuation"},
+]) }}
+{% endif %}
+{% else %}
+No ghost requests found
+{% endif %}

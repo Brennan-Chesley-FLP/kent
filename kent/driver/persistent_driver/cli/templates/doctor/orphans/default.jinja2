@@ -1,0 +1,26 @@
+{% from "_macros.jinja2" import section, table %}
+{{ section("Orphaned Requests") }}
+{% if data.orphaned_requests %}
+Count: {{ data.orphaned_requests | length }}
+{{ table(data.orphaned_requests, [
+    {"key": "id", "width": 15, "header": "id"},
+    {"key": "url", "width": 15, "header": "url"},
+    {"key": "continuation", "width": 15, "header": "continuation"},
+    {"key": "completed_at", "width": 15, "header": "completed_at"},
+]) }}
+{% else %}
+No orphaned requests found
+{% endif %}
+
+{{ section("Orphaned Responses") }}
+{% if data.orphaned_responses %}
+Count: {{ data.orphaned_responses | length }}
+{{ table(data.orphaned_responses, [
+    {"key": "id", "width": 15, "header": "id"},
+    {"key": "request_id", "width": 15, "header": "request_id"},
+    {"key": "url", "width": 15, "header": "url"},
+    {"key": "created_at", "width": 15, "header": "created_at"},
+]) }}
+{% else %}
+No orphaned responses found
+{% endif %}

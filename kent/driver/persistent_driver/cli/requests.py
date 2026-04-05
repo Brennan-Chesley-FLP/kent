@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from pathlib import Path
 
@@ -14,6 +13,7 @@ from kent.driver.persistent_driver.cli import (
     cli,
     format_output,
 )
+from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 # =========================================================================
@@ -54,9 +54,12 @@ def requests(ctx: click.Context, db_path: str | None) -> None:
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def requests_list(
@@ -67,6 +70,7 @@ def requests_list(
     limit: int,
     offset: int,
     format_type: str,
+    template_name: str | None,
 ) -> None:
     """List requests with optional filtering.
 
@@ -88,52 +92,30 @@ def requests_list(
                 offset=offset,
             )
 
-            if format_type == "summary":
-                click.echo(
-                    f"Total: {page.total}, Showing: {len(page.items)}, "
-                    f"Offset: {offset}, Limit: {limit}"
-                )
-                if page.items:
-                    headers = [
-                        "id",
-                        "status",
-                        "url",
-                        "continuation",
-                        "retry_count",
-                    ]
-                    items = [
-                        {
-                            "id": r.id,
-                            "status": r.status,
-                            "url": r.url[:50] if r.url else "",
-                            "continuation": r.continuation,
-                            "retry_count": r.retry_count,
-                        }
-                        for r in page.items
-                    ]
-                    format_output(items, format_type, headers)
-                else:
-                    click.echo("No requests found")
-            else:
-                output = {
-                    "total": page.total,
-                    "items": [
-                        {
-                            "id": r.id,
-                            "status": r.status,
-                            "url": r.url,
-                            "continuation": r.continuation,
-                            "retry_count": r.retry_count,
-                            "method": r.method,
-                            "priority": r.priority,
-                        }
-                        for r in page.items
-                    ],
-                    "limit": limit,
-                    "offset": offset,
-                    "has_more": page.has_more,
-                }
-                format_output(output, format_type)
+            output = {
+                "total": page.total,
+                "items": [
+                    {
+                        "id": r.id,
+                        "status": r.status,
+                        "url": r.url,
+                        "continuation": r.continuation,
+                        "retry_count": r.retry_count,
+                        "method": r.method,
+                        "priority": r.priority,
+                    }
+                    for r in page.items
+                ],
+                "limit": limit,
+                "offset": offset,
+                "has_more": page.has_more,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="requests/list",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -150,13 +132,20 @@ def requests_list(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def requests_show(
-    ctx: click.Context, db_path: str | None, request_id: int, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    request_id: int,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Show detailed request information.
 
@@ -177,30 +166,23 @@ def requests_show(
 
                 sys.exit(1)
 
-            if format_type == "summary":
-                click.echo(f"ID: {request.id}")
-                click.echo(f"Status: {request.status}")
-                click.echo(f"URL: {request.url}")
-                click.echo(f"Method: {request.method}")
-                click.echo(f"Continuation: {request.continuation}")
-                click.echo(f"Priority: {request.priority}")
-                click.echo(f"Retry Count: {request.retry_count}")
-                click.echo(f"Created At: {request.created_at}")
-                if request.completed_at:
-                    click.echo(f"Completed At: {request.completed_at}")
-            else:
-                output = {
-                    "id": request.id,
-                    "status": request.status,
-                    "url": request.url,
-                    "method": request.method,
-                    "continuation": request.continuation,
-                    "priority": request.priority,
-                    "retry_count": request.retry_count,
-                    "created_at": request.created_at,
-                    "completed_at": request.completed_at,
-                }
-                format_output(output, format_type)
+            output = {
+                "id": request.id,
+                "status": request.status,
+                "url": request.url,
+                "method": request.method,
+                "continuation": request.continuation,
+                "priority": request.priority,
+                "retry_count": request.retry_count,
+                "created_at": request.created_at,
+                "completed_at": request.completed_at,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="requests/show",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -217,13 +199,20 @@ def requests_show(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def requests_parents(
-    ctx: click.Context, db_path: str | None, request_id: int, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    request_id: int,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Show the chain of parent requests from a request to the root.
 
@@ -245,28 +234,16 @@ def requests_parents(
                 click.echo(f"Request {request_id} not found", err=True)
                 sys.exit(1)
 
-            if format_type == "summary":
-                click.echo(
-                    f"Ancestry for request {request_id} "
-                    f"({len(chain)} levels):\n"
-                )
-                for entry in chain:
-                    depth = entry["depth"]
-                    indent = "  " * depth
-                    marker = "*" if depth == 0 else " "
-                    parent_info = (
-                        f" (parent: {entry['parent_request_id']})"
-                        if entry["parent_request_id"] is not None
-                        else " (root)"
-                    )
-                    click.echo(
-                        f"{indent}{marker} [{entry['id']}] "
-                        f"{entry['continuation']} "
-                        f"[{entry['status']}]{parent_info}"
-                    )
-                    click.echo(f"{indent}  {entry['url']}")
-            else:
-                format_output(chain, format_type)
+            output = {
+                "request_id": request_id,
+                "items": chain,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="requests/parents",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -282,13 +259,19 @@ def requests_parents(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def requests_summary(
-    ctx: click.Context, db_path: str | None, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """Show request counts by status and continuation.
 
@@ -303,13 +286,15 @@ def requests_summary(
         async with LocalDevDriverDebugger.open(db_path) as debugger:
             summary = await debugger.get_request_summary()
 
-            if format_type == "summary":
-                for continuation, status_counts in summary.items():
-                    click.echo(f"\n=== {continuation} ===")
-                    for status, count in status_counts.items():
-                        click.echo(f"  {status}: {count}")
-            else:
-                format_output(summary, format_type)
+            output = {
+                "items": summary,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="requests/summary",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -379,9 +364,12 @@ def requests_content(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def requests_search(
@@ -392,6 +380,7 @@ def requests_search(
     xpath_expr: str | None,
     step: str | None,
     format_type: str,
+    template_name: str | None,
 ) -> None:
     """Search response content for matching patterns.
 
@@ -426,18 +415,15 @@ def requests_search(
                     continuation=step,
                 )
 
-                if format_type == "summary":
-                    if matches:
-                        click.echo(f"Found {len(matches)} matching responses:")
-                        for match in matches:
-                            click.echo(f"  request_id={match['request_id']}")
-                    else:
-                        click.echo("No matching responses found")
-                elif format_type == "json":
-                    click.echo(json.dumps(matches, indent=2))
-                elif format_type == "jsonl":
-                    for match in matches:
-                        click.echo(json.dumps(match))
+                output = {
+                    "items": matches,
+                }
+                render_output(
+                    output,
+                    format_type=format_type,
+                    template_path="requests/search",
+                    template_name=template_name or "default",
+                )
 
             except ValueError as e:
                 click.echo(f"Error: {e}", err=True)
@@ -829,14 +815,21 @@ def compression_recompress(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
 )
 @click.option("--limit", default=100, help="Maximum number of results")
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
+)
 @click.pass_context
 def requests_pending(
-    ctx: click.Context, db_path: str | None, format_type: str, limit: int
+    ctx: click.Context,
+    db_path: str | None,
+    format_type: str,
+    limit: int,
+    template_name: str | None,
 ) -> None:
     """List pending requests with details.
 
@@ -853,48 +846,28 @@ def requests_pending(
                 status="pending", limit=limit, offset=0
             )
 
-            if format_type == "summary":
-                click.echo(f"Total Pending: {page.total}")
-                click.echo(f"Showing: {len(page.items)}")
-                if page.items:
-                    headers = [
-                        "id",
-                        "url",
-                        "continuation",
-                        "priority",
-                        "retry_count",
-                    ]
-                    items = [
-                        {
-                            "id": r.id,
-                            "url": r.url[:50] if r.url else "",
-                            "continuation": r.continuation,
-                            "priority": r.priority,
-                            "retry_count": r.retry_count,
-                        }
-                        for r in page.items
-                    ]
-                    format_output(items, format_type, headers)
-                else:
-                    click.echo("No pending requests found")
-            else:
-                output = {
-                    "total": page.total,
-                    "items": [
-                        {
-                            "id": r.id,
-                            "url": r.url,
-                            "continuation": r.continuation,
-                            "priority": r.priority,
-                            "retry_count": r.retry_count,
-                            "method": r.method,
-                            "created_at": r.created_at,
-                        }
-                        for r in page.items
-                    ],
-                    "limit": limit,
-                }
-                format_output(output, format_type)
+            output = {
+                "total": page.total,
+                "items": [
+                    {
+                        "id": r.id,
+                        "url": r.url,
+                        "continuation": r.continuation,
+                        "priority": r.priority,
+                        "retry_count": r.retry_count,
+                        "method": r.method,
+                        "created_at": r.created_at,
+                    }
+                    for r in page.items
+                ],
+                "limit": limit,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="requests/pending",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -910,17 +883,21 @@ def requests_pending(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
 )
 @click.option("--step", help="Filter by step name")
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
+)
 @click.pass_context
 def requests_ghosts(
     ctx: click.Context,
     db_path: str | None,
     format_type: str,
     step: str | None,
+    template_name: str | None,
 ) -> None:
     """List ghost requests grouped by step.
 
@@ -940,61 +917,40 @@ def requests_ghosts(
             # Filter by step if specified
             if step:
                 if step not in ghosts["by_continuation"]:
-                    if format_type == "summary":
-                        click.echo(
-                            f"No ghost requests found for step '{step}'"
-                        )
-                    else:
-                        format_output(
-                            {
-                                "total_count": 0,
-                                "by_continuation": {},
-                                "ghosts": [],
-                            },
-                            format_type,
-                        )
+                    output = {
+                        "total_count": 0,
+                        "by_continuation": {},
+                        "items": [],
+                    }
+                    render_output(
+                        output,
+                        format_type=format_type,
+                        template_path="requests/ghosts",
+                        template_name=template_name or "default",
+                    )
                     return
 
                 # Filter ghosts to only include the specified step
                 filtered_ghosts_list = [
                     g for g in ghosts["ghosts"] if g["continuation"] == step
                 ]
-                filtered_ghosts = {
+                ghosts = {
                     "total_count": len(filtered_ghosts_list),
                     "by_continuation": {step: ghosts["by_continuation"][step]},
                     "ghosts": filtered_ghosts_list,
                 }
-                ghosts = filtered_ghosts
 
-            if format_type == "json":
-                format_output(ghosts, format_type)
-            elif format_type == "jsonl":
-                for ghost in ghosts["ghosts"]:
-                    click.echo(json.dumps(ghost))
-            else:
-                # Table output
-                click.echo("=== Ghost Requests ===")
-                click.echo(f"Total: {ghosts['total_count']}")
-
-                if ghosts["total_count"] > 0:
-                    click.echo("\nBy Continuation:")
-                    for cont, count in ghosts["by_continuation"].items():
-                        click.echo(f"  {cont}: {count}")
-
-                    if ghosts["ghosts"]:
-                        click.echo("\nDetails:")
-                        headers = ["id", "url", "continuation"]
-                        items = [
-                            {
-                                "id": g["id"],
-                                "url": g["url"][:50] if g.get("url") else "",
-                                "continuation": g["continuation"],
-                            }
-                            for g in ghosts["ghosts"]
-                        ]
-                        format_output(items, "summary", headers)
-                else:
-                    click.echo("No ghost requests found")
+            output = {
+                "total_count": ghosts["total_count"],
+                "by_continuation": ghosts["by_continuation"],
+                "items": ghosts["ghosts"],
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="requests/ghosts",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
 
@@ -1010,13 +966,19 @@ def requests_ghosts(
 @click.option(
     "--format",
     "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
+    type=click.Choice(["default", "summary", "json", "jsonl"]),
+    default="default",
     help="Output format",
+)
+@click.option(
+    "--template", "template_name", default=None, help="Template name"
 )
 @click.pass_context
 def requests_orphans(
-    ctx: click.Context, db_path: str | None, format_type: str
+    ctx: click.Context,
+    db_path: str | None,
+    format_type: str,
+    template_name: str | None,
 ) -> None:
     """List orphaned requests and responses with details.
 
@@ -1031,41 +993,24 @@ def requests_orphans(
         async with LocalDevDriverDebugger.open(db_path) as debugger:
             orphans = await debugger.get_orphan_details()
 
-            if format_type == "json":
-                format_output(orphans, format_type)
-            elif format_type == "jsonl":
-                # Output orphaned requests
-                for req in orphans["orphaned_requests"]:
-                    click.echo(json.dumps({"type": "orphaned_request", **req}))
-                # Output orphaned responses
-                for resp in orphans["orphaned_responses"]:
-                    click.echo(
-                        json.dumps({"type": "orphaned_response", **resp})
-                    )
-            else:
-                # Table output
-                click.echo("=== Orphaned Requests ===")
-                if orphans["orphaned_requests"]:
-                    click.echo(f"Count: {len(orphans['orphaned_requests'])}")
-                    headers = ["id", "url", "continuation", "completed_at"]
-                    format_output(
-                        orphans["orphaned_requests"],
-                        "summary",
-                        headers,
-                    )
-                else:
-                    click.echo("No orphaned requests found")
-
-                click.echo("\n=== Orphaned Responses ===")
-                if orphans["orphaned_responses"]:
-                    click.echo(f"Count: {len(orphans['orphaned_responses'])}")
-                    headers = ["id", "request_id", "url", "created_at"]
-                    format_output(
-                        orphans["orphaned_responses"],
-                        "summary",
-                        headers,
-                    )
-                else:
-                    click.echo("No orphaned responses found")
+            # Build items list for jsonl: each entry tagged with type
+            items = [
+                {"type": "orphaned_request", **req}
+                for req in orphans["orphaned_requests"]
+            ] + [
+                {"type": "orphaned_response", **resp}
+                for resp in orphans["orphaned_responses"]
+            ]
+            output = {
+                "orphaned_requests": orphans["orphaned_requests"],
+                "orphaned_responses": orphans["orphaned_responses"],
+                "items": items,
+            }
+            render_output(
+                output,
+                format_type=format_type,
+                template_path="requests/orphans",
+                template_name=template_name or "default",
+            )
 
     asyncio.run(run())
