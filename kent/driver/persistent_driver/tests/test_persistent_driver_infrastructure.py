@@ -697,24 +697,25 @@ class TestAioSQLiteBucket:
 class TestRateLimiterIntegration:
     """Tests for rate limiter integration with PersistentDriver."""
 
-    async def test_rate_limited_request_manager_used_on_init(
+    async def test_rate_limiter_created_from_scraper_rates(
         self, db_path: Path
     ) -> None:
-        """Test that RateLimitedRequestManager is used as the request manager."""
+        """Test that the driver creates a rate limiter from scraper.rate_limits."""
+        from pyrate_limiter import Duration, Rate
+
         from kent.data_types import (
             BaseScraper,
             HttpMethod,
             HTTPRequestParams,
             Request,
         )
-        from kent.driver.persistent_driver.atb_rate_limiter import (
-            RateLimitedRequestManager,
-        )
         from kent.driver.persistent_driver.persistent_driver import (
             PersistentDriver,
         )
 
-        class MinimalScraper(BaseScraper[str]):
+        class RateLimitedScraper(BaseScraper[str]):
+            rate_limits = [Rate(5, Duration.SECOND)]
+
             def get_entry(self) -> Generator[Request, None, None]:
                 yield Request(
                     request=HTTPRequestParams(
@@ -728,13 +729,11 @@ class TestRateLimiterIntegration:
             def parse(self, response: Any) -> list:
                 return []
 
-        scraper = MinimalScraper()
+        scraper = RateLimitedScraper()
 
         async with PersistentDriver.open(
             scraper, db_path, enable_monitor=False
         ) as driver:
-            # Verify RateLimitedRequestManager is being used
-            assert isinstance(
-                driver.request_manager,
-                RateLimitedRequestManager,
-            )
+            # Verify rate limiter is created on the driver
+            assert driver.rate_limiter is not None
+            assert driver._rates == scraper.rate_limits

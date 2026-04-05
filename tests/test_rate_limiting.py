@@ -16,6 +16,8 @@ import pytest
 from pyrate_limiter import Duration, Rate, RateItem
 
 from kent.data_types import (
+    ArchiveDecision,
+    ArchiveResponse,
     BaseScraper,
     HttpMethod,
     HTTPRequestParams,
@@ -431,4 +433,143 @@ class TestPlaywrightDriverBypassRateLimit:
         assert elapsed < BYPASS_MAX_SECONDS, (
             f"PlaywrightDriver bypass requests took {elapsed:.2f}s, "
             f"expected < {BYPASS_MAX_SECONDS:.1f}s (rate limit should be skipped)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Archive skip bypasses rate limiter
+# ---------------------------------------------------------------------------
+
+ARCHIVE_SKIP_NUM_ARCHIVES = 4
+# 1 request per 2 seconds → the 1 entry request is rate-limited, then the
+# 4 archive requests should all be skipped instantly.  Without bypass the
+# 5 total requests would need ≥ 8 s.
+ARCHIVE_SKIP_RATE = Rate(1, 2 * Duration.SECOND)
+# With archive skip bypass, only the 1 entry request is rate-limited.
+ARCHIVE_SKIP_MAX_SECONDS = 4.0
+
+
+class _SkipAllDownloadsAsync:
+    """Async archive handler that always skips downloads."""
+
+    async def should_download(
+        self, url, deduplication_key, expected_type, hash_header_value
+    ):
+        return ArchiveDecision(download=False, file_url="/skipped")
+
+    async def save(
+        self, url, deduplication_key, expected_type, hash_header_value, content
+    ):
+        raise AssertionError(
+            "save should not be called when downloads are skipped"
+        )
+
+
+def _make_archive_skip_scraper_class(
+    server_url: str,
+    rate: Rate = ARCHIVE_SKIP_RATE,
+    n_archives: int = ARCHIVE_SKIP_NUM_ARCHIVES,
+):
+    """Build a scraper where one entry yields N archive requests (all skipped)."""
+
+    class ArchiveSkipScraper(BaseScraper[dict]):
+        rate_limits = [rate]
+
+        def get_entry(self) -> Generator[Request, None, None]:
+            # Single entry request (rate-limited HTTP)
+            yield Request(
+                request=HTTPRequestParams(
+                    method=HttpMethod.GET,
+                    url=f"{server_url}/test",
+                ),
+                continuation="archive_step",
+            )
+
+        def archive_step(self, response: Response):
+            # Yield N archive requests that the handler will skip
+            for i in range(n_archives):
+                yield Request(
+                    request=HTTPRequestParams(
+                        method=HttpMethod.GET,
+                        url=f"{response.url}?archive={i}",
+                    ),
+                    continuation="parse_archive",
+                    archive=True,
+                    expected_type="pdf",
+                )
+
+        def parse_archive(self, response: ArchiveResponse):
+            yield ParsedData(data={"file_url": response.file_url})
+
+    return ArchiveSkipScraper
+
+
+class TestPersistentDriverArchiveSkipBypassesRateLimiter:
+    async def test_archive_skip_bypasses_rate_limiter(
+        self, server_url: str, tmp_path: Path
+    ) -> None:
+        """Skipped archive downloads should not consume rate limiter tokens."""
+        from kent.driver.persistent_driver import PersistentDriver
+
+        Scraper = _make_archive_skip_scraper_class(server_url)
+        scraper = Scraper()
+        callback, results = collect_results_async()
+
+        db_path = tmp_path / "archive_skip_test.db"
+
+        start = time.monotonic()
+        async with PersistentDriver.open(
+            scraper,
+            db_path,
+            num_workers=1,
+            resume=False,
+            enable_monitor=False,
+        ) as driver:
+            driver.archive_handler = _SkipAllDownloadsAsync()
+            driver.on_data = callback
+            await driver.run()
+        elapsed = time.monotonic() - start
+
+        assert len(results) == ARCHIVE_SKIP_NUM_ARCHIVES
+        assert elapsed < ARCHIVE_SKIP_MAX_SECONDS, (
+            f"PersistentDriver archive skip took {elapsed:.2f}s, "
+            f"expected < {ARCHIVE_SKIP_MAX_SECONDS:.1f}s "
+            f"(skipped downloads should bypass rate limiter)"
+        )
+
+
+class TestPlaywrightDriverArchiveSkipBypassesRateLimiter:
+    @pytest.mark.slow
+    async def test_archive_skip_bypasses_rate_limiter(
+        self, server_url: str, tmp_path: Path
+    ) -> None:
+        """Skipped archive downloads should not consume rate limiter tokens."""
+        pw = pytest.importorskip("playwright")  # noqa: F841
+        from kent.driver.playwright_driver import PlaywrightDriver
+
+        Scraper = _make_archive_skip_scraper_class(server_url)
+        scraper = Scraper()
+        callback, results = collect_results_async()
+
+        db_path = tmp_path / "archive_skip_pw_test.db"
+
+        start = time.monotonic()
+        async with PlaywrightDriver.open(
+            scraper,
+            db_path,
+            num_workers=1,
+            resume=False,
+            enable_monitor=False,
+            headless=True,
+        ) as driver:
+            driver.archive_handler = _SkipAllDownloadsAsync()
+            driver.on_data = callback
+            await driver.run()
+        elapsed = time.monotonic() - start
+
+        assert len(results) == ARCHIVE_SKIP_NUM_ARCHIVES
+        assert elapsed < ARCHIVE_SKIP_MAX_SECONDS, (
+            f"PlaywrightDriver archive skip took {elapsed:.2f}s, "
+            f"expected < {ARCHIVE_SKIP_MAX_SECONDS:.1f}s "
+            f"(skipped downloads should bypass rate limiter)"
         )

@@ -46,6 +46,7 @@ from kent.common.speculation_types import (
     YearlySpeculation,
 )
 from kent.data_types import (
+    ArchiveDecision,
     ArchiveResponse,
     BaseRequest,
     BaseScraper,
@@ -727,7 +728,9 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         return response
 
     async def resolve_archive_request(
-        self, request: Request
+        self,
+        request: Request,
+        archive_decision: ArchiveDecision | None = None,
     ) -> ArchiveResponse:
         """Fetch an archive Request, download the file, and return an ArchiveResponse.
 
@@ -737,42 +740,46 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
 
         Args:
             request: The archive Request to fetch (must have archive=True).
+            archive_decision: Pre-computed decision from the archive handler.
+                When provided, skips the ``should_download()`` call.  The
+                caller is responsible for having already consulted the handler.
 
         Returns:
             ArchiveResponse containing the HTTP response data and local file path.
         """
-        # Extract hash header value via HEAD if requested
-        hash_header_value = None
-        if request.archive_hash_header:
-            try:
-                head_request = BaseRequest(
-                    request=HTTPRequestParams(
-                        method=HttpMethod.HEAD,
-                        url=request.request.url,
-                    ),
-                    continuation="",
-                )
-                head_response = await self.resolve_request(head_request)
-                hash_header_value = head_response.headers.get(
-                    request.archive_hash_header
-                )
-            except Exception:
-                pass
-
         dedup_key = (
             request.deduplication_key
             if isinstance(request.deduplication_key, str)
             else None
         )
 
-        decision = await self.archive_handler.should_download(
-            url=request.request.url,
-            deduplication_key=dedup_key,
-            expected_type=request.expected_type,
-            hash_header_value=hash_header_value,
-        )
+        if archive_decision is None:
+            # Extract hash header value via HEAD if requested
+            hash_header_value = None
+            if request.archive_hash_header:
+                try:
+                    head_request = BaseRequest(
+                        request=HTTPRequestParams(
+                            method=HttpMethod.HEAD,
+                            url=request.request.url,
+                        ),
+                        continuation="",
+                    )
+                    head_response = await self.resolve_request(head_request)
+                    hash_header_value = head_response.headers.get(
+                        request.archive_hash_header
+                    )
+                except Exception:
+                    pass
 
-        if not decision.download:
+            archive_decision = await self.archive_handler.should_download(
+                url=request.request.url,
+                deduplication_key=dedup_key,
+                expected_type=request.expected_type,
+                hash_header_value=hash_header_value,
+            )
+
+        if not archive_decision.download:
             return ArchiveResponse(
                 status_code=200,
                 headers={},
@@ -780,7 +787,7 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
                 text="",
                 url=request.request.url,
                 request=request,
-                file_url=decision.file_url,
+                file_url=archive_decision.file_url,
             )
 
         http_response = await self.resolve_request(request)
@@ -789,7 +796,7 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
             url=request.request.url,
             deduplication_key=dedup_key,
             expected_type=request.expected_type,
-            hash_header_value=hash_header_value,
+            hash_header_value=None,
             content=http_response.content,
         )
 

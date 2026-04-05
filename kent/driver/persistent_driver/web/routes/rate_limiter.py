@@ -103,33 +103,30 @@ async def get_rate_limiter_state(
         )
 
     driver = run_info.driver
-    if driver is None or driver.request_manager is None:
+    if driver is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Rate limiter not available for run '{run_id}' "
             "(driver not loaded)",
         )
 
-    # Get state from the request manager if it has one
-    state = getattr(driver.request_manager, "state", None)
-    if state is None:
-        return RateLimiterStateResponse(
-            rates=[],
-            total_requests=0,
-            total_successes=0,
-            success_rate=100.0,
-        )
-
+    # Get configured rates from the driver
+    driver_rates = getattr(driver, "_rates", None) or []
     rates = [
-        RateLimitConfig(limit=r["limit"], interval_ms=r["interval_ms"])
-        for r in state.get("rates", [])
+        RateLimitConfig(limit=r.limit, interval_ms=r.interval)
+        for r in driver_rates
     ]
+
+    # Get request stats from the database
+    stats = await driver.db.get_stats()
+    total = stats.queue.total
+    completed = stats.queue.completed
 
     return RateLimiterStateResponse(
         rates=rates,
-        total_requests=state.get("total_requests", 0),
-        total_successes=state.get("total_successes", 0),
-        success_rate=state.get("success_rate", 100.0),
+        total_requests=total,
+        total_successes=completed,
+        success_rate=(completed / total * 100 if total > 0 else 100.0),
     )
 
 

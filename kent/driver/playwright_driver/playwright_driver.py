@@ -40,7 +40,6 @@ from playwright.async_api import (
 from playwright.async_api import (
     TimeoutError as PlaywrightTimeoutError,
 )
-from pyrate_limiter import Limiter
 
 from kent.common.decorators import get_step_metadata
 from kent.common.exceptions import (
@@ -70,9 +69,6 @@ from kent.driver.persistent_driver.compression import (
 )
 from kent.driver.persistent_driver.persistent_driver import (
     PersistentDriver,
-)
-from kent.driver.persistent_driver.rate_limiter import (
-    AioSQLiteBucket,
 )
 from kent.driver.persistent_driver.sql_manager import (
     SQLManager,
@@ -289,7 +285,7 @@ class PlaywrightDriver(
         request_manager: Any | None = None,
         enable_monitor: bool = True,
         excluded_resource_types: set[str] | None = None,
-        rate_limiter: Limiter | None = None,
+        rates: list[Any] | None = None,
     ) -> None:
         """Initialize the Playwright driver.
 
@@ -307,7 +303,7 @@ class PlaywrightDriver(
             request_manager: AsyncRequestManager for handling HTTP requests.
             enable_monitor: If True (default), start the worker monitor for dynamic scaling.
             excluded_resource_types: Resource types to exclude from content capture (default: {"image", "media", "font"}).
-            rate_limiter: Optional rate limiter for controlling navigation pace.
+            rates: Optional list of pyrate_limiter Rate objects for rate limiting.
         """
         super().__init__(
             scraper=scraper,
@@ -319,6 +315,7 @@ class PlaywrightDriver(
             max_backoff_time=max_backoff_time,
             request_manager=request_manager,
             enable_monitor=enable_monitor,
+            rates=rates,
         )
 
         self.browser_context = browser_context
@@ -330,10 +327,6 @@ class PlaywrightDriver(
             "media",
             "font",
         }
-        # Rate limiter for controlling navigation pace
-        self.rate_limiter = rate_limiter
-        # Expose rates so the worker monitor can compute workers_needed
-        self._rates: list[Any] | None = None
 
     async def _acquire_worker_page(self, worker_id: int) -> WorkerPage:
         """Get or create the reusable page for a worker."""
@@ -553,18 +546,8 @@ class PlaywrightDriver(
                             await browser_context.add_init_script(js)
 
                 try:
-                    # Initialize rate limiter from explicit rates or scraper declaration
-                    rate_limiter = None
-                    effective_rates = rates or scraper.rate_limits
-                    if effective_rates:
-                        bucket = AioSQLiteBucket(
-                            db._session_factory,
-                            effective_rates,
-                            db._lock,
-                        )
-                        rate_limiter = Limiter(bucket)
-
                     # Create driver instance (no request manager needed for Playwright)
+                    effective_rates = rates or scraper.rate_limits
                     driver = cls(
                         scraper=scraper,
                         db=db,
@@ -577,10 +560,8 @@ class PlaywrightDriver(
                         request_manager=None,
                         enable_monitor=enable_monitor,
                         excluded_resource_types=excluded_resource_types,
-                        rate_limiter=rate_limiter,
+                        rates=effective_rates,
                     )
-                    # Expose rates for the worker monitor's scaling logic
-                    driver._rates = effective_rates
 
                     # Restore cookies on resume
                     if resume:
@@ -698,6 +679,7 @@ class PlaywrightDriver(
         continuation_name: str,
         parent_request_id: int | None = None,
         worker_id: int = 0,
+        archive_decision: Any = None,
     ) -> None:
         """Process a request using the worker's reusable Playwright page.
 
@@ -711,6 +693,7 @@ class PlaywrightDriver(
             continuation_name: The continuation method name to invoke after navigation.
             parent_request_id: Parent request ID for tab route interception.
             worker_id: Identifier of the calling worker.
+            archive_decision: Pre-computed ArchiveDecision from the worker loop.
         """
         wp = await self._acquire_worker_page(worker_id)
         try:
@@ -725,17 +708,49 @@ class PlaywrightDriver(
         page = wp.page
 
         try:
-            # Acquire rate limiter token before navigation
-            bypass = getattr(request, "bypass_rate_limit", False)
-            if self.rate_limiter and not bypass:
-                await self.rate_limiter.try_acquire_async(
-                    name="navigation", weight=1
-                )
-                # Re-stamp start time so duration excludes rate limiter wait
-                await self.db.restamp_request_start(request_id)
-
             # Archive requests: click triggers a download, not a navigation
             is_archive = getattr(request, "archive", False)
+
+            # Skipped archives (download=False) need no browser interaction,
+            # so handle them before the via/parent_request_id guard.
+            if (
+                is_archive
+                and archive_decision is not None
+                and not archive_decision.download
+            ):
+                response: Response = ArchiveResponse(
+                    status_code=200,
+                    url=request.request.url,
+                    content=b"",
+                    text="",
+                    headers={},
+                    request=request,
+                    file_url=archive_decision.file_url,
+                )
+
+                await self._store_response(
+                    request_id=request_id,
+                    response=response,
+                    continuation=continuation_name,
+                    speculation_outcome=None,
+                )
+
+                # Process continuation
+                if continuation_name:
+                    cont = getattr(self.scraper, continuation_name, None)
+                    if cont:
+                        gen = cont(response)
+                        await self._process_generator_with_storage(
+                            gen,
+                            response,
+                            request,
+                            continuation_name,
+                            request_id,
+                        )
+
+                await self.db.mark_request_completed(request_id)
+                return
+
             if is_archive and parent_request_id and request.via is not None:
                 dedup_key = (
                     request.deduplication_key
@@ -744,15 +759,18 @@ class PlaywrightDriver(
                 )
                 expected_type = getattr(request, "expected_type", None)
 
-                decision = await self.archive_handler.should_download(
-                    url=request.request.url,
-                    deduplication_key=dedup_key,
-                    expected_type=expected_type,
-                    hash_header_value=None,
-                )
+                # Use pre-computed decision from _db_worker if available
+                decision = archive_decision
+                if decision is None:
+                    decision = await self.archive_handler.should_download(
+                        url=request.request.url,
+                        deduplication_key=dedup_key,
+                        expected_type=expected_type,
+                        hash_header_value=None,
+                    )
 
                 if not decision.download:
-                    response: Response = ArchiveResponse(
+                    response = ArchiveResponse(
                         status_code=200,
                         url=request.request.url,
                         content=b"",

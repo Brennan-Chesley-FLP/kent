@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
+from pyrate_limiter import Limiter, Rate
+
 from kent.data_types import (
     BaseScraper,
 )
@@ -130,6 +132,7 @@ class PersistentDriver(
         max_backoff_time: float = 3600.0,
         request_manager: Any | None = None,
         enable_monitor: bool = True,
+        rates: list[Rate] | None = None,
     ) -> None:
         """Initialize the driver.
 
@@ -146,6 +149,7 @@ class PersistentDriver(
             request_manager: AsyncRequestManager for handling HTTP requests.
             enable_monitor: If True (default), start the worker monitor for dynamic scaling.
                 Set to False for tests that need the driver to exit quickly.
+            rates: Optional list of pyrate_limiter Rate objects for rate limiting.
         """
         # Initialize parent with the request manager
         super().__init__(
@@ -161,6 +165,20 @@ class PersistentDriver(
         self.enable_monitor = enable_monitor
 
         self.db = db
+
+        # Rate limiter — shared by both PersistentDriver and PlaywrightDriver,
+        # applied in the _db_worker loop before each request.
+        self._rates = rates
+        if rates:
+            from kent.driver.persistent_driver.rate_limiter import (
+                AioSQLiteBucket,
+            )
+
+            bucket = AioSQLiteBucket(db._session_factory, rates, db._lock)
+            self.rate_limiter: Limiter | None = Limiter(bucket)
+        else:
+            self.rate_limiter = None
+
         # Progress callback for web interface
         self.on_progress: Callable[[ProgressEvent], Awaitable[None]] | None = (
             None
@@ -240,21 +258,15 @@ class PersistentDriver(
                 )
 
         # Use custom request manager if provided (e.g., for testing)
-        # Otherwise, set up rate-limited request manager
         if custom_request_manager is not None:
             request_manager = custom_request_manager
         else:
-            from kent.driver.persistent_driver.atb_rate_limiter import (
-                RateLimitedRequestManager,
-            )
+            from kent.common.request_manager import AsyncRequestManager
 
-            request_manager = RateLimitedRequestManager(
-                sql_manager=sql_manager,
-                rates=scraper.rate_limits,
+            request_manager = AsyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
                 timeout=timeout,
             )
-            await request_manager.initialize()
 
         driver = cls(
             scraper,
@@ -264,6 +276,7 @@ class PersistentDriver(
             max_workers=max_workers,
             max_backoff_time=max_backoff_time,
             resume=resume,
+            rates=scraper.rate_limits,
             **kwargs,
         )
 

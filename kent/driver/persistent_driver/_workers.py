@@ -6,6 +6,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from pyrate_limiter import Limiter
+
 from kent.common.exceptions import (
     RequestFailedHalt,
     RequestFailedSkip,
@@ -24,11 +26,14 @@ from kent.driver.sync_driver import SpeculationState
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Generator
 
+    from pyrate_limiter import Rate
+
     from kent.common.deferred_validation import DeferredValidation
     from kent.common.exceptions import (
         HTMLStructuralAssumptionException,
     )
     from kent.data_types import ArchiveResponse
+    from kent.driver.archive_handler import AsyncArchiveHandler
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +51,9 @@ class WorkerMixin:
     max_workers: int
     num_workers: int
     request_manager: Any
+    rate_limiter: Limiter | None
+    archive_handler: AsyncArchiveHandler
+    _rates: list[Rate] | None
     _worker_tasks: dict[int, asyncio.Task[None]]
     _next_worker_id: int
     _speculation_state: dict[str, SpeculationState]
@@ -110,7 +118,9 @@ class WorkerMixin:
         async def resolve_request(self, request: BaseRequest) -> Response: ...
 
         async def resolve_archive_request(
-            self, request: Request
+            self,
+            request: Request,
+            archive_decision: Any = None,
         ) -> ArchiveResponse: ...
 
         async def handle_data(self, data: Any) -> None: ...
@@ -214,14 +224,10 @@ class WorkerMixin:
             else:
                 # Determine how many workers are needed to saturate the
                 # configured rate limit given observed request durations.
-                rates = getattr(
-                    self.request_manager, "_rates", None
-                ) or getattr(self, "_rates", None)
-
-                if rates:
+                if self._rates:
                     # Most restrictive rate expressed as requests/second.
                     max_rate_per_sec: float | None = min(
-                        r.limit / (r.interval / 1000) for r in rates
+                        r.limit / (r.interval / 1000) for r in self._rates
                     )
                 else:
                     max_rate_per_sec = None
@@ -463,6 +469,37 @@ class WorkerMixin:
                     else request.continuation.__name__
                 )
 
+                # Decide whether to skip the rate limiter for this request.
+                bypass = getattr(request, "bypass_rate_limit", False)
+                archive_decision = None
+                if not bypass and getattr(request, "archive", False):
+                    # Pre-check archive handler so skipped downloads
+                    # don't consume a rate-limiter token.
+                    dedup_key = (
+                        request.deduplication_key
+                        if isinstance(request.deduplication_key, str)
+                        else None
+                    )
+                    archive_decision = (
+                        await self.archive_handler.should_download(
+                            url=request.request.url,
+                            deduplication_key=dedup_key,
+                            expected_type=getattr(
+                                request, "expected_type", None
+                            ),
+                            hash_header_value=None,
+                        )
+                    )
+                    if not archive_decision.download:
+                        bypass = True
+
+                if self.rate_limiter and not bypass:
+                    await self.rate_limiter.try_acquire_async(
+                        name="request", weight=1
+                    )
+                    # Re-stamp start time so duration excludes rate limiter wait
+                    await self.db.restamp_request_start(request_id)
+
                 # Process the request
                 req_start = time_module.time()
                 await self._process_regular_request(
@@ -471,6 +508,7 @@ class WorkerMixin:
                     continuation_name,
                     parent_request_id=parent_request_id,
                     worker_id=worker_id,
+                    archive_decision=archive_decision,
                 )
                 req_time = time_module.time() - req_start
                 loop_time = time_module.time() - loop_start
@@ -592,6 +630,7 @@ class WorkerMixin:
         continuation_name: str,
         parent_request_id: int | None = None,
         worker_id: int = 0,
+        archive_decision: Any = None,
     ) -> None:
         """Process a regular (non-speculative, non-resume) request.
 
@@ -601,6 +640,9 @@ class WorkerMixin:
             continuation_name: Name of the continuation method.
             parent_request_id: Parent request ID for tab forking (Playwright).
             worker_id: Identifier of the calling worker (used by Playwright driver).
+            archive_decision: Pre-computed ArchiveDecision from the worker loop.
+                Passed through to ``resolve_archive_request`` to avoid a
+                redundant ``should_download()`` call.
         """
         # Process the request using parent class methods
         # For archive requests, resolve_archive_request returns ArchiveResponse
@@ -609,7 +651,9 @@ class WorkerMixin:
 
         logger.info(f"Request {request_id}: starting HTTP fetch")
         response: Response = (
-            await self.resolve_archive_request(request)
+            await self.resolve_archive_request(
+                request, archive_decision=archive_decision
+            )
             if request.archive
             else await self.resolve_request(request)
         )

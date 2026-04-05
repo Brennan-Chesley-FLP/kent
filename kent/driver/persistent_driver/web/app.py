@@ -166,9 +166,7 @@ class RunManager:
         Raises:
             ValueError: If run_id already exists.
         """
-        from kent.driver.persistent_driver.atb_rate_limiter import (
-            RateLimitedRequestManager,
-        )
+        from kent.common.request_manager import AsyncRequestManager
         from kent.driver.persistent_driver.database import (
             init_database,
         )
@@ -216,20 +214,16 @@ class RunManager:
                 seed_params=seed_params,
             )
 
-            # Set up rate-limited request manager
-            request_manager = RateLimitedRequestManager(
-                sql_manager=sql_manager,
-                rates=scraper.rate_limits,
+            # Create driver with SQLManager and request manager
+            request_manager = AsyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
             )
-            await request_manager.initialize()
-
-            # Create driver with SQLManager and request manager
             driver = PersistentDriver(
                 scraper=scraper,
                 db=sql_manager,
                 storage_dir=storage_dir,
                 request_manager=request_manager,
+                rates=scraper.rate_limits,
                 **driver_kwargs,
             )
 
@@ -262,9 +256,7 @@ class RunManager:
         Raises:
             ValueError: If run_id not found or already loaded.
         """
-        from kent.driver.persistent_driver.atb_rate_limiter import (
-            RateLimitedRequestManager,
-        )
+        from kent.common.request_manager import AsyncRequestManager
         from kent.driver.persistent_driver.database import (
             init_database,
         )
@@ -325,21 +317,17 @@ class RunManager:
                     f"Restored {pending_count} pending requests from database"
                 )
 
-            # Set up rate-limited request manager
-            request_manager = RateLimitedRequestManager(
-                sql_manager=sql_manager,
-                rates=scraper.rate_limits,
+            # Load driver with resume=True and custom archive handler
+            request_manager = AsyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
             )
-            await request_manager.initialize()
-
-            # Load driver with resume=True and custom archive handler
             driver = PersistentDriver(
                 scraper=scraper,
                 db=sql_manager,
                 storage_dir=storage_dir,
                 resume=True,
                 request_manager=request_manager,
+                rates=scraper.rate_limits,
                 **driver_kwargs,
             )
 
