@@ -167,14 +167,8 @@ class RunManager:
             ValueError: If run_id already exists.
         """
         from kent.common.request_manager import AsyncRequestManager
-        from kent.driver.persistent_driver.database import (
-            init_database,
-        )
         from kent.driver.persistent_driver.persistent_driver import (
             PersistentDriver,
-        )
-        from kent.driver.persistent_driver.sql_manager import (
-            SQLManager,
         )
         from kent.driver.persistent_driver.web.archive import (
             UuidAsyncArchiveHandler,
@@ -196,22 +190,13 @@ class RunManager:
             speculation_config = driver_kwargs.pop("speculation_config", None)
             seed_params = driver_kwargs.pop("seed_params", None)
 
-            # Initialize database and SQLManager
-            engine, session_factory = await init_database(db_path)
-            sql_manager = SQLManager(engine, session_factory)
-
-            # Initialize run metadata
-            # Use __module__ to get full path (e.g., juriscraper.opinions...ca1)
-            # This is needed for the debugger's compare command to import the scraper
-            scraper_name = scraper.__class__.__module__
-            scraper_version = getattr(scraper, "__version__", None)
-            await sql_manager.init_run_metadata(
-                scraper_name=scraper_name,
-                scraper_version=scraper_version,
+            _engine, sql_manager = await PersistentDriver._init_db(
+                scraper,
+                db_path,
                 num_workers=num_workers,
                 max_backoff_time=max_backoff_time,
-                speculation_config=speculation_config,
                 seed_params=seed_params,
+                speculation_config=speculation_config,
             )
 
             # Create driver with SQLManager and request manager
@@ -257,14 +242,8 @@ class RunManager:
             ValueError: If run_id not found or already loaded.
         """
         from kent.common.request_manager import AsyncRequestManager
-        from kent.driver.persistent_driver.database import (
-            init_database,
-        )
         from kent.driver.persistent_driver.persistent_driver import (
             PersistentDriver,
-        )
-        from kent.driver.persistent_driver.sql_manager import (
-            SQLManager,
         )
         from kent.driver.persistent_driver.web.archive import (
             UuidAsyncArchiveHandler,
@@ -290,32 +269,14 @@ class RunManager:
             max_backoff_time = driver_kwargs.get("max_backoff_time", 3600.0)
             speculation_config = driver_kwargs.pop("speculation_config", None)
 
-            # Initialize database and SQLManager
-            engine, session_factory = await init_database(run_info.db_path)
-            sql_manager = SQLManager(engine, session_factory)
-
-            # Initialize run metadata (for existing runs, this updates status)
-            # Use __module__ to get full path (e.g., juriscraper.opinions...ca1)
-            # This is needed for the debugger's compare command to import the scraper
-            scraper_name = scraper.__class__.__module__
-            scraper_version = getattr(scraper, "__version__", None)
-            await sql_manager.init_run_metadata(
-                scraper_name=scraper_name,
-                scraper_version=scraper_version,
+            _engine, sql_manager = await PersistentDriver._init_db(
+                scraper,
+                run_info.db_path,
                 num_workers=num_workers,
                 max_backoff_time=max_backoff_time,
+                resume=True,
+                speculation_config=speculation_config,
             )
-
-            # Get speculation config - prefer provided, fall back to stored
-            if speculation_config is None:
-                speculation_config = await sql_manager.get_speculation_config()
-
-            # Restore queue since we're resuming
-            pending_count = await sql_manager.restore_queue()
-            if pending_count > 0:
-                logger.info(
-                    f"Restored {pending_count} pending requests from database"
-                )
 
             # Load driver with resume=True and custom archive handler
             request_manager = AsyncRequestManager(

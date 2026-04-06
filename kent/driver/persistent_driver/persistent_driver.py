@@ -198,6 +198,52 @@ class PersistentDriver(
         self._speculation_lock = asyncio.Lock()
 
     @classmethod
+    async def _init_db(
+        cls,
+        scraper: BaseScraper[Any],
+        db_path: Path,
+        *,
+        num_workers: int = 1,
+        max_backoff_time: float = 3600.0,
+        resume: bool = True,
+        seed_params: list[dict[str, dict[str, Any]]] | None = None,
+        **metadata_kwargs: Any,
+    ) -> tuple[Any, SQLManager]:
+        """Initialize database, run metadata, and optionally restore queue.
+
+        Shared by :meth:`open`, :class:`PlaywrightDriver.open`, and
+        the web ``RunManager``.
+
+        Returns:
+            ``(engine, sql_manager)`` tuple.  The caller is responsible
+            for disposing the engine when done.
+        """
+        engine, session_factory = await init_database(db_path)
+        sql_manager = SQLManager(engine, session_factory)
+
+        scraper_name = (
+            f"{scraper.__class__.__module__}:{scraper.__class__.__name__}"
+        )
+        scraper_version = getattr(scraper, "__version__", None)
+        await sql_manager.init_run_metadata(
+            scraper_name=scraper_name,
+            scraper_version=scraper_version,
+            num_workers=num_workers,
+            max_backoff_time=max_backoff_time,
+            seed_params=seed_params,
+            **metadata_kwargs,
+        )
+
+        if resume:
+            pending_count = await sql_manager.restore_queue()
+            if pending_count > 0:
+                logger.info(
+                    f"Restored {pending_count} pending requests from database"
+                )
+
+        return engine, sql_manager
+
+    @classmethod
     @asynccontextmanager
     async def open(
         cls,
@@ -221,41 +267,23 @@ class PersistentDriver(
             async with LocalDevDriver.open(scraper, db_path) as driver:
                 await driver.run()
         """
-        # Extract driver-specific kwargs for SQLManager initialization
+        # Extract driver-specific kwargs
         num_workers = kwargs.pop("num_workers", 1)
         max_workers = kwargs.pop("max_workers", 10)
         max_backoff_time = kwargs.pop("max_backoff_time", 3600.0)
         resume = kwargs.pop("resume", True)
-        timeout = kwargs.pop("timeout", None)  # Request timeout in seconds
+        timeout = kwargs.pop("timeout", None)
         custom_request_manager = kwargs.pop("request_manager", None)
         seed_params = kwargs.pop("seed_params", None)
 
-        # Initialize database and SQLManager
-        engine, session_factory = await init_database(db_path)
-        sql_manager = SQLManager(engine, session_factory)
-
-        # Initialize run metadata
-        # Store full path as module:class_name format for registry lookup
-        # e.g., "juriscraper.sd.state.connecticut.jud_ct_gov.scraper:ConnScraper"
-        scraper_name = (
-            f"{scraper.__class__.__module__}:{scraper.__class__.__name__}"
-        )
-        scraper_version = getattr(scraper, "__version__", None)
-        await sql_manager.init_run_metadata(
-            scraper_name=scraper_name,
-            scraper_version=scraper_version,
+        engine, sql_manager = await cls._init_db(
+            scraper,
+            db_path,
             num_workers=num_workers,
             max_backoff_time=max_backoff_time,
+            resume=resume,
             seed_params=seed_params,
         )
-
-        # Restore queue if resuming
-        if resume:
-            pending_count = await sql_manager.restore_queue()
-            if pending_count > 0:
-                logger.info(
-                    f"Restored {pending_count} pending requests from database"
-                )
 
         # Use custom request manager if provided (e.g., for testing)
         if custom_request_manager is not None:

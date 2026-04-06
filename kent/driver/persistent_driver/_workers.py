@@ -125,6 +125,17 @@ class WorkerMixin:
 
         async def handle_data(self, data: Any) -> None: ...
 
+        # Provided by PlaywrightDriver (optional — only called when page is set)
+        async def _process_generator_with_autowait(
+            self,
+            continuation: Any,
+            response: Response,
+            parent_request: BaseRequest,
+            request_id: int,
+            auto_await_timeout: int,
+            page: Any = None,
+        ) -> None: ...
+
     # --- Worker Management ---
 
     @property
@@ -623,6 +634,81 @@ class WorkerMixin:
         await self.db._session_factory.remove(scope_key)
         clear_scope()
 
+    async def _complete_request(
+        self,
+        request_id: int,
+        response: Response,
+        request: BaseRequest,
+        continuation_name: str,
+        *,
+        speculation_outcome: str | None = None,
+        page: Any = None,
+        store_response: bool = True,
+    ) -> None:
+        """Store response, run continuation, and mark request completed.
+
+        This is the shared tail of every ``_process_regular_request``
+        implementation — both the HTTP driver and the Playwright driver
+        converge here after obtaining a response.
+
+        Args:
+            request_id: Database ID of the request.
+            response: The response to store and pass to the continuation.
+            request: The original request (used as parent context for
+                any new requests yielded by the continuation).
+            continuation_name: Name of the continuation method.
+            speculation_outcome: Optional speculation outcome to record.
+            page: Playwright page for autowait retry (Playwright driver only).
+            store_response: If False, skip storing the response (caller
+                already stored it, e.g. for incidental request tracking).
+        """
+        if store_response:
+            await self._store_response(
+                request_id, response, continuation_name, speculation_outcome
+            )
+
+        if continuation_name:
+            continuation = self.scraper.get_continuation(continuation_name)
+
+            # Check for autowait (Playwright driver only)
+            if page is not None:
+                from kent.common.decorators import get_step_metadata
+
+                metadata = get_step_metadata(continuation)
+                auto_await_timeout = (
+                    metadata.auto_await_timeout if metadata else None
+                )
+
+                if auto_await_timeout:
+                    await self._process_generator_with_autowait(
+                        continuation,
+                        response,
+                        request,
+                        request_id,
+                        auto_await_timeout,
+                        page=page,
+                    )
+                else:
+                    gen = continuation(response)
+                    await self._process_generator_with_storage(
+                        gen,
+                        response,
+                        request,
+                        continuation_name,
+                        request_id,
+                    )
+            else:
+                gen = continuation(response)
+                await self._process_generator_with_storage(
+                    gen,
+                    response,
+                    request,
+                    continuation_name,
+                    request_id,
+                )
+
+        await self._mark_request_completed(request_id)
+
     async def _process_regular_request(
         self,
         request_id: int,
@@ -644,11 +730,6 @@ class WorkerMixin:
                 Passed through to ``resolve_archive_request`` to avoid a
                 redundant ``should_download()`` call.
         """
-        # Process the request using parent class methods
-        # For archive requests, resolve_archive_request returns ArchiveResponse
-        # which is a subclass of Response with a file_url field
-        from kent.data_types import ArchiveResponse
-
         logger.info(f"Request {request_id}: starting HTTP fetch")
         response: Response = (
             await self.resolve_archive_request(
@@ -665,25 +746,9 @@ class WorkerMixin:
         if request.is_speculative and self._speculation_state:
             await self._track_speculation_outcome(request, response)
 
-        # Verify ArchiveResponse for archive request
-        if request.archive and not isinstance(response, ArchiveResponse):
-            logger.error(
-                f"Expected ArchiveResponse for archive request, got {type(response)}"
-            )
-
-        # Store the response in the database
-        await self._store_response(request_id, response, continuation_name)
-
-        # Get continuation method and process generator
-        continuation_method = self.scraper.get_continuation(continuation_name)
-        gen = continuation_method(response)
-
-        await self._process_generator_with_storage(
-            gen, response, request, continuation_name, request_id
+        await self._complete_request(
+            request_id, response, request, continuation_name
         )
-
-        # Mark completed
-        await self._mark_request_completed(request_id)
 
         await self._emit_progress(
             "request_completed",

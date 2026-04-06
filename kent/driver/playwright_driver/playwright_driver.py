@@ -78,8 +78,6 @@ from kent.driver.playwright_driver.browser_profile import BrowserProfile
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
 
-    from kent.data_types import BaseRequest
-
 logger = logging.getLogger(__name__)
 
 ScraperReturnDatatype = TypeVar("ScraperReturnDatatype")
@@ -465,136 +463,115 @@ class PlaywrightDriver(
                 )
                 browser_config["browser_type"] = browser_profile.browser_type
 
-        # Initialize database and SQLManager
-        from kent.driver.persistent_driver.database import (
-            init_database,
+        _engine, db = await cls._init_db(
+            scraper,
+            db_path,
+            num_workers=num_workers,
+            max_backoff_time=max_backoff_time,
+            resume=resume,
+            seed_params=seed_params,
+            browser_config=browser_config,
         )
 
-        engine, session_factory = await init_database(db_path)
-        db = SQLManager(engine, session_factory)
-
+        # Initialize Playwright
+        playwright = await async_playwright().start()
         try:
-            # Initialize run metadata with browser config
-            # scraper_name is the full module path for debugger's compare command
-            scraper_name = scraper.__class__.__module__
-            scraper_version = getattr(scraper, "__version__", None)
-            await db.init_run_metadata(
-                scraper_name=scraper_name,
-                scraper_version=scraper_version,
-                num_workers=num_workers,
-                max_backoff_time=max_backoff_time,
-                browser_config=browser_config,
-                seed_params=seed_params,
-            )
+            browser_obj: Browser | None = None
+            browser_context: BrowserContext
 
-            # Restore queue if resuming
-            if resume:
-                await db.restore_queue()
+            if (
+                browser_profile is not None
+                and browser_profile.persistent_context
+            ):
+                # === Persistent context path (for Cloudflare bypass, etc.) ===
+                browser_context = await _launch_persistent(
+                    playwright, scraper, browser_profile, headless
+                )
+            else:
+                # === Standard path (existing behavior) ===
+                effective_type = (
+                    browser_profile.browser_type
+                    if browser_profile is not None
+                    else browser_type
+                )
+                browser_launcher = getattr(playwright, effective_type)
 
-            # Initialize Playwright
-            playwright = await async_playwright().start()
+                launch_kwargs: dict[str, Any] = {"headless": headless}
+                if browser_profile is not None:
+                    launch_kwargs.update(browser_profile.launch_options)
+                    if browser_profile.channel:
+                        launch_kwargs["channel"] = browser_profile.channel
+
+                browser_obj = await browser_launcher.launch(
+                    **launch_kwargs
+                )
+
+                context_kwargs: dict[str, Any] = {
+                    "viewport": viewport,
+                    "locale": locale,
+                    "timezone_id": timezone_id,
+                    "accept_downloads": True,
+                }
+                if user_agent:
+                    context_kwargs["user_agent"] = user_agent
+                if browser_profile is not None:
+                    context_kwargs.update(browser_profile.context_options)
+
+                browser_context = await browser_obj.new_context(
+                    **context_kwargs
+                )
+
+                # Add init scripts (works for non-persistent profiles too)
+                if browser_profile is not None:
+                    for script_path in browser_profile.init_scripts:
+                        js = script_path.read_text(encoding="utf-8")
+                        await browser_context.add_init_script(js)
+
             try:
-                browser_obj: Browser | None = None
-                browser_context: BrowserContext
+                # Create driver instance (no request manager needed for Playwright)
+                effective_rates = rates or scraper.rate_limits
+                driver = cls(
+                    scraper=scraper,
+                    db=db,
+                    browser_context=browser_context,
+                    storage_dir=storage_dir,
+                    num_workers=num_workers,
+                    max_workers=max_workers,
+                    resume=resume,
+                    max_backoff_time=max_backoff_time,
+                    request_manager=None,
+                    enable_monitor=enable_monitor,
+                    excluded_resource_types=excluded_resource_types,
+                    rates=effective_rates,
+                )
 
-                if (
-                    browser_profile is not None
-                    and browser_profile.persistent_context
-                ):
-                    # === Persistent context path (for Cloudflare bypass, etc.) ===
-                    browser_context = await _launch_persistent(
-                        playwright, scraper, browser_profile, headless
-                    )
-                else:
-                    # === Standard path (existing behavior) ===
-                    effective_type = (
-                        browser_profile.browser_type
-                        if browser_profile is not None
-                        else browser_type
-                    )
-                    browser_launcher = getattr(playwright, effective_type)
-
-                    launch_kwargs: dict[str, Any] = {"headless": headless}
-                    if browser_profile is not None:
-                        launch_kwargs.update(browser_profile.launch_options)
-                        if browser_profile.channel:
-                            launch_kwargs["channel"] = browser_profile.channel
-
-                    browser_obj = await browser_launcher.launch(
-                        **launch_kwargs
-                    )
-
-                    context_kwargs: dict[str, Any] = {
-                        "viewport": viewport,
-                        "locale": locale,
-                        "timezone_id": timezone_id,
-                        "accept_downloads": True,
-                    }
-                    if user_agent:
-                        context_kwargs["user_agent"] = user_agent
-                    if browser_profile is not None:
-                        context_kwargs.update(browser_profile.context_options)
-
-                    browser_context = await browser_obj.new_context(
-                        **context_kwargs
-                    )
-
-                    # Add init scripts (works for non-persistent profiles too)
-                    if browser_profile is not None:
-                        for script_path in browser_profile.init_scripts:
-                            js = script_path.read_text(encoding="utf-8")
-                            await browser_context.add_init_script(js)
-
-                try:
-                    # Create driver instance (no request manager needed for Playwright)
-                    effective_rates = rates or scraper.rate_limits
-                    driver = cls(
-                        scraper=scraper,
-                        db=db,
-                        browser_context=browser_context,
-                        storage_dir=storage_dir,
-                        num_workers=num_workers,
-                        max_workers=max_workers,
-                        resume=resume,
-                        max_backoff_time=max_backoff_time,
-                        request_manager=None,
-                        enable_monitor=enable_monitor,
-                        excluded_resource_types=excluded_resource_types,
-                        rates=effective_rates,
-                    )
-
-                    # Restore cookies on resume
-                    if resume:
-                        try:
-                            cookies_json = await db.get_browser_cookies()
-                            if cookies_json:
-                                cookies = json.loads(cookies_json)
-                                await browser_context.add_cookies(cookies)
-                                logger.info(
-                                    f"Restored {len(cookies)} browser cookies from DB"
-                                )
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to restore browser cookies: {e}"
+                # Restore cookies on resume
+                if resume:
+                    try:
+                        cookies_json = await db.get_browser_cookies()
+                        if cookies_json:
+                            cookies = json.loads(cookies_json)
+                            await browser_context.add_cookies(cookies)
+                            logger.info(
+                                f"Restored {len(cookies)} browser cookies from DB"
                             )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to restore browser cookies: {e}"
+                        )
 
-                    yield driver
+                yield driver
 
-                    # Close driver (persist state)
-                    await driver.close()
-
-                finally:
-                    await browser_context.close()
-                    if browser_obj is not None:
-                        await browser_obj.close()
+                # driver.close() handles DB engine disposal
+                await driver.close()
 
             finally:
-                # Stop Playwright
-                await playwright.stop()
+                await browser_context.close()
+                if browser_obj is not None:
+                    await browser_obj.close()
 
         finally:
-            # Close database connection
-            await engine.dispose()
+            await playwright.stop()
 
     async def _setup_tab_with_parent_response(
         self,
@@ -728,27 +705,9 @@ class PlaywrightDriver(
                     file_url=archive_decision.file_url,
                 )
 
-                await self._store_response(
-                    request_id=request_id,
-                    response=response,
-                    continuation=continuation_name,
-                    speculation_outcome=None,
+                await self._complete_request(
+                    request_id, response, request, continuation_name
                 )
-
-                # Process continuation
-                if continuation_name:
-                    cont = getattr(self.scraper, continuation_name, None)
-                    if cont:
-                        gen = cont(response)
-                        await self._process_generator_with_storage(
-                            gen,
-                            response,
-                            request,
-                            continuation_name,
-                            request_id,
-                        )
-
-                await self.db.mark_request_completed(request_id)
                 return
 
             if is_archive and parent_request_id and request.via is not None:
@@ -759,15 +718,12 @@ class PlaywrightDriver(
                 )
                 expected_type = getattr(request, "expected_type", None)
 
-                # Use pre-computed decision from _db_worker if available
+                # archive_decision is pre-computed by _db_worker for all
+                # archive requests; it should never be None here.
+                assert archive_decision is not None, (
+                    f"archive_decision not set for archive request {request_id}"
+                )
                 decision = archive_decision
-                if decision is None:
-                    decision = await self.archive_handler.should_download(
-                        url=request.request.url,
-                        deduplication_key=dedup_key,
-                        expected_type=expected_type,
-                        hash_header_value=None,
-                    )
 
                 if not decision.download:
                     response = ArchiveResponse(
@@ -824,27 +780,9 @@ class PlaywrightDriver(
                         file_url=file_url,
                     )
 
-                await self._store_response(
-                    request_id=request_id,
-                    response=response,
-                    continuation=continuation_name,
-                    speculation_outcome=None,
+                await self._complete_request(
+                    request_id, response, request, continuation_name
                 )
-
-                # Process continuation
-                if continuation_name:
-                    cont = getattr(self.scraper, continuation_name, None)
-                    if cont:
-                        gen = cont(response)
-                        await self._process_generator_with_storage(
-                            gen,
-                            response,
-                            request,
-                            continuation_name,
-                            request_id,
-                        )
-
-                await self.db.mark_request_completed(request_id)
 
             else:
                 # Non-archive: navigate and snapshot HTML
@@ -948,41 +886,17 @@ class PlaywrightDriver(
                 if await_list_error is not None:
                     raise await_list_error
 
-                # Process continuation if present
-                if continuation_name:
-                    continuation = getattr(
-                        self.scraper, continuation_name, None
-                    )
-                    if continuation:
-                        # Check for autowait
-                        metadata = get_step_metadata(continuation)
-                        auto_await_timeout = (
-                            metadata.auto_await_timeout if metadata else None
-                        )
-
-                        if auto_await_timeout:
-                            # Process with autowait retry logic
-                            await self._process_generator_with_autowait(
-                                continuation,
-                                response,
-                                request,
-                                request_id,
-                                auto_await_timeout,
-                                page=page,
-                            )
-                        else:
-                            # Process normally
-                            gen = continuation(response)
-                            await self._process_generator_with_storage(
-                                gen,
-                                response,
-                                request,
-                                continuation_name,
-                                request_id,
-                            )
-
-                # Mark request as completed
-                await self.db.mark_request_completed(request_id)
+                # Run continuation (with autowait if configured) and mark completed.
+                # Response is already stored above (before incidentals/error checks),
+                # so we pass store_response=False.
+                await self._complete_request(
+                    request_id,
+                    response,
+                    request,
+                    continuation_name,
+                    page=page,
+                    store_response=False,
+                )
 
         except PlaywrightTimeoutError as e:
             # Timeout waiting for selector/load state
