@@ -184,6 +184,12 @@ class TestDemoScraper:
             storage_dir=tmp_path,
             on_data=callback,
         )
+        # Supply speculative templates via seed_params
+        driver.seed_params = [
+            {"fetch_case": {"case_id": {"year": 2024, "number": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2025, "number": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2026, "number": 1, "gap": 3}}},
+        ]
         driver.run()
 
         # Extract CaseData results (they'll be DeferredValidation wrappers)
@@ -263,6 +269,11 @@ class TestDemoScraper:
             storage_dir=tmp_path,
             on_data=callback,
         )
+        driver.seed_params = [
+            {"fetch_case": {"case_id": {"year": 2024, "number": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2025, "number": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2026, "number": 1, "gap": 3}}},
+        ]
         driver.run()
 
         case_results = {

@@ -178,13 +178,10 @@ It does **not** modify runtime behavior -- entry methods run exactly as written.
 
     @dataclass(frozen=True)
     class EntryMetadata:
-        return_type: type           # e.g. CaseDocket
-        param_types: dict[str, type]  # e.g. {"name": str}
-        func_name: str              # e.g. "search_by_name"
-        speculative: bool = False
-        observation_date: date | None = None
-        highest_observed: int = 1
-        largest_observed_gap: int = 10
+        return_type: type               # e.g. CaseDocket
+        param_types: dict[str, type]    # e.g. {"name": str}
+        func_name: str                  # e.g. "search_by_name"
+        speculative_param: str | None   # name of Speculative param, or None
 
 
 Parameter Types
@@ -349,14 +346,12 @@ all entry points, their parameter types, and return types:
             "fetch_by_id": {
                 "returns": "CaseDocket",
                 "speculative": true,
-                "highest_observed": 500,
-                "largest_observed_gap": 20,
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "record_id": {"type": "integer"}
+                        "did": {"$ref": "#/$defs/DocketId"}
                     },
-                    "required": ["record_id"]
+                    "required": ["did"]
                 }
             }
         },
@@ -394,35 +389,33 @@ all entry points, their parameter types, and return types:
 Speculative Entries
 -------------------
 
-For scrapers that probe sequential IDs, ``@entry`` supports speculative mode:
+For scrapers that probe sequential IDs, entry function parameters can
+implement the ``Speculative`` protocol (see :doc:`19_speculative_request`).
+The ``@entry`` decorator auto-detects these parameters:
 
 .. code-block:: python
 
-    @entry(
-        CaseDocket,
-        speculative=True,
-        highest_observed=105336,
-        largest_observed_gap=20,
-    )
-    def fetch_docket(
-        self, crn: int
-    ) -> Generator[Request, None, None]:
-        yield Request(
+    from pydantic import BaseModel
+
+    class DocketId(BaseModel):
+        crn: int
+        gap: int = 20
+        # ... implements Speculative protocol methods ...
+
+    @entry(CaseDocket)
+    def fetch_docket(self, did: DocketId) -> Request:
+        return Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
-                url=f"/docket/{crn}",
+                url=f"/docket/{did.crn}",
             ),
             continuation="parse_docket",
         )
 
-The speculative metadata tells drivers:
-
-- ``highest_observed`` - The highest ID known to exist
-- ``largest_observed_gap`` - The largest gap seen in the sequence
-- ``observation_date`` - When the metadata was last updated
-
-Drivers use ``list_speculators()`` to discover speculative entries and
-``list_entries()`` to get full entry metadata including speculative flags.
+Speculation semantics (gap threshold, frozen ranges, etc.) are defined
+on the Pydantic model itself.  The driver discovers speculative entries
+via ``list_entries()`` — entries with ``speculative_param`` set are
+speculative.
 
 
 Entry Point Discovery
@@ -437,10 +430,12 @@ Entry Point Discovery
         print(f"{info.name}: {info.return_type.__name__}")
         print(f"  params: {info.param_types}")
         print(f"  speculative: {info.speculative}")
+        if info.speculative:
+            print(f"  speculative_param: {info.speculative_param}")
 
     # List only speculative entries
-    for name, highest, obs_date, gap in MyScraper.list_speculators():
-        print(f"{name}: highest={highest}, gap={gap}")
+    for info in MyScraper.list_speculative_entries():
+        print(f"{info.name}: speculative_param={info.speculative_param}")
 
     # Generate JSON Schema for all entries
     schema = MyScraper.schema()
@@ -484,7 +479,7 @@ metadata from all scrapers and generates:
     # Entry points
     [scrapers.Site.entries]
     search_by_date = {returns = "BugCourtDocket", speculative = false}
-    fetch_docket = {returns = "BugCourtDocket", speculative = true, highest_observed = 105336}
+    fetch_docket = {returns = "BugCourtDocket", speculative = true}
 
 **Sphinx Extension:**
 
@@ -509,7 +504,7 @@ Best Practices
 
 1. Use Pydantic BaseModel parameters for structured input (date ranges, filters)
 2. Use primitives (``str``, ``int``, ``date``) for simple single-value parameters
-3. Set ``speculative=True`` with accurate metadata for ID-based scrapers
+3. Use a ``Speculative`` protocol model for ID-based scrapers (see :doc:`19_speculative_request`)
 4. Every scraper needs at least one ``@entry`` method
 
 **initial_seed():**

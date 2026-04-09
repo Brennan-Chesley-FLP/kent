@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from kent.driver.persistent_driver.models import (
     SpeculationTracking,
-    SpeculativeStartId,
 )
 
 if TYPE_CHECKING:
@@ -20,74 +19,25 @@ if TYPE_CHECKING:
     )
 
 
+class SpeculationStateDict(TypedDict):
+    """Typed dict for speculation tracking state returned from DB."""
+
+    func_name: str
+    highest_successful_id: int
+    consecutive_failures: int
+    current_ceiling: int
+    stopped: bool
+    param_index: int
+    template_json: str | None
+
+
 class SpeculationMixin:
-    """SpeculativeStartId and SpeculationTracking operations."""
+    """SpeculationTracking operations for the Speculative protocol."""
 
     _lock: asyncio.Lock
     _session_factory: ScopedSessionFactory
 
-    # --- Speculative Start IDs (for restart-speculative feature) ---
-
-    async def set_speculative_start_id(
-        self, step_name: str, starting_id: int
-    ) -> None:
-        """Set a speculative starting ID for a step.
-
-        Args:
-            step_name: The name of the speculative step method.
-            starting_id: The speculative_id to start from.
-        """
-        async with self._lock, self._session_factory() as session:
-            stmt = sqlite_insert(SpeculativeStartId).values(
-                step_name=step_name,
-                starting_id=starting_id,
-            )
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["step_name"],
-                set_={
-                    "starting_id": stmt.excluded.starting_id,
-                    "updated_at": func.current_timestamp(),
-                },
-            )
-            await session.execute(stmt)
-            await session.commit()
-
-    async def get_speculative_start_ids(self) -> dict[str, int]:
-        """Get all speculative starting IDs.
-
-        Returns:
-            Dict mapping step names to their starting_id.
-        """
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(
-                    SpeculativeStartId.step_name,
-                    SpeculativeStartId.starting_id,
-                )
-            )
-            return {row[0]: row[1] for row in result.all()}
-
-    async def clear_speculative_start_id(self, step_name: str) -> None:
-        """Clear a speculative starting ID for a step.
-
-        Args:
-            step_name: The name of the speculative step method.
-        """
-        async with self._lock, self._session_factory() as session:
-            await session.execute(
-                delete(SpeculativeStartId).where(
-                    SpeculativeStartId.step_name == step_name
-                )
-            )
-            await session.commit()
-
-    async def clear_all_speculative_start_ids(self) -> None:
-        """Clear all speculative starting IDs."""
-        async with self._lock, self._session_factory() as session:
-            await session.execute(delete(SpeculativeStartId))
-            await session.commit()
-
-    # --- Speculation Tracking (new @speculate pattern) ---
+    # --- Speculation Tracking ---
 
     async def save_speculation_state(
         self,
@@ -96,15 +46,19 @@ class SpeculationMixin:
         consecutive_failures: int,
         current_ceiling: int,
         stopped: bool,
+        param_index: int = 0,
+        template_json: str | None = None,
     ) -> None:
-        """Save or update speculation tracking state for a @speculate function.
+        """Save or update speculation tracking state.
 
         Args:
-            func_name: Name of the @speculate decorated function.
+            func_name: State key (e.g. "fetch_case:0").
             highest_successful_id: Highest ID that returned 2xx.
             consecutive_failures: Count of failures beyond highest_successful_id.
             current_ceiling: Current upper bound of seeded IDs.
-            stopped: Whether speculation has stopped for this function.
+            stopped: Whether speculation has stopped for this entry.
+            param_index: Index of this template in the params list.
+            template_json: JSON serialization of the Speculative template.
         """
         async with self._lock, self._session_factory() as session:
             stmt = sqlite_insert(SpeculationTracking).values(
@@ -113,6 +67,8 @@ class SpeculationMixin:
                 consecutive_failures=consecutive_failures,
                 current_ceiling=current_ceiling,
                 stopped=stopped,
+                param_index=param_index,
+                template_json=template_json,
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["func_name"],
@@ -121,6 +77,8 @@ class SpeculationMixin:
                     "consecutive_failures": stmt.excluded.consecutive_failures,
                     "current_ceiling": stmt.excluded.current_ceiling,
                     "stopped": stmt.excluded.stopped,
+                    "param_index": stmt.excluded.param_index,
+                    "template_json": stmt.excluded.template_json,
                     "updated_at": func.current_timestamp(),
                 },
             )
@@ -129,15 +87,14 @@ class SpeculationMixin:
 
     async def load_speculation_state(
         self, func_name: str
-    ) -> dict[str, int | bool] | None:
-        """Load speculation tracking state for a @speculate function.
+    ) -> SpeculationStateDict | None:
+        """Load speculation tracking state for a function.
 
         Args:
-            func_name: Name of the @speculate decorated function.
+            func_name: State key.
 
         Returns:
-            Dict with keys: highest_successful_id, consecutive_failures,
-            current_ceiling, stopped. Returns None if no state exists.
+            Dict with tracking fields, or None if no state exists.
         """
         async with self._session_factory() as session:
             result = await session.execute(
@@ -154,11 +111,13 @@ class SpeculationMixin:
                 "consecutive_failures": row.consecutive_failures,
                 "current_ceiling": row.current_ceiling,
                 "stopped": bool(row.stopped),
+                "param_index": row.param_index,
+                "template_json": row.template_json,
             }
 
     async def load_all_speculation_states(
         self,
-    ) -> dict[str, dict[str, int | bool]]:
+    ) -> dict[str, SpeculationStateDict]:
         """Load all speculation tracking states.
 
         Returns:
@@ -168,12 +127,15 @@ class SpeculationMixin:
             result = await session.execute(select(SpeculationTracking))
             rows = result.scalars().all()
             return {
-                row.func_name: {
-                    "highest_successful_id": row.highest_successful_id,
-                    "consecutive_failures": row.consecutive_failures,
-                    "current_ceiling": row.current_ceiling,
-                    "stopped": bool(row.stopped),
-                }
+                row.func_name: SpeculationStateDict(
+                    func_name=row.func_name,
+                    highest_successful_id=row.highest_successful_id,
+                    consecutive_failures=row.consecutive_failures,
+                    current_ceiling=row.current_ceiling,
+                    stopped=bool(row.stopped),
+                    param_index=row.param_index,
+                    template_json=row.template_json,
+                )
                 for row in rows
             }
 
@@ -192,10 +154,10 @@ class SpeculationMixin:
         }
 
     async def clear_speculation_state(self, func_name: str) -> None:
-        """Clear speculation tracking state for a @speculate function.
+        """Clear speculation tracking state for a function.
 
         Args:
-            func_name: Name of the @speculate decorated function.
+            func_name: State key.
         """
         async with self._lock, self._session_factory() as session:
             await session.execute(

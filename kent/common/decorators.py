@@ -43,11 +43,7 @@ from kent.common.checked_html import CheckedHtmlElement
 from kent.common.exceptions import (
     ScraperAssumptionException,
 )
-from kent.common.speculation_types import (
-    SimpleSpeculation,
-    SpeculationType,
-    YearlySpeculation,
-)
+from kent.common.speculative import Speculative
 from kent.data_types import (
     ArchiveResponse,
     BaseRequest,
@@ -91,12 +87,9 @@ class StepMetadata:
 
 
 class SpeculateMetadata:
-    """Metadata attached to scraper methods by @speculate decorator.
+    """Legacy metadata from the old @speculate decorator.
 
-    Attributes:
-        observation_date: Date when metadata was last updated (e.g., when gap was observed).
-        highest_observed: The highest ID observed to exist.
-        largest_observed_gap: The largest gap observed in the sequence.
+    Kept temporarily for driver compatibility during migration.
     """
 
     def __init__(
@@ -549,8 +542,8 @@ def speculate(
                 )
 
             # Use the speculative() method to create a copy with speculation fields set
-            # This sets is_speculative=True and speculation_id=(func_name, id_value)
-            return request.speculative(fn.__name__, id_value)
+            # This sets is_speculative=True and speculation_id=(func_name, 0, id_value)
+            return request.speculative(fn.__name__, 0, id_value)
 
         # Attach metadata to the wrapper
         wrapper._speculate_metadata = metadata  # type: ignore[attr-defined]
@@ -604,49 +597,37 @@ class EntryMetadata:
         return_type: The data type this entry produces (e.g. Docket).
         param_types: Mapping of parameter name to type (BaseModel subclass or primitive).
         func_name: Name of the decorated function.
-        speculation: Speculation config (SimpleSpeculation, YearlySpeculation, or None).
+        speculative_param: Name of the parameter implementing the Speculative protocol,
+            or None if this entry is not speculative.
     """
 
     return_type: type
     param_types: dict[str, type]
     func_name: str
-    speculation: SpeculationType = None
+    speculative_param: str | None = None
 
     @property
     def speculative(self) -> bool:
         """Whether this is a speculative entry point."""
-        return self.speculation is not None
+        return self.speculative_param is not None
 
     def validate_params(self, kwargs_dict: dict[str, Any]) -> dict[str, Any]:
         """Validate and coerce parameters for this entry function.
 
-        For non-speculative entries, validates against the function signature:
-        BaseModel parameters use model_validate(), primitives are coerced.
-
-        For speculative entries, validates against the range schema:
-        - SimpleSpeculation: single param mapped to [start, end] range
-        - YearlySpeculation: year (int) + speculative param as [start, end] + optional frozen (bool)
+        Validates against the function signature: BaseModel parameters
+        use model_validate(), primitives are coerced.
 
         Args:
             kwargs_dict: Raw parameter dict from JSON deserialization.
 
         Returns:
-            Dict of validated/coerced parameter values ready for function call
-            (non-speculative) or range config dict (speculative).
+            Dict of validated/coerced parameter values ready for function call.
 
         Raises:
             pydantic.ValidationError: If a BaseModel parameter fails validation.
             TypeError: If a primitive parameter can't be coerced.
             ValueError: If unexpected parameters are provided.
         """
-        if self.speculation is not None:
-            return self._validate_speculative_params(kwargs_dict)
-        return self._validate_direct_params(kwargs_dict)
-
-    def _validate_direct_params(
-        self, kwargs_dict: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Validate params for direct function invocation."""
         validated: dict[str, Any] = {}
 
         # Check for unexpected parameters
@@ -693,104 +674,19 @@ class EntryMetadata:
 
         return validated
 
-    def _validate_speculative_params(
-        self, kwargs_dict: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Validate params as range config for speculative entries.
-
-        For SimpleSpeculation: expect {param_name: [start, end]}
-        For YearlySpeculation: expect {year: int, param_name: [start, end], frozen?: bool}
-        """
-        validated: dict[str, Any] = {}
-
-        if isinstance(self.speculation, SimpleSpeculation):
-            # Single param, must be a 2-element range
-            (param_name,) = self.param_types.keys()
-            expected_keys = {param_name}
-            unexpected = set(kwargs_dict.keys()) - expected_keys
-            if unexpected:
-                raise ValueError(
-                    f"Unexpected parameters for speculative entry "
-                    f"'{self.func_name}': {unexpected}. "
-                    f"Expected: {list(expected_keys)}"
-                )
-            if param_name not in kwargs_dict:
-                raise ValueError(
-                    f"Missing required parameter '{param_name}' "
-                    f"for speculative entry '{self.func_name}'"
-                )
-            raw_range = kwargs_dict[param_name]
-            validated[param_name] = _validate_int_range(
-                raw_range, param_name, self.func_name
-            )
-
-        elif isinstance(self.speculation, YearlySpeculation):
-            # year param + speculative axis param + optional frozen
-            spec_axis = _get_speculative_axis(self.param_types)
-            expected_keys = {"year", spec_axis, "frozen"}
-            unexpected = set(kwargs_dict.keys()) - expected_keys
-            if unexpected:
-                raise ValueError(
-                    f"Unexpected parameters for speculative entry "
-                    f"'{self.func_name}': {unexpected}. "
-                    f"Expected: year, {spec_axis}, and optionally frozen"
-                )
-
-            if "year" not in kwargs_dict:
-                raise ValueError(
-                    f"Missing required parameter 'year' "
-                    f"for speculative entry '{self.func_name}'"
-                )
-            validated["year"] = int(kwargs_dict["year"])
-
-            if spec_axis not in kwargs_dict:
-                raise ValueError(
-                    f"Missing required parameter '{spec_axis}' "
-                    f"for speculative entry '{self.func_name}'"
-                )
-            validated[spec_axis] = _validate_int_range(
-                kwargs_dict[spec_axis], spec_axis, self.func_name
-            )
-
-            if "frozen" in kwargs_dict:
-                validated["frozen"] = bool(kwargs_dict["frozen"])
-            else:
-                validated["frozen"] = False
-
-        return validated
-
-
-def _validate_int_range(
-    raw_value: Any, param_name: str, func_name: str
-) -> tuple[int, int]:
-    """Validate that a value is a 2-element integer range."""
-    if not isinstance(raw_value, list | tuple) or len(raw_value) != 2:
-        raise ValueError(
-            f"Parameter '{param_name}' for speculative entry "
-            f"'{func_name}' must be a 2-element [start, end] range, "
-            f"got {raw_value!r}"
-        )
-    return (int(raw_value[0]), int(raw_value[1]))
-
-
-def _get_speculative_axis(param_types: dict[str, type]) -> str:
-    """Get the speculative axis param name (the one that isn't 'year')."""
-    for name in param_types:
-        if name != "year":
-            return name
-    raise ValueError("No non-year parameter found in param_types")
-
 
 def entry(
     return_type: type | Any,
-    *,
-    speculative: SpeculationType = None,
 ) -> Callable[..., Any]:
     """Decorator for scraper entry point methods with typed parameters.
 
     Marks a method as an entry point and attaches EntryMetadata describing
     the return type and parameter schema. Does NOT modify the function's
     runtime behavior.
+
+    If a parameter's type implements the ``Speculative`` protocol, the
+    entry is automatically detected as speculative. The driver will use
+    the protocol methods to seed, track, and extend speculation.
 
     Parameters can be Pydantic BaseModel subclasses or primitives
     (str, int, date). Tuples are not supported.
@@ -801,21 +697,13 @@ def entry(
         def search_by_number(self, docket_number: str) -> Generator[Request, None, None]:
             ...
 
-        @entry(Docket, speculative=SimpleSpeculation(highest_observed=105336, largest_observed_gap=20))
-        def fetch_docket(self, crn: int) -> Request:
-            ...
-
-        @entry(Docket, speculative=YearlySpeculation(
-            backfill=(YearPartition(year=2025, number=(1, 4000), frozen=False),),
-            trailing_period=timedelta(days=60),
-            largest_observed_gap=15,
-        ))
-        def docket_stabber(self, year: int, number: int) -> Request:
+        @entry(CaseData)
+        def fetch_case(self, case_id: DocketId) -> Request:
+            # DocketId implements Speculative — auto-detected
             ...
 
     Args:
         return_type: The data type this entry produces.
-        speculative: Speculation config (SimpleSpeculation, YearlySpeculation, or None).
 
     Returns:
         Decorator that attaches EntryMetadata to the function.
@@ -840,6 +728,7 @@ def entry(
 
         sig = inspect.signature(fn)
         param_types: dict[str, type] = {}
+        speculative_param: str | None = None
 
         for param_name, param in sig.parameters.items():
             if param_name == "self":
@@ -878,7 +767,17 @@ def entry(
             if isinstance(param_type, type) and issubclass(
                 param_type, BaseModel
             ):
-                pass  # BaseModel subclass is fine
+                # Check if this BaseModel implements Speculative
+                if isinstance(param_type, type) and issubclass(
+                    param_type, Speculative
+                ):
+                    if speculative_param is not None:
+                        raise TypeError(
+                            f"Entry function '{fn.__name__}' has multiple "
+                            f"Speculative parameters: '{speculative_param}' "
+                            f"and '{param_name}'. Only one is allowed."
+                        )
+                    speculative_param = param_name
             elif param_type in _ENTRY_PRIMITIVE_TYPES:
                 pass  # Primitive is fine
             elif param_type is tuple or (
@@ -900,42 +799,11 @@ def entry(
 
             param_types[param_name] = param_type
 
-        # Validate speculation config against param_types
-        if isinstance(speculative, SimpleSpeculation):
-            non_self_params = list(param_types.items())
-            if len(non_self_params) != 1 or non_self_params[0][1] is not int:
-                raise TypeError(
-                    f"Entry function '{fn.__name__}' with SimpleSpeculation "
-                    f"must have exactly one int parameter (besides self). "
-                    f"Got: {param_types}"
-                )
-        elif isinstance(speculative, YearlySpeculation):
-            non_self_params = list(param_types.items())
-            if len(non_self_params) != 2:
-                raise TypeError(
-                    f"Entry function '{fn.__name__}' with YearlySpeculation "
-                    f"must have exactly two parameters (besides self). "
-                    f"Got: {param_types}"
-                )
-            if "year" not in param_types:
-                raise TypeError(
-                    f"Entry function '{fn.__name__}' with YearlySpeculation "
-                    f"must have a parameter named 'year'. "
-                    f"Got: {list(param_types.keys())}"
-                )
-            for name, ptype in non_self_params:
-                if ptype is not int:
-                    raise TypeError(
-                        f"Entry function '{fn.__name__}' with "
-                        f"YearlySpeculation: parameter '{name}' must be int, "
-                        f"got {ptype}"
-                    )
-
         metadata = EntryMetadata(
             return_type=return_type,
             param_types=param_types,
             func_name=fn.__name__,
-            speculation=speculative,
+            speculative_param=speculative_param,
         )
 
         fn._entry_metadata = metadata  # type: ignore[attr-defined]

@@ -486,7 +486,6 @@ class TestSpeculationInspection:
         async with LocalDevDriverDebugger.open(db_path) as debugger:
             summary = await debugger.get_speculation_summary()
 
-            assert "config" in summary
             assert "progress" in summary
             assert "tracking" in summary
 

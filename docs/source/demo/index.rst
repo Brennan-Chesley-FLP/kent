@@ -86,9 +86,9 @@ The demo scraper exercises the following kent features:
 
    * - Feature
      - How it's used
-   * - ``@entry`` with ``YearlySpeculation``
+   * - ``@entry`` with ``Speculative`` protocol (``DocketId``)
      - Speculative case discovery by year + sequential number.
-       Three year-partitions (2024 frozen, 2025 frozen, 2026 live).
+       Templates supplied via ``seed_params`` (e.g. 2024 frozen, 2025 frozen, 2026 live).
    * - ``@entry`` (normal)
      - Entry points for oral arguments list and justice JSON API.
    * - ``@step`` with ``page`` (PageElement)
@@ -113,8 +113,7 @@ The demo scraper exercises the following kent features:
    * - ``page.find_form()`` / ``Form.submit()``
      - Submitting the date-range search form on ``/cases/search``.
    * - ``fails_successfully()``
-     - Detecting soft-404 pages ("Case Not Found") on speculative
-       requests.
+     - Detecting soft-404 pages ("Case Not Found") on speculative requests.
 
 
 Inspecting with the Web UI

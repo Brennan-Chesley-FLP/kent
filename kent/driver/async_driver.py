@@ -21,10 +21,6 @@ from typing import Any, Generic, TypeVar
 
 from typing_extensions import assert_never
 
-from kent.common.decorators import (
-    SpeculateMetadata,
-    _get_speculative_axis,
-)
 from kent.common.deferred_validation import (
     DeferredValidation,
 )
@@ -37,13 +33,6 @@ from kent.common.exceptions import (
 )
 from kent.common.request_manager import (
     AsyncRequestManager,
-)
-from kent.common.searchable import (
-    SpeculateFunctionConfig,
-)
-from kent.common.speculation_types import (
-    SimpleSpeculation,
-    YearlySpeculation,
 )
 from kent.data_types import (
     ArchiveDecision,
@@ -223,196 +212,116 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         self._speculation_lock = asyncio.Lock()
 
     def _discover_speculate_functions(self) -> dict[str, SpeculationState]:
-        """Discover speculative functions on the scraper and initialize tracking state.
+        """Discover speculative entry functions and build tracking state.
 
-        Uses BaseScraper.list_speculative_entries() to find speculative entries.
-
-        For SimpleSpeculation: creates one SpeculationState keyed by func_name.
-        For YearlySpeculation: creates one SpeculationState per year partition,
-            keyed by ``func_name:year``.
+        Looks up templates from ``scraper._speculation_templates`` (populated
+        by ``initial_seed()``). Each template at index *i* becomes a
+        ``SpeculationState`` keyed by ``{func_name}:{i}``.
 
         Returns:
             Dictionary mapping state keys to their SpeculationState.
         """
-        from datetime import date as date_cls
-
         state: dict[str, SpeculationState] = {}
-        overrides = getattr(self.scraper, "_speculation_overrides", {})
+        templates = getattr(self.scraper, "_speculation_templates", {})
 
         for entry_info in self.scraper.list_speculative_entries():
-            spec = entry_info.speculation
-
-            if isinstance(spec, SimpleSpeculation):
-                metadata = SpeculateMetadata(
-                    observation_date=spec.observation_date,
-                    highest_observed=spec.highest_observed,
-                    largest_observed_gap=spec.largest_observed_gap,
-                )
-                state[entry_info.name] = SpeculationState(
-                    func_name=entry_info.name,
-                    speculation=spec,
-                    config=SpeculateFunctionConfig(),
+            func_templates = templates.get(entry_info.name, [])
+            for i, template in enumerate(func_templates):
+                key = f"{entry_info.name}:{i}"
+                state[key] = SpeculationState(
+                    func_name=key,
+                    template=template,
+                    param_index=i,
                     base_func_name=entry_info.name,
-                    metadata=metadata,
                 )
-
-            elif isinstance(spec, YearlySpeculation):
-                if entry_info.name in overrides:
-                    partitions = overrides[entry_info.name]
-                else:
-                    axis_name = _get_speculative_axis(entry_info.param_types)
-                    partitions = [
-                        {
-                            "year": p.year,
-                            axis_name: p.number,
-                            "frozen": p.frozen,
-                        }
-                        for p in spec.backfill
-                    ]
-
-                for partition in partitions:
-                    year = partition["year"]
-                    axis_name = _get_speculative_axis(entry_info.param_types)
-                    number_range = partition[axis_name]
-                    frozen = partition.get("frozen", False)
-                    key = f"{entry_info.name}:{year}"
-
-                    metadata = SpeculateMetadata(
-                        highest_observed=number_range[1],
-                        largest_observed_gap=spec.largest_observed_gap,
-                    )
-                    state[key] = SpeculationState(
-                        func_name=key,
-                        speculation=spec,
-                        config=SpeculateFunctionConfig(
-                            definite_range=tuple(number_range),
-                        ),
-                        base_func_name=entry_info.name,
-                        year=year,
-                        frozen=frozen,
-                        metadata=metadata,
-                    )
-
-                # Rollover: auto-create current year if missing
-                today = date_cls.today()
-                current_year = today.year
-                current_key = f"{entry_info.name}:{current_year}"
-                if current_key not in state:
-                    metadata = SpeculateMetadata(
-                        highest_observed=spec.largest_observed_gap,
-                        largest_observed_gap=spec.largest_observed_gap,
-                    )
-                    state[current_key] = SpeculationState(
-                        func_name=current_key,
-                        speculation=spec,
-                        config=SpeculateFunctionConfig(
-                            definite_range=(1, spec.largest_observed_gap),
-                        ),
-                        base_func_name=entry_info.name,
-                        year=current_year,
-                        frozen=False,
-                        metadata=metadata,
-                    )
-
-                # Trailing period
-                prev_year = current_year - 1
-                prev_key = f"{entry_info.name}:{prev_year}"
-                jan1 = date_cls(current_year, 1, 1)
-                if (
-                    today - jan1
-                ) < spec.trailing_period and prev_key not in state:
-                    metadata = SpeculateMetadata(
-                        highest_observed=spec.largest_observed_gap,
-                        largest_observed_gap=spec.largest_observed_gap,
-                    )
-                    state[prev_key] = SpeculationState(
-                        func_name=prev_key,
-                        speculation=spec,
-                        config=SpeculateFunctionConfig(
-                            definite_range=(1, spec.largest_observed_gap),
-                        ),
-                        base_func_name=entry_info.name,
-                        year=prev_year,
-                        frozen=False,
-                        metadata=metadata,
-                    )
-
         return state
 
     async def _seed_speculative_queue(self) -> None:
-        """Seed the queue with initial speculative requests.
+        """Seed the queue with requests from speculative templates.
 
-        For SimpleSpeculation: calls func(id_value) for each ID in range.
-        For YearlySpeculation: calls func(year, number) for each ID in range.
+        Seeding starts at ``template.to_int()`` and goes upward.
+        See SyncDriver._seed_speculative_queue for full semantics.
         """
         for state_key, spec_state in self._speculation_state.items():
             func = getattr(self.scraper, spec_state.base_func_name)
+            template = spec_state.template
+            speculative_param = None
+            for entry_info in self.scraper.list_speculative_entries():
+                if entry_info.name == spec_state.base_func_name:
+                    speculative_param = entry_info.speculative_param
+                    break
+            assert speculative_param is not None
 
-            if spec_state.config.definite_range is not None:
-                start, end = spec_state.config.definite_range
-            elif spec_state.metadata is not None:
-                start = 1
-                end = spec_state.metadata.highest_observed
-            else:
-                continue
+            n = template.to_int()
 
             async with self._queue_lock:
-                for id_value in range(start, end + 1):
-                    if spec_state.year is not None:
-                        request = func(spec_state.year, id_value)
-                    else:
-                        request = func(id_value)
-                    request = request.speculative(state_key, id_value)
+                # Phase 1: non-speculative while check_success is False
+                while not template.from_int(n).check_success():
+                    request = func(**{speculative_param: template.from_int(n)})
                     await self.request_queue.put(
                         (request.priority, self._queue_counter, request)
                     )
                     self._queue_counter += 1
+                    n += 1
 
-            spec_state.current_ceiling = end
-            if spec_state.frozen:
-                spec_state.stopped = True
+                # Phase 2: speculative window
+                if template.should_speculate() and template.max_gap() > 0:
+                    gap = template.max_gap()
+                    for spec_n in range(n, n + gap):
+                        concrete = template.from_int(spec_n)
+                        request = func(**{speculative_param: concrete})
+                        request = request.speculative(
+                            state_key, spec_state.param_index, spec_n
+                        )
+                        await self.request_queue.put(
+                            (request.priority, self._queue_counter, request)
+                        )
+                        self._queue_counter += 1
+                    spec_state.current_ceiling = n + gap - 1
+                else:
+                    spec_state.current_ceiling = max(n - 1, template.to_int())
+                    spec_state.stopped = True
 
     async def _extend_speculation(self, state_key: str) -> None:
-        """Extend speculation for a partition when approaching the ceiling.
-
-        Frozen partitions never extend.
+        """Extend speculation when approaching the ceiling.
 
         Args:
             state_key: Key in _speculation_state.
         """
         spec_state = self._speculation_state.get(state_key)
-        if spec_state is None or spec_state.stopped or spec_state.frozen:
+        if spec_state is None or spec_state.stopped:
             return
 
-        if spec_state.config.plus is not None:
-            plus = spec_state.config.plus
-        elif isinstance(
-            spec_state.speculation, SimpleSpeculation | YearlySpeculation
-        ):
-            plus = spec_state.speculation.largest_observed_gap
-        else:
+        gap = spec_state.template.max_gap()
+        if gap == 0:
             return
 
-        if spec_state.consecutive_failures >= plus:
+        if spec_state.consecutive_failures >= gap:
             spec_state.stopped = True
             return
 
         if (
             spec_state.highest_successful_id
-            >= spec_state.current_ceiling - plus
+            >= spec_state.current_ceiling - gap
         ):
             func = getattr(self.scraper, spec_state.base_func_name)
+            speculative_param = None
+            for entry_info in self.scraper.list_speculative_entries():
+                if entry_info.name == spec_state.base_func_name:
+                    speculative_param = entry_info.speculative_param
+                    break
 
-            new_ceiling = spec_state.current_ceiling + plus
+            new_ceiling = spec_state.current_ceiling + gap
             async with self._queue_lock:
-                for id_value in range(
+                for n in range(
                     spec_state.current_ceiling + 1, new_ceiling + 1
                 ):
-                    if spec_state.year is not None:
-                        request = func(spec_state.year, id_value)
-                    else:
-                        request = func(id_value)
-                    request = request.speculative(state_key, id_value)
+                    concrete = spec_state.template.from_int(n)
+                    assert speculative_param is not None
+                    request = func(**{speculative_param: concrete})
+                    request = request.speculative(
+                        state_key, spec_state.param_index, n
+                    )
                     await self.request_queue.put(
                         (request.priority, self._queue_counter, request)
                     )
@@ -423,14 +332,11 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
     async def _track_speculation_outcome(
         self, request: BaseRequest, response: Response
     ) -> None:
-        """Track the outcome of a speculative request.
-
-        Updates highest_successful_id and consecutive_failures based on response.
-        """
+        """Track the outcome of a speculative request."""
         if not request.is_speculative or request.speculation_id is None:
             return
 
-        state_key, speculative_id = request.speculation_id
+        state_key, _param_index, speculative_id = request.speculation_id
         spec_state = self._speculation_state.get(state_key)
         if spec_state is None:
             return
@@ -448,16 +354,8 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
             else:
                 if speculative_id > spec_state.highest_successful_id:
                     spec_state.consecutive_failures += 1
-                    if spec_state.config.plus is not None:
-                        plus = spec_state.config.plus
-                    elif isinstance(
-                        spec_state.speculation,
-                        SimpleSpeculation | YearlySpeculation,
-                    ):
-                        plus = spec_state.speculation.largest_observed_gap
-                    else:
-                        return
-                    if spec_state.consecutive_failures >= plus:
+                    gap = spec_state.template.max_gap()
+                    if spec_state.consecutive_failures >= gap:
                         spec_state.stopped = True
 
     def _get_entry_requests(

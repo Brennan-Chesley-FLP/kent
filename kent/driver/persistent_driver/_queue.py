@@ -144,7 +144,7 @@ class QueueMixin:
         # Build permanent data
         permanent_data = dict(request.permanent) if request.permanent else {}
 
-        # Serialize speculation_id as JSON tuple ["func_name", spec_id]
+        # Serialize speculation_id as JSON tuple ["func_name", param_index, spec_id]
         speculation_id_json = None
         if request.speculation_id is not None:
             speculation_id_json = json.dumps(list(request.speculation_id))
@@ -299,11 +299,11 @@ class QueueMixin:
         aux_data = json.loads(aux_data_json) if aux_data_json else {}
         permanent = json.loads(permanent_json) if permanent_json else {}
 
-        # Parse speculation_id from JSON tuple ["func_name", spec_id]
-        speculation_id: tuple[str, int] | None = None
+        # Parse speculation_id from JSON tuple ["func_name", param_index, spec_id]
+        speculation_id: tuple[str, int, int] | None = None
         if speculation_id_json:
             parsed = json.loads(speculation_id_json)
-            speculation_id = (parsed[0], parsed[1])
+            speculation_id = (parsed[0], parsed[1], parsed[2])
 
         # Decode body - if it's bytes that look like JSON, decode to dict
         # This handles form data that was serialized as JSON

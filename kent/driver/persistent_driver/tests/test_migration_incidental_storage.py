@@ -185,14 +185,14 @@ class TestSchemaMigration:
             )
         assert "storage_id" in cols
 
-        # Version should be 16
+        # Version should be at least 16 (may be higher with new migrations)
         async with engine.begin() as conn:
             version = await conn.run_sync(
                 lambda c: c.execute(
                     sa.text("SELECT MAX(version) FROM schema_info")
                 ).scalar()
             )
-        assert version == 16
+        assert version >= 16
 
         await engine.dispose()
 

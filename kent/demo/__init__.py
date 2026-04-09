@@ -1,7 +1,7 @@
 """Bug Civil Court demo for the kent scraper-driver framework.
 
 This package provides a whimsical demo website and scraper showcasing
-kent's features: speculative requests, HTML page parsing, JSON APIs,
+kent's features: the Speculative protocol, HTML page parsing, JSON APIs,
 file archiving, Pydantic validation, and the PersistentDriver tooling.
 
 Requires the ``demo`` extra::

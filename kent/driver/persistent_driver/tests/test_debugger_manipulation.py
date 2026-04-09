@@ -11,11 +11,41 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from kent.driver.persistent_driver.debugger import (
     LocalDevDriverDebugger,
 )
 from kent.driver.persistent_driver.sql_manager import SQLManager
+
+
+class ItemId(BaseModel):
+    """Speculative parameter model for testing seed_speculative_requests."""
+
+    item_id: int
+    speculate: bool = True
+    threshold: int = 0
+    gap: int = 10
+
+    def should_speculate(self) -> bool:
+        return self.speculate
+
+    def to_int(self) -> int:
+        return self.item_id
+
+    def from_int(self, n: int) -> ItemId:
+        return ItemId(
+            item_id=n,
+            speculate=self.speculate,
+            threshold=self.threshold,
+            gap=self.gap,
+        )
+
+    def check_success(self) -> bool:
+        return self.item_id >= self.threshold
+
+    def max_gap(self) -> int:
+        return self.gap
 
 
 class TestReadOnlyModeEnforcement:
@@ -538,15 +568,13 @@ class TestSeedSpeculativeRequests:
         await engine.dispose()
 
         # Create a simple test scraper with a speculative @entry function
-        from kent.common.speculation_types import SimpleSpeculation
-
         class TestSpeculateScraper(BaseScraper):
-            @entry(dict, speculative=SimpleSpeculation(highest_observed=100))
-            def fetch_item(self, item_id: int) -> Request:
+            @entry(dict)
+            def fetch_item(self, iid: ItemId) -> Request:
                 return Request(
                     request=HTTPRequestParams(
                         method=HttpMethod.GET,
-                        url=f"https://example.com/items/{item_id}",
+                        url=f"https://example.com/items/{iid.item_id}",
                     ),
                     continuation="parse_item",
                 )
@@ -573,6 +601,7 @@ class TestSeedSpeculativeRequests:
                     step_name="fetch_item",
                     from_id=1,
                     to_id=5,
+                    template_json={"item_id": 5, "gap": 10},
                 )
 
         assert count == 5

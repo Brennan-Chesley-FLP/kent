@@ -729,17 +729,15 @@ class InspectionMixin:
     # =========================================================================
 
     async def get_speculation_summary(self) -> dict[str, Any]:
-        """Get summary of speculation configuration and progress.
+        """Get summary of speculation progress and tracking state.
 
         Returns:
-            Dictionary with config, progress, and tracking state.
+            Dictionary with progress and tracking state.
         """
-        config = await self.sql.get_speculation_config()
         progress = await self.sql.get_all_speculation_progress()
         tracking = await self.sql.load_all_speculation_states()
 
         return {
-            "config": config,
             "progress": progress,
             "tracking": tracking,
         }

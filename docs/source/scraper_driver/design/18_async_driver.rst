@@ -202,6 +202,6 @@ More workers might overwhelm servers, be mindful.
 Next Steps
 ----------
 
-In :doc:`19_speculative_request`, we introduce speculative requests for handling
-infinite pagination and optional resources. Scrapers can yield requests that may
-or may not exist, receiving a boolean response to decide whether to continue.
+In :doc:`19_speculative_request`, we introduce the ``Speculative`` protocol for
+probing sequential IDs.  Scraper-owned Pydantic models implement the protocol,
+and the driver handles seeding, tracking, and adaptive extension automatically.

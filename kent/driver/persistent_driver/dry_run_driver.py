@@ -54,7 +54,7 @@ class CapturedRequest:
         priority: Request priority.
         deduplication_key: Key for deduplication.
         is_speculative: Whether this is a speculative request.
-        speculation_id: (function_name, integer_id) for speculative requests.
+        speculation_id: (state_key, param_index, integer_id) for speculative requests.
         expected_type: For archive requests, the expected file type.
     """
 
@@ -69,7 +69,7 @@ class CapturedRequest:
     priority: int
     deduplication_key: str | None
     is_speculative: bool
-    speculation_id: tuple[str, int] | None
+    speculation_id: tuple[str, int, int] | None
     expected_type: str | None = None  # Only for archive requests
 
 

@@ -13,8 +13,7 @@ Tables:
 - run_metadata: Single-row configuration and state
 - errors: Detailed error tracking with type-specific fields
 - rate_items: Rate limiting items
-- speculative_start_ids: Starting IDs for speculative steps
-- speculation_tracking: @speculate function state
+- speculation_tracking: Speculative protocol tracking state
 - incidental_request_storage: Deduplicated content for browser requests
 - incidental_requests: Browser-initiated network requests (Playwright)
 - schema_info: Schema version tracking
@@ -380,21 +379,8 @@ class RateItem(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
 
-class SpeculativeStartId(SQLModel, table=True):  # type: ignore[call-arg]
-    """Starting IDs for speculative steps."""
-
-    __tablename__ = "speculative_start_ids"
-
-    step_name: str = Field(primary_key=True)
-    starting_id: int
-    updated_at: str | None = Field(
-        default=None,
-        sa_column_kwargs={"server_default": sa.text("CURRENT_TIMESTAMP")},
-    )
-
-
 class SpeculationTracking(SQLModel, table=True):  # type: ignore[call-arg]
-    """Tracks @speculate function state."""
+    """Tracks speculation state for Speculative protocol entries."""
 
     __tablename__ = "speculation_tracking"
     __table_args__ = (sa.Index("idx_speculation_tracking_func", "func_name"),)
@@ -417,6 +403,11 @@ class SpeculationTracking(SQLModel, table=True):  # type: ignore[call-arg]
         default=False,
         sa_column_kwargs={"server_default": sa.text("0")},
     )
+    param_index: int = Field(
+        default=0,
+        sa_column_kwargs={"server_default": sa.text("0")},
+    )
+    template_json: str | None = None
     updated_at: str | None = Field(
         default=None,
         sa_column_kwargs={"server_default": sa.text("CURRENT_TIMESTAMP")},

@@ -409,10 +409,6 @@ class PersistentDriver(
         # Update run status to running
         await self.db.update_run_status("running")
 
-        # Apply any speculative start IDs from the database to the scraper params
-        # This is used by the restart-speculative feature
-        await self._apply_speculative_start_ids()
-
         await self._emit_progress(
             "run_started",
             {
@@ -437,24 +433,13 @@ class PersistentDriver(
             if not has_requests:
                 # Seed queue with entry points.
                 # If seed_params were stored (from web UI selection),
-                # use them to run only the selected entries.
+                # use them to run the selected entries. initial_seed()
+                # handles both speculative and non-speculative entries:
+                # speculative entries store templates, non-speculative yield requests.
                 if seed_params is not None:
-                    # Filter out speculative entries — they're handled
-                    # separately by the speculation system below.
-                    non_spec = [
-                        inv
-                        for inv in seed_params
-                        if not any(
-                            e.speculative
-                            for e in self.scraper.list_entries()
-                            if e.name in inv
-                        )
-                    ]
-                    if non_spec:
-                        entry_requests = self.scraper.initial_seed(non_spec)
+                    if seed_params:
+                        entry_requests = self.scraper.initial_seed(seed_params)
                     else:
-                        # Only speculative entries selected; skip
-                        # initial_seed() which requires ≥1 invocation.
                         entry_requests = iter(())  # type: ignore[assignment]
                 else:
                     entry_requests = self._get_entry_requests()

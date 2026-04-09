@@ -4,9 +4,9 @@ Verifies that seed_params correctly controls which entries and
 speculative functions are executed during a run.
 
 Combinations tested:
-- seed_params=None → all entries + all speculation runs
+- seed_params=None → all entries run (no speculation without templates)
 - seed_params with only non-speculative entries → only those entries, no speculation
-- seed_params with only speculative entry → no initial_seed, speculation only
+- seed_params with only speculative entry → no non-spec entries, speculation only
 - seed_params with both speculative and non-speculative → both run
 - seed_params=[] (empty list) → nothing runs
 """
@@ -18,9 +18,9 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+from pydantic import BaseModel
 
 from kent.common.decorators import entry, step
-from kent.common.speculation_types import SimpleSpeculation
 from kent.data_types import (
     BaseScraper,
     HttpMethod,
@@ -37,6 +37,40 @@ from kent.driver.persistent_driver.testing import (
 )
 
 # ---------------------------------------------------------------------------
+# Speculative parameter model
+# ---------------------------------------------------------------------------
+
+
+class CaseId(BaseModel):
+    """Speculative parameter for testing."""
+
+    case_id: int
+    speculate: bool = True
+    threshold: int = 0
+    gap: int = 2
+
+    def should_speculate(self) -> bool:
+        return self.speculate
+
+    def to_int(self) -> int:
+        return self.case_id
+
+    def from_int(self, n: int) -> CaseId:
+        return CaseId(
+            case_id=n,
+            speculate=self.speculate,
+            threshold=self.threshold,
+            gap=self.gap,
+        )
+
+    def check_success(self) -> bool:
+        return self.case_id >= self.threshold
+
+    def max_gap(self) -> int:
+        return self.gap
+
+
+# ---------------------------------------------------------------------------
 # Test scraper with mixed entry types
 # ---------------------------------------------------------------------------
 
@@ -44,21 +78,14 @@ from kent.driver.persistent_driver.testing import (
 class MixedEntryScraper(BaseScraper[dict]):
     """Scraper with one speculative entry and two non-speculative entries."""
 
-    @entry(
-        dict,
-        speculative=SimpleSpeculation(
-            highest_observed=3,
-            largest_observed_gap=2,
-        ),
-    )
-    def fetch_case(self, case_id: int) -> Request:
+    @entry(dict)
+    def fetch_case(self, cid: CaseId) -> Request:
         return Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
-                url=f"https://example.com/case/{case_id}",
+                url=f"https://example.com/case/{cid.case_id}",
             ),
             continuation="parse_case",
-            is_speculative=True,
         )
 
     @step
@@ -132,12 +159,7 @@ async def _store_seed_params(
     driver: PersistentDriver[Any],
     seed_params: list[dict[str, Any]] | None,
 ) -> None:
-    """Store seed_params directly in run_metadata via raw SQL.
-
-    PersistentDriver.open() calls init_run_metadata without seed_params.
-    The web UI path stores them separately. For tests we inject them
-    directly into the row that open() already created.
-    """
+    """Store seed_params directly in run_metadata via raw SQL."""
     import json
 
     if seed_params is None:
@@ -163,9 +185,9 @@ def _requested_urls(manager: MockRequestManager) -> set[str]:
 
 
 class TestSeedParamsNone:
-    """seed_params=None → default behavior: all entries + all speculation."""
+    """seed_params=None → default behavior: non-spec entries run, no speculation."""
 
-    async def test_all_entries_run(self, db_path: Path) -> None:
+    async def test_non_spec_entries_run(self, db_path: Path) -> None:
         manager = _make_request_manager()
         scraper = MixedEntryScraper()
 
@@ -182,8 +204,8 @@ class TestSeedParamsNone:
         # Non-speculative entries should have been called
         assert "https://example.com/justices" in urls
         assert "https://example.com/oral-arguments" in urls
-        # Speculation should have seeded case URLs (at least ID 1)
-        assert "https://example.com/case/1" in urls
+        # No speculation templates → no case URLs
+        assert "https://example.com/case/1" not in urls
 
 
 class TestSeedParamsNonSpecOnly:
@@ -234,9 +256,9 @@ class TestSeedParamsNonSpecOnly:
 
 
 class TestSeedParamsSpeculativeOnly:
-    """seed_params with only the speculative entry → no initial_seed crash."""
+    """seed_params with only the speculative entry → speculation runs."""
 
-    async def test_speculation_runs_without_initial_seed(
+    async def test_speculation_runs_without_non_spec(
         self, db_path: Path
     ) -> None:
         manager = _make_request_manager()
@@ -248,7 +270,10 @@ class TestSeedParamsSpeculativeOnly:
             enable_monitor=False,
             request_manager=manager,
         ) as driver:
-            await _store_seed_params(driver, [{"fetch_case": {}}])
+            await _store_seed_params(
+                driver,
+                [{"fetch_case": {"cid": {"case_id": 1, "gap": 2}}}],
+            )
             await driver.run(setup_signal_handlers=False)
 
         urls = _requested_urls(manager)
@@ -274,7 +299,10 @@ class TestSeedParamsBothTypes:
         ) as driver:
             await _store_seed_params(
                 driver,
-                [{"fetch_case": {}}, {"get_justices": {}}],
+                [
+                    {"fetch_case": {"cid": {"case_id": 1, "gap": 2}}},
+                    {"get_justices": {}},
+                ],
             )
             await driver.run(setup_signal_handlers=False)
 

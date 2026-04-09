@@ -230,17 +230,6 @@ async def create_run(
             detail=f"Failed to instantiate scraper '{request.scraper_path}'",
         )
 
-    # Convert speculation_config to dict format for driver
-    speculation_config_dict = None
-    if request.speculation_config:
-        speculation_config_dict = {
-            step_name: {
-                "threshold": step_config.threshold,
-                "speculation": step_config.speculation,
-            }
-            for step_name, step_config in request.speculation_config.items()
-        }
-
     # Create run
     try:
         run_info = await manager.create_run(
@@ -248,7 +237,6 @@ async def create_run(
             scraper=scraper,
             num_workers=request.num_workers,
             max_backoff_time=request.max_backoff_time,
-            speculation_config=speculation_config_dict,
             seed_params=request.seed_params,
         )
     except ValueError as e:

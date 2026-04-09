@@ -39,48 +39,7 @@ from urllib.parse import quote, unquote, urljoin, urlparse, urlunparse
 
 from pyrate_limiter import Rate  # noqa: F401 (used in ClassVar annotation)
 
-from kent.common.speculation_types import (
-    SimpleSpeculation,
-    SpeculationType,
-    YearlySpeculation,
-)
-
-_INT_RANGE_SCHEMA: dict[str, Any] = {
-    "type": "array",
-    "items": {"type": "integer"},
-    "minItems": 2,
-    "maxItems": 2,
-}
-
-
-def _speculative_param_schema(
-    entry_info: EntryInfo,
-) -> tuple[dict[str, Any], list[str]]:
-    """Build JSON Schema properties and required list for a speculative entry.
-
-    For SimpleSpeculation: the single param becomes a [start, end] range.
-    For YearlySpeculation: year stays an int, the other param becomes a range,
-    and frozen is added as an optional boolean.
-    """
-    properties: dict[str, Any] = {}
-    required: list[str] = []
-
-    if isinstance(entry_info.speculation, SimpleSpeculation):
-        (param_name,) = entry_info.param_types.keys()
-        properties[param_name] = _INT_RANGE_SCHEMA
-        required.append(param_name)
-    elif isinstance(entry_info.speculation, YearlySpeculation):
-        for param_name in entry_info.param_types:
-            if param_name == "year":
-                properties["year"] = {"type": "integer"}
-                required.append("year")
-            else:
-                properties[param_name] = _INT_RANGE_SCHEMA
-                required.append(param_name)
-        properties["frozen"] = {"type": "boolean", "default": False}
-
-    return properties, required
-
+from kent.common.speculative import Speculative
 
 if TYPE_CHECKING:
     pass
@@ -133,24 +92,25 @@ class EntryInfo:
     """Metadata about a scraper entry point method.
 
     Used by list_entries() to expose entry point metadata including
-    return type, parameter types, and speculation config.
+    return type, parameter types, and speculative param info.
 
     Attributes:
         name: The method name.
         return_type: The data type this entry produces.
         param_types: Mapping of parameter name to type.
-        speculation: Speculation config (SimpleSpeculation, YearlySpeculation, or None).
+        speculative_param: Name of the parameter implementing the Speculative
+            protocol, or None if this entry is not speculative.
     """
 
     name: str
     return_type: type
     param_types: dict[str, type]
-    speculation: SpeculationType = None
+    speculative_param: str | None = None
 
     @property
     def speculative(self) -> bool:
         """Whether this is a speculative entry."""
-        return self.speculation is not None
+        return self.speculative_param is not None
 
 
 class BaseScraper(Generic[ScraperReturnType]):
@@ -246,14 +206,7 @@ class BaseScraper(Generic[ScraperReturnType]):
         migration to @entry decorators.
         """
 
-        class _StubSpeculative:
-            def __setattr__(self, name: str, value: Any) -> None:
-                object.__setattr__(self, name, value)
-
         class _StubParams:
-            def __init__(self) -> None:
-                self.speculative = _StubSpeculative()
-
             def get_enabled_models(self) -> list[str]:
                 return []
 
@@ -393,7 +346,7 @@ class BaseScraper(Generic[ScraperReturnType]):
                             name=metadata.func_name,
                             return_type=metadata.return_type,
                             param_types=metadata.param_types,
-                            speculation=metadata.speculation,
+                            speculative_param=metadata.speculative_param,
                         )
                     )
             except Exception:
@@ -436,15 +389,15 @@ class BaseScraper(Generic[ScraperReturnType]):
         For non-speculative entries, params are direct function arguments and
         the method yields Requests.
 
-        For speculative entries, params are range configs (validated by
-        EntryMetadata._validate_speculative_params) and are stored on
-        self._speculation_overrides for the driver to consume during
-        speculation seeding. No requests are yielded for speculative entries.
+        For speculative entries (parameter implementing Speculative protocol),
+        the validated model instance is stored in ``_speculation_templates``
+        for the driver to consume during speculation seeding. No requests are
+        yielded for speculative entries here.
 
         Args:
             params: List of single-key dicts mapping entry function name to kwargs.
                 Example: [{"search_by_number": {"docket_number": "A10"}}]
-                Speculative: [{"docket_stabber": {"year": 2026, "number": [1, 10]}}]
+                Speculative: [{"fetch_case": {"case_id": {"year": 2026, "number": 10}}}]
 
         Yields:
             Request instances from non-speculative entry functions.
@@ -473,16 +426,17 @@ class BaseScraper(Generic[ScraperReturnType]):
                 validated_kwargs = meta.validate_params(kwargs_dict)
 
                 if meta.speculative:
-                    # Store as speculation override for the driver
-                    if not hasattr(self, "_speculation_overrides"):
-                        self._speculation_overrides: dict[
-                            str, list[dict[str, Any]]
+                    # Store the validated Speculative model instance
+                    # as a template for the driver
+                    if not hasattr(self, "_speculation_templates"):
+                        self._speculation_templates: dict[
+                            str, list[Speculative]  # type: ignore[type-arg]
                         ] = {}
-                    if func_name not in self._speculation_overrides:
-                        self._speculation_overrides[func_name] = []
-                    self._speculation_overrides[func_name].append(
-                        validated_kwargs
-                    )
+                    if func_name not in self._speculation_templates:
+                        self._speculation_templates[func_name] = []
+                    assert meta.speculative_param is not None
+                    template = validated_kwargs[meta.speculative_param]
+                    self._speculation_templates[func_name].append(template)
                 else:
                     yield from method(**validated_kwargs)
 
@@ -506,41 +460,32 @@ class BaseScraper(Generic[ScraperReturnType]):
             properties: dict[str, Any] = {}
             required: list[str] = []
 
-            if entry_info.speculative:
-                # Speculative entries: emit range schema
-                properties, required = _speculative_param_schema(entry_info)
-            else:
-                # Non-speculative: emit direct param schema
-                for param_name, param_type in entry_info.param_types.items():
-                    required.append(param_name)
+            for param_name, param_type in entry_info.param_types.items():
+                required.append(param_name)
 
-                    if isinstance(param_type, type) and issubclass(
-                        param_type, PydanticBaseModel
-                    ):
-                        # Use Pydantic's schema generation
-                        pydantic_type = cast(
-                            type[PydanticBaseModel], param_type
-                        )
-                        model_schema = pydantic_type.model_json_schema()
-                        # Extract $defs and add to top-level
-                        if "$defs" in model_schema:
-                            all_defs.update(model_schema["$defs"])
-                            del model_schema["$defs"]
-                        # Store the model definition
-                        type_name = param_type.__name__
-                        all_defs[type_name] = model_schema
-                        properties[param_name] = {
-                            "$ref": f"#/$defs/{type_name}"
-                        }
-                    elif param_type is str:
-                        properties[param_name] = {"type": "string"}
-                    elif param_type is int:
-                        properties[param_name] = {"type": "integer"}
-                    elif param_type is date:
-                        properties[param_name] = {
-                            "type": "string",
-                            "format": "date",
-                        }
+                if isinstance(param_type, type) and issubclass(
+                    param_type, PydanticBaseModel
+                ):
+                    # Use Pydantic's schema generation
+                    pydantic_type = cast(type[PydanticBaseModel], param_type)
+                    model_schema = pydantic_type.model_json_schema()
+                    # Extract $defs and add to top-level
+                    if "$defs" in model_schema:
+                        all_defs.update(model_schema["$defs"])
+                        del model_schema["$defs"]
+                    # Store the model definition
+                    type_name = param_type.__name__
+                    all_defs[type_name] = model_schema
+                    properties[param_name] = {"$ref": f"#/$defs/{type_name}"}
+                elif param_type is str:
+                    properties[param_name] = {"type": "string"}
+                elif param_type is int:
+                    properties[param_name] = {"type": "integer"}
+                elif param_type is date:
+                    properties[param_name] = {
+                        "type": "string",
+                        "format": "date",
+                    }
 
             entry_schema: dict[str, Any] = {
                 "returns": entry_info.return_type.__name__,
@@ -551,21 +496,6 @@ class BaseScraper(Generic[ScraperReturnType]):
                     "required": required,
                 },
             }
-
-            if isinstance(entry_info.speculation, SimpleSpeculation):
-                entry_schema["highest_observed"] = (
-                    entry_info.speculation.highest_observed
-                )
-                entry_schema["largest_observed_gap"] = (
-                    entry_info.speculation.largest_observed_gap
-                )
-            elif isinstance(entry_info.speculation, YearlySpeculation):
-                entry_schema["largest_observed_gap"] = (
-                    entry_info.speculation.largest_observed_gap
-                )
-                entry_schema["trailing_period_days"] = (
-                    entry_info.speculation.trailing_period.days
-                )
 
             entries[entry_info.name] = entry_schema
 
@@ -845,8 +775,9 @@ class BaseRequest:
         deduplication_key: Key for deduplication (defaults to hash of URL and data).
         permanent: Persistent data (cookies, headers) that flows through the request chain.
         is_speculative: Whether this request is speculative (probing for content existence).
-        speculation_id: Tuple of (function_name, integer_id) identifying which @speculate
-                       function generated this request. None for non-speculative requests.
+        speculation_id: Tuple of (function_name, param_index, integer_id) identifying
+                       which speculative template generated this request. None for
+                       non-speculative requests.
         via: Optional description of how the request was produced (ViaLink, ViaFormSubmit).
              Enables the Playwright driver to replay the browser action. HTTP driver ignores.
         bypass_rate_limit: If True, skip the rate limiter for this request.
@@ -864,7 +795,7 @@ class BaseRequest:
     deduplication_key: str | None | SkipDeduplicationCheck = None
     permanent: dict[str, Any] = field(default_factory=dict)
     is_speculative: bool = False
-    speculation_id: tuple[str, int] | None = None
+    speculation_id: tuple[str, int, int] | None = None
     via: Any = None  # ViaLink | ViaFormSubmit | None - using Any to avoid circular import
     bypass_rate_limit: bool = False
 
@@ -1102,15 +1033,18 @@ class Request(BaseRequest):
             bypass_rate_limit=self.bypass_rate_limit,
         )
 
-    def speculative(self, func_name: str, spec_id: int) -> Request:
+    def speculative(
+        self, func_name: str, param_index: int, spec_id: int
+    ) -> Request:
         """Create a speculative copy of this request.
 
         Returns a new Request with is_speculative=True and
-        speculation_id set to (func_name, spec_id).
+        speculation_id set to (func_name, param_index, spec_id).
 
         Args:
-            func_name: Name of the @speculate function generating this request.
-            spec_id: The integer ID passed to the @speculate function.
+            func_name: Name of the entry function generating this request.
+            param_index: Index of the template in the params list.
+            spec_id: The integer ID from the Speculative.from_int() call.
 
         Returns:
             A new Request with speculation fields set.
@@ -1126,7 +1060,7 @@ class Request(BaseRequest):
             deduplication_key=self.deduplication_key,
             permanent=self.permanent,
             is_speculative=True,
-            speculation_id=(func_name, spec_id),
+            speculation_id=(func_name, param_index, spec_id),
             via=self.via,
             nonnavigating=self.nonnavigating,
             archive=self.archive,

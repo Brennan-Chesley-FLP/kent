@@ -3,7 +3,7 @@
 This scraper showcases the kent framework's features by extracting data
 from the Bug Civil Court demo website.  It exercises:
 
-- ``YearlySpeculation`` for speculative case discovery
+- ``Speculative`` protocol for speculative case discovery
 - ``page`` (LxmlPageElement / PageElement protocol) for HTML parsing
 - ``json_content`` for JSON API parsing
 - ``Request(nonnavigating=True)`` for side-channel API fetches
@@ -19,17 +19,12 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from dataclasses import replace
-from datetime import timedelta
 
 from pyrate_limiter import Duration, Rate
 
 from kent.common.decorators import entry, step
 from kent.common.lxml_page_element import LxmlPageElement
-from kent.common.param_models import DateRange
-from kent.common.speculation_types import (
-    YearlySpeculation,
-    YearPartition,
-)
+from kent.common.param_models import DateRange, YearlySpeculativeRange
 from kent.data_types import (
     BaseScraper,
     EstimateData,
@@ -64,28 +59,20 @@ class BugCourtDemoScraper(BaseScraper[DemoData]):
 
     # ── Entry points ────────────────────────────────────────────
 
-    @entry(
-        CaseData,
-        speculative=YearlySpeculation(
-            backfill=(
-                YearPartition(year=2024, number=(1, 10), frozen=True),
-                YearPartition(year=2025, number=(1, 10), frozen=True),
-                YearPartition(year=2026, number=(1, 10), frozen=False),
-            ),
-            trailing_period=timedelta(days=60),
-            largest_observed_gap=3,
-        ),
-    )
-    def fetch_case(self, year: int, number: int) -> Request:
+    @entry(CaseData)
+    def fetch_case(self, case_id: YearlySpeculativeRange) -> Request:
         """Speculative case fetcher — probes ``/cases/{year}/{number}``.
 
-        The driver generates ``(year, number)`` pairs from the
-        YearlySpeculation config and calls this for each pair.
+        ``YearlySpeculativeRange`` implements the ``Speculative`` protocol,
+        so the driver automatically detects this entry as speculative.
+        Templates are supplied via ``seed_params`` at run time, e.g.::
+
+            [{"fetch_case": {"case_id": {"year": 2026, "number": 1, "gap": 3}}}]
         """
         return Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
-                url=f"{self.court_url}/cases/{year}/{number}",
+                url=f"{self.court_url}/cases/{case_id.year}/{case_id.number}",
             ),
             continuation=self.parse_case_detail,
         )

@@ -7,7 +7,7 @@ This test module verifies:
 - EntryMetadata.validate_params() handles BaseModel and primitive types
 - BaseScraper.initial_seed() dispatches correctly
 - BaseScraper.schema() generates correct JSON Schema
-- Speculative entries work through @entry(speculative=SimpleSpeculation(...))
+- Speculative entries are auto-detected via the Speculative protocol
 - Error cases (empty params, unknown entry, bad types)
 """
 
@@ -23,7 +23,7 @@ from kent.common.decorators import (
     is_entry,
 )
 from kent.common.param_models import DateRange
-from kent.common.speculation_types import SimpleSpeculation
+from kent.common.speculative import Speculative
 from kent.data_types import (
     BaseScraper,
     EntryInfo,
@@ -42,6 +42,35 @@ class FakeData(BaseModel):
 class OpinionFilters(BaseModel):
     court_id: str
     year: int
+
+
+class RecordId(BaseModel):
+    """Speculative parameter model for testing."""
+
+    record_id: int
+    speculate: bool = True
+    threshold: int = 0
+    gap: int = 20
+
+    def should_speculate(self) -> bool:
+        return self.speculate
+
+    def to_int(self) -> int:
+        return self.record_id
+
+    def from_int(self, n: int) -> "RecordId":
+        return RecordId(
+            record_id=n,
+            speculate=self.speculate,
+            threshold=self.threshold,
+            gap=self.gap,
+        )
+
+    def check_success(self) -> bool:
+        return self.record_id >= self.threshold
+
+    def max_gap(self) -> int:
+        return self.gap
 
 
 class SimpleScraper(BaseScraper[FakeData]):
@@ -66,17 +95,12 @@ class SimpleScraper(BaseScraper[FakeData]):
             continuation="parse_results",
         )
 
-    @entry(
-        FakeData,
-        speculative=SimpleSpeculation(
-            highest_observed=500,
-            largest_observed_gap=20,
-        ),
-    )
-    def fetch_by_id(self, record_id: int) -> Generator[Request, None, None]:
-        yield Request(
+    @entry(FakeData)
+    def fetch_by_id(self, rid: RecordId) -> Request:
+        return Request(
             request=HTTPRequestParams(
-                method=HttpMethod.GET, url=f"/record/{record_id}"
+                method=HttpMethod.GET,
+                url=f"/record/{rid.record_id}",
             ),
             continuation="parse_detail",
         )
@@ -132,10 +156,8 @@ class TestEntryMetadata:
         meta = get_entry_metadata(SimpleScraper.fetch_by_id)
         assert meta is not None
         assert meta.speculative is True
-        assert isinstance(meta.speculation, SimpleSpeculation)
-        assert meta.speculation.highest_observed == 500
-        assert meta.speculation.largest_observed_gap == 20
-        assert meta.param_types == {"record_id": int}
+        assert meta.speculative_param == "rid"
+        assert meta.param_types == {"rid": RecordId}
 
     def test_entry_metadata_is_frozen(self):
         meta = get_entry_metadata(SimpleScraper.search_by_name)
@@ -151,6 +173,39 @@ class TestEntryMetadata:
         meta = get_entry_metadata(MultiTypeScraper.search_opinions)
         assert meta is not None
         assert meta.param_types == {"filters": OpinionFilters}
+
+    def test_speculative_protocol_detected(self):
+        """issubclass(RecordId, Speculative) works with Pydantic BaseModel."""
+        assert issubclass(RecordId, Speculative)
+        assert not issubclass(OpinionFilters, Speculative)
+
+    def test_multiple_speculative_params_rejected(self):
+        """Only one Speculative param per entry is allowed."""
+
+        class AnotherSpecParam(BaseModel):
+            x: int = 1
+
+            def should_speculate(self) -> bool:
+                return True
+
+            def to_int(self) -> int:
+                return self.x
+
+            def from_int(self, n: int) -> "AnotherSpecParam":
+                return AnotherSpecParam(x=n)
+
+            def check_success(self) -> bool:
+                return True
+
+            def max_gap(self) -> int:
+                return 5
+
+        with pytest.raises(TypeError, match="multiple Speculative parameters"):
+
+            class BadScraper(BaseScraper[FakeData]):
+                @entry(FakeData)
+                def bad(self, a: RecordId, b: AnotherSpecParam) -> Request:  # type: ignore[empty-body]
+                    ...
 
 
 # ── is_entry / get_entry_metadata helpers ──────────────────────────
@@ -192,9 +247,12 @@ class TestListEntries:
 
         info = by_name["fetch_by_id"]
         assert info.speculative is True
-        assert isinstance(info.speculation, SimpleSpeculation)
-        assert info.speculation.highest_observed == 500
-        assert info.speculation.largest_observed_gap == 20
+        assert info.speculative_param == "rid"
+
+    def test_list_speculative_entries(self):
+        spec = SimpleScraper.list_speculative_entries()
+        assert len(spec) == 1
+        assert spec[0].name == "fetch_by_id"
 
 
 # ── validate_params() ─────────────────────────────────────────────
@@ -211,10 +269,13 @@ class TestValidateParams:
         result = meta.validate_params({"count": 42})
         assert result == {"count": 42}
 
-    def test_validate_speculative_range(self):
+    def test_validate_speculative_param(self):
+        """Speculative params are validated via model_validate like any BaseModel."""
         meta = get_entry_metadata(SimpleScraper.fetch_by_id)
-        result = meta.validate_params({"record_id": [1, 42]})
-        assert result == {"record_id": (1, 42)}
+        result = meta.validate_params({"rid": {"record_id": 42, "gap": 10}})
+        assert isinstance(result["rid"], RecordId)
+        assert result["rid"].record_id == 42
+        assert result["rid"].gap == 10
 
     def test_validate_basemodel(self):
         meta = get_entry_metadata(SimpleScraper.search_by_date)
@@ -277,19 +338,40 @@ class TestInitialSeed:
         assert requests[0].request.url == "/search?name=alice"
         assert requests[1].request.url == "/search?name=bob"
 
-    def test_speculative_initial_seed_stores_overrides(self):
+    def test_speculative_initial_seed_stores_templates(self):
         scraper = SimpleScraper()
         requests = list(
-            scraper.initial_seed([{"fetch_by_id": {"record_id": [1, 99]}}])
+            scraper.initial_seed(
+                [{"fetch_by_id": {"rid": {"record_id": 99, "gap": 10}}}]
+            )
         )
         # Speculative entries don't yield requests
         assert len(requests) == 0
-        # Instead they store overrides
-        assert hasattr(scraper, "_speculation_overrides")
-        assert "fetch_by_id" in scraper._speculation_overrides
-        assert scraper._speculation_overrides["fetch_by_id"] == [
-            {"record_id": (1, 99)}
-        ]
+        # Instead they store templates
+        assert hasattr(scraper, "_speculation_templates")
+        assert "fetch_by_id" in scraper._speculation_templates
+        templates = scraper._speculation_templates["fetch_by_id"]
+        assert len(templates) == 1
+        assert isinstance(templates[0], RecordId)
+        assert templates[0].record_id == 99
+        assert templates[0].gap == 10
+
+    def test_multiple_speculative_templates_same_entry(self):
+        """Multiple invocations of the same speculative entry store multiple templates."""
+        scraper = SimpleScraper()
+        requests = list(
+            scraper.initial_seed(
+                [
+                    {"fetch_by_id": {"rid": {"record_id": 50, "gap": 5}}},
+                    {"fetch_by_id": {"rid": {"record_id": 100, "gap": 10}}},
+                ]
+            )
+        )
+        assert len(requests) == 0
+        templates = scraper._speculation_templates["fetch_by_id"]
+        assert len(templates) == 2
+        assert templates[0].record_id == 50
+        assert templates[1].record_id == 100
 
     def test_basemodel_param_dispatch(self):
         scraper = SimpleScraper()
@@ -356,20 +438,15 @@ class TestSchema:
         assert props["date_range"] == {"$ref": "#/$defs/DateRange"}
         assert "DateRange" in schema["$defs"]
 
-    def test_speculative_schema(self):
+    def test_speculative_schema_uses_pydantic_model(self):
+        """Speculative entries emit their Pydantic model schema directly."""
         schema = SimpleScraper.schema()
         entry = schema["entries"]["fetch_by_id"]
         assert entry["speculative"] is True
-        assert entry["highest_observed"] == 500
-        assert entry["largest_observed_gap"] == 20
-        # Speculative entries use range schema
+        # The parameter schema should reference the RecordId model
         props = entry["parameters"]["properties"]
-        assert props["record_id"] == {
-            "type": "array",
-            "items": {"type": "integer"},
-            "minItems": 2,
-            "maxItems": 2,
-        }
+        assert props["rid"] == {"$ref": "#/$defs/RecordId"}
+        assert "RecordId" in schema["$defs"]
 
     def test_integer_param_schema(self):
         schema = MultiTypeScraper.schema()

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import sqlalchemy as sa
 from sqlmodel import select
@@ -319,16 +319,19 @@ class ManipulationMixin:
         step_name: str,
         from_id: int,
         to_id: int,
+        template_json: dict[str, Any] | None = None,
     ) -> int:
         """Seed pending requests for a speculative step ID range.
 
-        Creates new pending requests by invoking the @speculate function
-        for each ID in the specified range.
+        Creates new pending requests by invoking the entry function
+        with concrete Speculative instances for each ID in the range.
 
         Args:
-            step_name: Name of the @speculate decorated function.
+            step_name: Name of the speculative entry function.
             from_id: Starting ID (inclusive).
             to_id: Ending ID (inclusive).
+            template_json: Optional JSON dict for the Speculative template.
+                If not provided, uses default model values.
 
         Returns:
             Number of requests seeded.
@@ -405,10 +408,27 @@ class ManipulationMixin:
                 f"Step '{step_name}' is not a speculative entry function"
             )
 
+        assert entry_meta.speculative_param is not None
+        param_type = entry_meta.param_types[entry_meta.speculative_param]
+
+        # Build template from provided JSON or defaults
+        if template_json is not None:
+            template = param_type.model_validate(template_json)  # type: ignore[attr-defined]
+        else:
+            # Try to construct with just the to_id range
+            # This is a best-effort fallback
+            raise ValueError(
+                f"template_json is required for speculative seeding of '{step_name}'"
+            )
+
         # Seed requests for the range
         seeded_count = 0
         for id_value in range(from_id, to_id + 1):
-            request = func(id_value)
+            concrete = template.from_int(id_value)
+            request = func(**{entry_meta.speculative_param: concrete})
+
+            if concrete.check_success():
+                request = request.speculative(step_name, 0, id_value)
 
             http_request = request.request
 

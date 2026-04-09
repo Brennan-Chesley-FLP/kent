@@ -28,7 +28,7 @@ from sqlmodel import SQLModel, select
 from kent.driver.persistent_driver.models import *  # noqa: F401, F403
 from kent.driver.persistent_driver.models import Request, SchemaInfo
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 
 _MIGRATIONS: dict[int, list[str]] = {
@@ -56,6 +56,11 @@ _MIGRATIONS: dict[int, list[str]] = {
         # Add storage_id FK to incidental_requests
         "ALTER TABLE incidental_requests ADD COLUMN storage_id INTEGER REFERENCES incidental_request_storage(id)",
         "CREATE INDEX IF NOT EXISTS idx_incidental_requests_storage ON incidental_requests(storage_id)",
+    ],
+    17: [
+        # Speculative protocol: add param_index and template_json to speculation_tracking
+        "ALTER TABLE speculation_tracking ADD COLUMN param_index INTEGER DEFAULT 0",
+        "ALTER TABLE speculation_tracking ADD COLUMN template_json TEXT",
     ],
 }
 
