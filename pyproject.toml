@@ -70,6 +70,8 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "generative: marks tests that use hypothesis property-based testing",
+    "duplicate: marks tests that duplicate another test's assertion (for future cleanup)",
 ]
 filterwarnings = [
     "ignore:'count' is passed as positional argument:DeprecationWarning",

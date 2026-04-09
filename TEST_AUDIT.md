@@ -52,17 +52,24 @@ Cross-reference of features against existing test coverage.
 | `handle_data()` calls `on_invalid_data` on failure | Tested | `test_09_data_validation.py` |
 | Re-raises if no callbacks provided | Tested | `test_09_data_validation.py` |
 
-### Speculation
+### Speculation (Speculative Protocol)
 
 | Feature | Tested? | Test Location |
 |---------|---------|---------------|
-| `_discover_speculate_functions()` | Partial | `test_speculate_decorator.py` (decorator metadata) |
-| `_seed_speculative_queue()` with `definite_range` | **UNTESTED** | — |
-| `_seed_speculative_queue()` with default range | **UNTESTED** | — |
-| `_extend_speculation()` near ceiling | **UNTESTED** | — |
-| `_track_speculation_outcome()` success/failure | **UNTESTED** | — |
-| `fails_successfully()` soft 404 detection | **UNTESTED** | — |
-| Stop when `consecutive_failures >= plus` | **UNTESTED** | — |
+| `Speculative` protocol detection via `@entry` | Tested | `test_entry_decorator.py`, `test_speculate_decorator.py` |
+| `_discover_speculate_functions()` from templates | Tested | `test_speculate_decorator.py` |
+| `_seed_speculative_queue()` with range | Tested | `test_speculate_decorator.py` |
+| `check_success()` split (spec vs non-spec) | Tested | `test_speculate_decorator.py` |
+| `_extend_speculation()` near ceiling | Tested | `test_speculate_decorator.py` |
+| `_track_speculation_outcome()` success/failure | Tested | `test_speculate_decorator.py` |
+| `fails_successfully()` soft 404 detection | Tested | `test_speculate_decorator.py` |
+| Stop when `consecutive_failures >= max_gap()` | Tested | `test_speculate_decorator.py` |
+| `max_gap() == 0` frozen behavior | Tested | `test_speculate_decorator.py` |
+| `should_speculate() == False` stops after seeding | Tested | `test_speculate_decorator.py` |
+| Multiple templates (param_index) | Tested | `test_speculate_decorator.py`, `test_entry_decorator.py` |
+| End-to-end speculation with mock manager | Tested | `test_speculate_decorator.py` |
+| `_speculation_lock` for concurrent state | **UNTESTED** | — |
+| Async speculation seed/extend/track | **UNTESTED** | — |
 
 ### Callbacks
 
@@ -90,7 +97,7 @@ Cross-reference of features against existing test coverage.
 | `_worker()` handles transient exceptions | **UNTESTED** | — |
 | `_worker()` catches `CancelledError` | **UNTESTED** | — |
 | `_queue_lock` for thread-safe counter | **UNTESTED** | — |
-| `_speculation_lock` for concurrent state | **UNTESTED** | — |
+| `_speculation_lock` for async concurrent state | **UNTESTED** | — |
 | Async speculation seed/extend/track | **UNTESTED** | — |
 | Async `on_archive` callback | **UNTESTED** | — |
 | Async `on_structural_error` callback | **UNTESTED** | — |
@@ -408,7 +415,7 @@ Cross-reference of features against existing test coverage.
 
 ### High Priority (Core driver logic not directly tested)
 
-1. **Speculation engine** — `_seed_speculative_queue()`, `_extend_speculation()`, `_track_speculation_outcome()`, and `fails_successfully()` have no dedicated unit tests. The @speculate decorator metadata is tested, but the driver's runtime speculation loop is not.
+1. **~~Speculation engine~~** — Now well-tested via `test_speculate_decorator.py`. The `Speculative` protocol, discovery, seeding, tracking, extension, stopping, `check_success()` split, `fails_successfully()`, frozen ranges, and end-to-end behavior all have dedicated tests. Only async speculation lock and async-specific paths remain untested.
 
 2. **AsyncDriver callbacks** — The async driver's handling of `on_structural_error`, `on_transient_exception`, `on_invalid_data`, and `on_archive` are not tested. Only basic multi-page and multi-worker scenarios are covered.
 

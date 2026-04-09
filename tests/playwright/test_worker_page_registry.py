@@ -79,6 +79,7 @@ def _make_driver_with_fake_context() -> tuple[Any, FakeBrowserContext]:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.generative
 @given(data=st.data())
 @settings(max_examples=200, deadline=None)
 @pytest.mark.asyncio
@@ -172,6 +173,7 @@ async def test_worker_page_registry_invariants(data: st.DataObject) -> None:
         )
 
 
+@pytest.mark.generative
 @given(
     worker_ids=st.lists(
         st.integers(min_value=0, max_value=15), min_size=2, max_size=10

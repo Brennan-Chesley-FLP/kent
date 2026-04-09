@@ -85,9 +85,7 @@ class SpeculationMixin:
                 spec_state.highest_successful_id = saved[
                     "highest_successful_id"
                 ]
-                spec_state.consecutive_failures = saved[
-                    "consecutive_failures"
-                ]
+                spec_state.consecutive_failures = saved["consecutive_failures"]
                 spec_state.current_ceiling = saved["current_ceiling"]
                 spec_state.stopped = saved["stopped"]
             elif "template_json" in saved and saved["template_json"]:
@@ -129,9 +127,7 @@ class SpeculationMixin:
                             highest_successful_id=saved[
                                 "highest_successful_id"
                             ],
-                            consecutive_failures=saved[
-                                "consecutive_failures"
-                            ],
+                            consecutive_failures=saved["consecutive_failures"],
                             current_ceiling=saved["current_ceiling"],
                             stopped=saved["stopped"],
                         )

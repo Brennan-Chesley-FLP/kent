@@ -316,6 +316,7 @@ class DirectFingerprintScraper(BaseScraper[dict]):
 class TestDirectFingerprint:
     """Part 2A: Property test — direct URL navigation with forced interleaving."""
 
+    @pytest.mark.generative
     @given(
         n_pages=st.integers(min_value=5, max_value=20),
         n_workers=st.integers(min_value=2, max_value=5),
@@ -420,6 +421,7 @@ class ViaLinkFingerprintScraper(BaseScraper[dict]):
 class TestViaLinkFingerprint:
     """Part 2B: Property tests — ViaLink navigation with route interception."""
 
+    @pytest.mark.generative
     @given(
         n_pages=st.integers(min_value=3, max_value=12),
         n_workers=st.integers(min_value=2, max_value=4),
@@ -465,6 +467,7 @@ class TestViaLinkFingerprint:
         finally:
             server.stop()
 
+    @pytest.mark.generative
     @given(
         n_children=st.integers(min_value=4, max_value=10),
         n_workers=st.integers(min_value=2, max_value=4),

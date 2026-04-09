@@ -228,7 +228,7 @@ class TestDemoScraper:
     def test_fixture_matches_cases(self):
         """The expected_output.json fixture matches the data module."""
         fixture_path = (
-            Path(__file__).parent.parent
+            Path(__file__).parent.parent.parent
             / "kent"
             / "demo"
             / "fixtures"
@@ -250,7 +250,7 @@ class TestDemoScraper:
     ):
         """Scraped case data matches the expected fixture."""
         fixture_path = (
-            Path(__file__).parent.parent
+            Path(__file__).parent.parent.parent
             / "kent"
             / "demo"
             / "fixtures"
