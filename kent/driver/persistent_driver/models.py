@@ -15,6 +15,7 @@ Tables:
 - rate_items: Rate limiting items
 - speculative_start_ids: Starting IDs for speculative steps
 - speculation_tracking: @speculate function state
+- incidental_request_storage: Deduplicated content for browser requests
 - incidental_requests: Browser-initiated network requests (Playwright)
 - schema_info: Schema version tracking
 """
@@ -443,28 +444,19 @@ class Estimate(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
 
-class IncidentalRequest(SQLModel, table=True):  # type: ignore[call-arg]
-    """Browser-initiated network requests (Playwright driver)."""
+class IncidentalRequestStorage(SQLModel, table=True):  # type: ignore[call-arg]
+    """Deduplicated content storage for incidental browser requests."""
 
-    __tablename__ = "incidental_requests"
-    __table_args__ = (
-        sa.Index("idx_incidental_requests_parent", "parent_request_id"),
-        sa.Index("idx_incidental_requests_resource_type", "resource_type"),
-    )
+    __tablename__ = "incidental_request_storage"
+    __table_args__ = (sa.Index("idx_irs_content_md5", "content_md5"),)
 
     id: int | None = Field(default=None, primary_key=True)
-    parent_request_id: int = Field(foreign_key="requests.id")
-
-    # Request info
     resource_type: str
-    method: str
     url: str
-    headers_json: str | None = None
+    method: str
     body: bytes | None = Field(
         default=None, sa_column=Column(LargeBinary, nullable=True)
     )
-
-    # Response info (NULL if request failed/blocked)
     status_code: int | None = None
     response_headers_json: str | None = None
     content_compressed: bytes | None = Field(
@@ -475,16 +467,30 @@ class IncidentalRequest(SQLModel, table=True):  # type: ignore[call-arg]
     compression_dict_id: int | None = Field(
         default=None, foreign_key="compression_dicts.id"
     )
+    failure_reason: str | None = None
+    content_md5: str | None = None
 
-    # Timing
+
+class IncidentalRequest(SQLModel, table=True):  # type: ignore[call-arg]
+    """Browser-initiated network requests (Playwright driver)."""
+
+    __tablename__ = "incidental_requests"
+    __table_args__ = (
+        sa.Index("idx_incidental_requests_parent", "parent_request_id"),
+        sa.Index("idx_incidental_requests_storage", "storage_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    parent_request_id: int = Field(foreign_key="requests.id")
+    url: str
+    headers_json: str | None = None
     started_at_ns: int | None = None
     completed_at_ns: int | None = None
-
-    # Metadata
     from_cache: bool | None = None
-    failure_reason: str | None = None
-
     created_at: str | None = Field(
         default=None,
         sa_column_kwargs={"server_default": sa.text("CURRENT_TIMESTAMP")},
+    )
+    storage_id: int | None = Field(
+        default=None, foreign_key="incidental_request_storage.id"
     )

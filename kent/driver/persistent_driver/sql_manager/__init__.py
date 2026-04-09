@@ -19,6 +19,9 @@ from kent.driver.persistent_driver.sql_manager._errors import ErrorRequeueMixin
 from kent.driver.persistent_driver.sql_manager._estimates import (
     EstimateStorageMixin,
 )
+from kent.driver.persistent_driver.sql_manager._incidental_requests import (
+    IncidentalRequestStorageMixin,
+)
 from kent.driver.persistent_driver.sql_manager._listing import ListingMixin
 from kent.driver.persistent_driver.sql_manager._requests import (
     RequestQueueMixin,
@@ -37,6 +40,7 @@ from kent.driver.persistent_driver.sql_manager._speculation import (
     SpeculationMixin,
 )
 from kent.driver.persistent_driver.sql_manager._types import (
+    IncidentalRequestRecord,
     Page,
     RequestRecord,
     RequeueResult,
@@ -53,6 +57,7 @@ class SQLManager(
     RunMetadataMixin,
     RequestQueueMixin,
     ResponseStorageMixin,
+    IncidentalRequestStorageMixin,
     ResultStorageMixin,
     EstimateStorageMixin,
     ErrorRequeueMixin,
@@ -84,6 +89,7 @@ class SQLManager(
 
 
 __all__ = [
+    "IncidentalRequestRecord",
     "Page",
     "RequeueResult",
     "RequestRecord",

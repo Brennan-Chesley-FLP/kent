@@ -19,6 +19,7 @@ from warcio.warcwriter import WARCWriter
 
 from kent.driver.persistent_driver.models import (
     IncidentalRequest,
+    IncidentalRequestStorage,
     Request,
 )
 
@@ -190,15 +191,20 @@ async def export_warc(
             # Export incidental requests associated with this parent request
             async with session_factory() as session:
                 inc_result = await session.execute(
-                    select(IncidentalRequest)
+                    select(IncidentalRequest, IncidentalRequestStorage)
+                    .outerjoin(
+                        IncidentalRequestStorage,
+                        IncidentalRequest.storage_id
+                        == IncidentalRequestStorage.id,
+                    )
                     .where(IncidentalRequest.parent_request_id == request_id)
                     .order_by(IncidentalRequest.started_at_ns.asc())  # type: ignore[union-attr]
                 )
-                inc_rows = inc_result.scalars().all()
+                inc_rows = inc_result.all()
 
-            for inc in inc_rows:
+            for inc, storage in inc_rows:
                 # Skip failed incidental requests (no response)
-                if not inc.status_code:
+                if not storage or not storage.status_code:
                     logger.debug(
                         f"Skipping failed incidental request {inc.id} ({inc.url})"
                     )
@@ -206,12 +212,12 @@ async def export_warc(
 
                 # Decompress incidental content if present
                 inc_content = b""
-                if inc.content_compressed:
+                if storage.content_compressed:
                     try:
                         inc_content = await decompress_response(
                             session_factory,
-                            inc.content_compressed,
-                            inc.compression_dict_id,
+                            storage.content_compressed,
+                            storage.compression_dict_id,
                         )
                     except Exception as e:
                         logger.warning(
@@ -221,13 +227,15 @@ async def export_warc(
 
                 # Parse incidental response headers
                 inc_response_headers = []
-                if inc.response_headers_json:
-                    inc_headers_dict = json.loads(inc.response_headers_json)
+                if storage.response_headers_json:
+                    inc_headers_dict = json.loads(
+                        storage.response_headers_json
+                    )
                     inc_response_headers = list(inc_headers_dict.items())
 
                 # Build HTTP response headers for incidental request
                 inc_http_headers = StatusAndHeaders(
-                    statusline=f"{inc.status_code} OK",
+                    statusline=f"{storage.status_code} OK",
                     headers=inc_response_headers,
                     protocol="HTTP/1.1",
                 )
@@ -240,8 +248,8 @@ async def export_warc(
                     payload=inc_payload_stream,
                     http_headers=inc_http_headers,
                     warc_headers_dict={
-                        "X-HTTP-Method": inc.method,
-                        "X-Resource-Type": inc.resource_type,
+                        "X-HTTP-Method": storage.method,
+                        "X-Resource-Type": storage.resource_type,
                         "X-From-Cache": str(inc.from_cache),
                         "X-Parent-WARC-Record-ID": f"<urn:uuid:{warc_record_id}>",
                     },
@@ -255,27 +263,27 @@ async def export_warc(
                     inc_request_headers = list(inc_req_headers_dict.items())
 
                 inc_request_http_headers = StatusAndHeaders(
-                    statusline=f"{inc.method} {inc.url} HTTP/1.1",
+                    statusline=f"{storage.method} {inc.url} HTTP/1.1",
                     headers=inc_request_headers,
                     protocol="HTTP/1.1",
                     is_http_request=True,
                 )
 
-                inc_request_payload = BytesIO(inc.body or b"")
+                inc_request_payload = BytesIO(storage.body or b"")
                 inc_request_record = writer.create_warc_record(
                     uri=inc.url,
                     record_type="request",
                     payload=inc_request_payload,
                     http_headers=inc_request_http_headers,
                     warc_headers_dict={
-                        "X-Resource-Type": inc.resource_type,
+                        "X-Resource-Type": storage.resource_type,
                         "X-Parent-WARC-Record-ID": f"<urn:uuid:{warc_record_id}>",
                     },
                 )
                 writer.write_record(inc_request_record)
 
                 logger.debug(
-                    f"Exported incidental {inc.resource_type} {inc.id} ({inc.url})"
+                    f"Exported incidental {storage.resource_type} {inc.id} ({inc.url})"
                 )
 
     logger.info(f"Exported {count} responses to {output_path}")

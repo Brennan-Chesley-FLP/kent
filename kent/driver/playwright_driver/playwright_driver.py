@@ -502,9 +502,7 @@ class PlaywrightDriver(
                     if browser_profile.channel:
                         launch_kwargs["channel"] = browser_profile.channel
 
-                browser_obj = await browser_launcher.launch(
-                    **launch_kwargs
-                )
+                browser_obj = await browser_launcher.launch(**launch_kwargs)
 
                 context_kwargs: dict[str, Any] = {
                     "viewport": viewport,

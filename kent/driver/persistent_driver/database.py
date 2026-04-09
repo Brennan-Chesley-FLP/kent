@@ -28,12 +28,34 @@ from sqlmodel import SQLModel, select
 from kent.driver.persistent_driver.models import *  # noqa: F401, F403
 from kent.driver.persistent_driver.models import Request, SchemaInfo
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 
 _MIGRATIONS: dict[int, list[str]] = {
     15: [
         "ALTER TABLE run_metadata ADD COLUMN browser_cookies_json TEXT",
+    ],
+    16: [
+        # Create deduplicated storage table for incidental request content
+        """CREATE TABLE IF NOT EXISTS incidental_request_storage (
+            id INTEGER PRIMARY KEY,
+            resource_type TEXT NOT NULL,
+            url TEXT NOT NULL,
+            method TEXT NOT NULL,
+            body BLOB,
+            status_code INTEGER,
+            response_headers_json TEXT,
+            content_compressed BLOB,
+            content_size_original INTEGER,
+            content_size_compressed INTEGER,
+            compression_dict_id INTEGER REFERENCES compression_dicts(id),
+            failure_reason TEXT,
+            content_md5 TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_irs_content_md5 ON incidental_request_storage(content_md5)",
+        # Add storage_id FK to incidental_requests
+        "ALTER TABLE incidental_requests ADD COLUMN storage_id INTEGER REFERENCES incidental_request_storage(id)",
+        "CREATE INDEX IF NOT EXISTS idx_incidental_requests_storage ON incidental_requests(storage_id)",
     ],
 }
 

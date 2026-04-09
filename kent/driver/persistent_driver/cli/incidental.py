@@ -104,12 +104,12 @@ def incidental_list(
                 "total": page.total,
                 "items": [
                     {
-                        "id": r["id"],
-                        "parent_id": r["parent_request_id"],
-                        "type": r["resource_type"],
-                        "url": r["url"][:40] if r["url"] else "",
-                        "status": r["status_code"] or "failed",
-                        "cached": "\u2713" if r["from_cache"] else "",
+                        "id": r.id,
+                        "parent_id": r.parent_request_id,
+                        "type": r.resource_type,
+                        "url": r.url[:40] if r.url else "",
+                        "status": r.status_code or "failed",
+                        "cached": "\u2713" if r.from_cache else "",
                     }
                     for r in page.items
                 ],
@@ -175,7 +175,7 @@ def incidental_show(
                 sys.exit(1)
 
             render_output(
-                inc,
+                inc.to_dict(),
                 format_type=format_type,
                 template_path="incidental/show",
                 template_name=template_name or "default",

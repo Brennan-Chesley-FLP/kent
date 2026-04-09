@@ -11,11 +11,13 @@ from kent.driver.persistent_driver.models import (
     CompressionDict,
     Error,
     IncidentalRequest,
+    IncidentalRequestStorage,
     Request,
     Result,
 )
 from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 from kent.driver.persistent_driver.sql_manager import (
+    IncidentalRequestRecord,
     Page,
     RequestRecord,
     ResponseRecord,
@@ -220,7 +222,7 @@ class InspectionMixin:
         from_cache: bool | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> Page[dict[str, Any]]:
+    ) -> Page[IncidentalRequestRecord]:
         """List incidental requests with optional filtering.
 
         Args:
@@ -231,63 +233,84 @@ class InspectionMixin:
             offset: Number of results to skip (for pagination).
 
         Returns:
-            Page object containing incidental request dictionaries.
+            Page object containing IncidentalRequestRecord items.
         """
-        # Build WHERE conditions
         conditions = []
         if parent_request_id is not None:
             conditions.append(
                 IncidentalRequest.parent_request_id == parent_request_id
             )
         if resource_type is not None:
-            conditions.append(IncidentalRequest.resource_type == resource_type)
+            conditions.append(
+                IncidentalRequestStorage.resource_type == resource_type
+            )
         if from_cache is not None:
             conditions.append(IncidentalRequest.from_cache == from_cache)
 
         async with self._session_factory() as session:
-            # Get total count
-            count_stmt = select(sa.func.count()).select_from(IncidentalRequest)
+            base = (
+                select(sa.func.count())
+                .select_from(IncidentalRequest)
+                .outerjoin(
+                    IncidentalRequestStorage,
+                    IncidentalRequest.storage_id
+                    == IncidentalRequestStorage.id,
+                )
+            )
             for cond in conditions:
-                count_stmt = count_stmt.where(cond)
-
-            count_result = await session.execute(count_stmt)
+                base = base.where(cond)
+            count_result = await session.execute(base)
             total = count_result.scalar() or 0
 
-            # Get page of results
-            query = select(
-                IncidentalRequest.id,
-                IncidentalRequest.parent_request_id,
-                IncidentalRequest.resource_type,
-                IncidentalRequest.method,
-                IncidentalRequest.url,
-                IncidentalRequest.status_code,
-                IncidentalRequest.content_size_original,
-                IncidentalRequest.from_cache,
-                IncidentalRequest.failure_reason,
-                IncidentalRequest.created_at,
-            ).order_by(IncidentalRequest.created_at.desc())  # type: ignore[union-attr]
-
+            query = (
+                select(
+                    IncidentalRequest.id,
+                    IncidentalRequest.parent_request_id,
+                    IncidentalRequest.url,
+                    IncidentalRequest.headers_json,
+                    IncidentalRequest.started_at_ns,
+                    IncidentalRequest.completed_at_ns,
+                    IncidentalRequest.from_cache,
+                    IncidentalRequest.created_at,
+                    IncidentalRequest.storage_id,
+                    IncidentalRequestStorage.resource_type,
+                    IncidentalRequestStorage.method,
+                    IncidentalRequestStorage.status_code,
+                    IncidentalRequestStorage.content_size_original,
+                    IncidentalRequestStorage.content_size_compressed,
+                    IncidentalRequestStorage.failure_reason,
+                )
+                .outerjoin(
+                    IncidentalRequestStorage,
+                    IncidentalRequest.storage_id
+                    == IncidentalRequestStorage.id,
+                )
+                .order_by(IncidentalRequest.created_at.desc())  # type: ignore[union-attr]
+            )
             for cond in conditions:
                 query = query.where(cond)
-
             query = query.limit(limit).offset(offset)
             result = await session.execute(query)
             rows = result.all()
 
-        # Convert to dictionaries
         items = [
-            {
-                "id": row[0],
-                "parent_request_id": row[1],
-                "resource_type": row[2],
-                "method": row[3],
-                "url": row[4],
-                "status_code": row[5],
-                "content_size_original": row[6],
-                "from_cache": bool(row[7]) if row[7] is not None else None,
-                "failure_reason": row[8],
-                "created_at": row[9],
-            }
+            IncidentalRequestRecord(
+                id=row[0],
+                parent_request_id=row[1],
+                url=row[2],
+                headers_json=row[3],
+                started_at_ns=row[4],
+                completed_at_ns=row[5],
+                from_cache=bool(row[6]) if row[6] is not None else None,
+                created_at=row[7],
+                storage_id=row[8],
+                resource_type=row[9],
+                method=row[10],
+                status_code=row[11],
+                content_size_original=row[12],
+                content_size_compressed=row[13],
+                failure_reason=row[14],
+            )
             for row in rows
         ]
 
@@ -300,14 +323,14 @@ class InspectionMixin:
 
     async def get_incidental_request(
         self, incidental_id: int
-    ) -> dict[str, Any] | None:
+    ) -> IncidentalRequestRecord | None:
         """Get a single incidental request by ID.
 
         Args:
             incidental_id: The incidental request ID.
 
         Returns:
-            Incidental request dict if found, None otherwise.
+            IncidentalRequestRecord if found, None otherwise.
         """
         return await self.sql.get_incidental_request_by_id(incidental_id)
 
@@ -323,17 +346,19 @@ class InspectionMixin:
             Decompressed content bytes, or None if not found or no content.
         """
         inc = await self.sql.get_incidental_request_by_id(incidental_id)
-        if not inc or not inc.get("content_compressed"):
+        if not inc or not inc.storage_id:
             return None
 
-        # Decompress content
+        storage = await self.sql.get_incidental_request_storage(inc.storage_id)
+        if not storage or not storage.get("content_compressed"):
+            return None
+
         import zstandard as zstd
 
-        content_compressed = inc["content_compressed"]
-        compression_dict_id = inc.get("compression_dict_id")
+        content_compressed = storage["content_compressed"]
+        compression_dict_id = storage.get("compression_dict_id")
 
         if compression_dict_id:
-            # Get compression dictionary
             dict_data = await self.sql.get_compression_dict(
                 compression_dict_id
             )

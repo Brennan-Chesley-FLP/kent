@@ -46,22 +46,13 @@ async def test_schema_includes_incidental_requests_table():
         expected_columns = {
             "id",
             "parent_request_id",
-            "resource_type",
-            "method",
             "url",
             "headers_json",
-            "body",
-            "status_code",
-            "response_headers_json",
-            "content_compressed",
-            "content_size_original",
-            "content_size_compressed",
-            "compression_dict_id",
             "started_at_ns",
             "completed_at_ns",
             "from_cache",
-            "failure_reason",
             "created_at",
+            "storage_id",
         }
         assert expected_columns.issubset(column_names)
 
@@ -89,9 +80,9 @@ async def test_schema_includes_browser_config_json_field():
 
 
 @pytest.mark.asyncio
-async def test_schema_version_is_15():
-    """Verify schema version is updated to 15."""
-    assert SCHEMA_VERSION == 15
+async def test_schema_version_is_16():
+    """Verify schema version is updated to 16."""
+    assert SCHEMA_VERSION == 16
 
 
 @pytest.mark.asyncio
@@ -154,12 +145,12 @@ async def test_insert_incidental_request():
         # Retrieve the incidental request
         incidental = await manager.get_incidental_request_by_id(incidental_id)
         assert incidental is not None
-        assert incidental["parent_request_id"] == parent_id
-        assert incidental["resource_type"] == "stylesheet"
-        assert incidental["method"] == "GET"
-        assert incidental["url"] == "https://example.com/style.css"
-        assert incidental["status_code"] == 200
-        assert incidental["from_cache"] == 0  # SQLite stores False as 0
+        assert incidental.parent_request_id == parent_id
+        assert incidental.resource_type == "stylesheet"
+        assert incidental.method == "GET"
+        assert incidental.url == "https://example.com/style.css"
+        assert incidental.status_code == 200
+        assert incidental.from_cache is False
 
         await engine.dispose()
 
@@ -214,7 +205,7 @@ async def test_get_incidental_requests_by_parent():
         # Retrieve all incidental requests
         incidentals = await manager.get_incidental_requests(parent_id)
         assert len(incidentals) == 4
-        assert [r["resource_type"] for r in incidentals] == resource_types
+        assert [r.resource_type for r in incidentals] == resource_types
 
         await engine.dispose()
 
