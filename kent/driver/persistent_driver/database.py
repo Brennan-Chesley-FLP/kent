@@ -25,70 +25,11 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel, select
 
+from kent.driver.persistent_driver.migrations import get_latest_version
 from kent.driver.persistent_driver.models import *  # noqa: F401, F403
 from kent.driver.persistent_driver.models import Request, SchemaInfo
 
-SCHEMA_VERSION = 17
-
-
-_MIGRATIONS: dict[int, list[str]] = {
-    15: [
-        "ALTER TABLE run_metadata ADD COLUMN browser_cookies_json TEXT",
-    ],
-    16: [
-        # Create deduplicated storage table for incidental request content
-        """CREATE TABLE IF NOT EXISTS incidental_request_storage (
-            id INTEGER PRIMARY KEY,
-            resource_type TEXT NOT NULL,
-            url TEXT NOT NULL,
-            method TEXT NOT NULL,
-            body BLOB,
-            status_code INTEGER,
-            response_headers_json TEXT,
-            content_compressed BLOB,
-            content_size_original INTEGER,
-            content_size_compressed INTEGER,
-            compression_dict_id INTEGER REFERENCES compression_dicts(id),
-            failure_reason TEXT,
-            content_md5 TEXT
-        )""",
-        "CREATE INDEX IF NOT EXISTS idx_irs_content_md5 ON incidental_request_storage(content_md5)",
-        # Add storage_id FK to incidental_requests
-        "ALTER TABLE incidental_requests ADD COLUMN storage_id INTEGER REFERENCES incidental_request_storage(id)",
-        "CREATE INDEX IF NOT EXISTS idx_incidental_requests_storage ON incidental_requests(storage_id)",
-    ],
-    17: [
-        # Speculative protocol: add param_index and template_json to speculation_tracking
-        "ALTER TABLE speculation_tracking ADD COLUMN param_index INTEGER DEFAULT 0",
-        "ALTER TABLE speculation_tracking ADD COLUMN template_json TEXT",
-    ],
-}
-
-
-async def _apply_migrations(engine: AsyncEngine) -> None:
-    """Apply pending schema migrations for existing databases."""
-    async with engine.begin() as conn:
-        # Get current schema version
-        current = await conn.run_sync(
-            lambda sync_conn: sync_conn.execute(
-                sa.text("SELECT MAX(version) FROM schema_info")
-            ).scalar()
-            or 0
-        )
-
-        for version in sorted(_MIGRATIONS):
-            if current >= version:
-                continue
-            for stmt in _MIGRATIONS[version]:
-                try:
-                    await conn.execute(sa.text(stmt))
-                except Exception:
-                    # Column may already exist (fresh DB via create_all)
-                    pass
-            await conn.execute(
-                sa.text("INSERT INTO schema_info (version) VALUES (:v)"),
-                {"v": version},
-            )
+SCHEMA_VERSION = get_latest_version()
 
 
 async def create_engine_and_init(
@@ -125,7 +66,9 @@ async def create_engine_and_init(
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
-    await _apply_migrations(engine)
+    from kent.driver.persistent_driver.migrations import migrate_to
+
+    await migrate_to(engine)
 
     return engine
 

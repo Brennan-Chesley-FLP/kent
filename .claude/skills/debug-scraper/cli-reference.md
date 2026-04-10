@@ -15,6 +15,7 @@ Options:
 Commands:
   inspect  Inspect a scraper's metadata and entry points.
   list     List available scrapers in the current directory tree.
+  migrate  Apply pending database migrations.
   run      Run a scraper with the chosen driver.
   serve    Start the persistent driver web UI.
 ```
@@ -52,6 +53,25 @@ Options:
   --help         Show this message and exit.
 ```
 
+## kent migrate
+
+```
+Usage: kent migrate [OPTIONS] DB_PATH
+
+  Apply pending database migrations.
+
+  DB_PATH is the path to a SQLite database file.
+
+  Examples:
+      kent migrate run.db
+      kent migrate run.db --target 16
+
+Options:
+  --target INTEGER  Target schema version. Defaults to latest.
+  -v, --verbose     Verbose logging.
+  --help            Show this message and exit.
+```
+
 ## kent run
 
 ```
@@ -61,6 +81,11 @@ Usage: kent run [OPTIONS] SCRAPER
 
   SCRAPER is a dotted import path in the form module.path:ClassName.
 
+  If --driver is omitted, the driver is auto-selected from the scraper's
+  driver_requirements. JS_EVAL, FF_ALIKE, or CHROME_ALIKE all select the
+  playwright driver. FF_ALIKE and CHROME_ALIKE also auto-resolve a browser
+  profile from $KENT_HOME/profiles/{firefox,chrome}/.
+
   Examples:
       kent run kent.demo.scraper:BugCourtDemoScraper
       kent run kent.demo.scraper:BugCourtDemoScraper --driver sync
@@ -69,7 +94,8 @@ Usage: kent run [OPTIONS] SCRAPER
 
 Options:
   --driver [sync|async|persistent|playwright]
-                                  Driver to use.  [default: persistent]
+                                  Driver to use. Auto-selected from scraper
+                                  requirements if omitted.
   --db PATH                       SQLite database path
                                   (persistent/playwright).
   --workers INTEGER               Number of concurrent workers

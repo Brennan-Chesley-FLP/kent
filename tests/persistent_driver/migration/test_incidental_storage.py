@@ -239,9 +239,16 @@ class TestDataMigration:
         )
 
         # Run the migration script
-        from scripts.migrate_incidental_storage_15_to_16 import migrate
+        # Run the migration via the new migration system
+        migrate_engine = create_async_engine(
+            f"sqlite+aiosqlite:///{db_path}",
+            connect_args={"check_same_thread": False},
+            poolclass=NullPool,
+        )
+        from kent.driver.persistent_driver.migrations import migrate_to
 
-        await migrate(db_path)
+        await migrate_to(migrate_engine, target=16)
+        await migrate_engine.dispose()
 
         # Verify results
         url = f"sqlite+aiosqlite:///{db_path}"
@@ -305,10 +312,18 @@ class TestDataMigration:
             db_path, 1, "script", "https://cdn.example.com/a.js", b"content"
         )
 
-        from scripts.migrate_incidental_storage_15_to_16 import migrate
+        # Run the migration via the new migration system
+        migrate_engine = create_async_engine(
+            f"sqlite+aiosqlite:///{db_path}",
+            connect_args={"check_same_thread": False},
+            poolclass=NullPool,
+        )
+        from kent.driver.persistent_driver.migrations import migrate_to
 
-        await migrate(db_path)
-        await migrate(db_path)  # second run should be a no-op
+        await migrate_to(migrate_engine, target=16)
+        # Run again — should be a no-op (idempotent)
+        await migrate_to(migrate_engine, target=16)
+        await migrate_engine.dispose()
 
         url = f"sqlite+aiosqlite:///{db_path}"
         engine = create_async_engine(

@@ -1,42 +1,24 @@
-#!/usr/bin/env python3
-"""Migrate incidental_requests data into the split storage table.
+"""v15 → v16 data backfill: migrate incidental_requests content to storage table.
 
-Applies the schema migration (version 15 → 16) then backfills the new
-incidental_request_storage table from existing incidental_requests rows,
-deduplicating on content MD5.  Finally drops the old columns that have
-been moved to the storage table.
-
-Usage:
-    uv run python scripts/migrate_incidental_storage_15_to_16.py <database_path>
+Reads from old incidental_requests columns, creates deduplicated rows in
+incidental_request_storage (using content MD5 as dedup key), links them
+back via storage_id FK, then recreates the table without the old columns.
 """
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import sys
-from pathlib import Path
+import logging
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.pool import NullPool
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
+logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 1000
-
-# Columns to drop from incidental_requests after migration.
-# SQLite doesn't support DROP COLUMN before 3.35, so we recreate the table.
-OLD_COLUMNS_TO_DROP = {
-    "resource_type",
-    "method",
-    "body",
-    "status_code",
-    "response_headers_json",
-    "content_compressed",
-    "content_size_original",
-    "content_size_compressed",
-    "compression_dict_id",
-    "failure_reason",
-}
 
 KEPT_COLUMNS = [
     "id",
@@ -51,72 +33,13 @@ KEPT_COLUMNS = [
 ]
 
 
-async def migrate(db_path: Path) -> None:
-    url = f"sqlite+aiosqlite:///{db_path}"
-    engine = create_async_engine(
-        url,
-        connect_args={"check_same_thread": False},
-        poolclass=NullPool,
-    )
+async def migrate(engine: AsyncEngine) -> bool:
+    """Backfill incidental_request_storage from old incidental_requests columns.
 
+    Returns True on success, True (no-op) if old columns already removed.
+    """
+    # Check if old columns still exist (they won't on a fresh v16 DB)
     async with engine.begin() as conn:
-        # Check current version
-        version = await conn.run_sync(
-            lambda c: c.execute(
-                sa.text("SELECT MAX(version) FROM schema_info")
-            ).scalar()
-            or 0
-        )
-        if version < 15:
-            print(
-                f"Database is at version {version}, expected >= 15. Aborting."
-            )
-            return
-        if version >= 16:
-            print(
-                f"Database already at version {version}, schema migration not needed."
-            )
-        else:
-            # Apply schema migration
-            stmts = [
-                """CREATE TABLE IF NOT EXISTS incidental_request_storage (
-                    id INTEGER PRIMARY KEY,
-                    resource_type TEXT NOT NULL,
-                    url TEXT NOT NULL,
-                    method TEXT NOT NULL,
-                    body BLOB,
-                    status_code INTEGER,
-                    response_headers_json TEXT,
-                    content_compressed BLOB,
-                    content_size_original INTEGER,
-                    content_size_compressed INTEGER,
-                    compression_dict_id INTEGER REFERENCES compression_dicts(id),
-                    failure_reason TEXT,
-                    content_md5 TEXT
-                )""",
-                "CREATE INDEX IF NOT EXISTS idx_irs_content_md5 ON incidental_request_storage(content_md5)",
-                "ALTER TABLE incidental_requests ADD COLUMN storage_id INTEGER REFERENCES incidental_request_storage(id)",
-                "CREATE INDEX IF NOT EXISTS idx_incidental_requests_storage ON incidental_requests(storage_id)",
-            ]
-            for stmt in stmts:
-                try:
-                    await conn.execute(sa.text(stmt))
-                except Exception:
-                    pass  # column/table may already exist on fresh DB
-            await conn.execute(
-                sa.text("INSERT INTO schema_info (version) VALUES (:v)"),
-                {"v": 16},
-            )
-            print("Schema migration to version 16 applied.")
-
-    # --- Data migration: backfill storage rows ---
-    md5_to_storage_id: dict[str, int] = {}
-    total_rows = 0
-    deduped = 0
-    created = 0
-
-    async with engine.begin() as conn:
-        # Check if old columns still exist (they won't on a fresh v16 DB)
         cols = await conn.run_sync(
             lambda c: [
                 row[1]
@@ -126,11 +49,18 @@ async def migrate(db_path: Path) -> None:
             ]
         )
         if "content_compressed" not in cols:
-            print("Old columns already removed — no data migration needed.")
-            await engine.dispose()
-            return
+            logger.info(
+                "Old columns already removed — no data migration needed."
+            )
+            return True
 
-        # Count rows needing migration
+    # Backfill storage rows
+    md5_to_storage_id: dict[str, int] = {}
+    total_rows = 0
+    deduped = 0
+    created = 0
+
+    async with engine.begin() as conn:
         count = await conn.run_sync(
             lambda c: c.execute(
                 sa.text(
@@ -138,7 +68,7 @@ async def migrate(db_path: Path) -> None:
                 )
             ).scalar()
         )
-        print(f"Rows to migrate: {count}")
+        logger.info(f"Rows to migrate: {count}")
 
         offset = 0
         while True:
@@ -229,15 +159,15 @@ async def migrate(db_path: Path) -> None:
                 )
 
             offset += BATCH_SIZE
-            print(f"  Processed {total_rows}/{count} rows...")
+            logger.info(f"  Processed {total_rows}/{count} rows...")
 
-    print(
+    logger.info(
         f"Data migration complete: {total_rows} rows processed, "
         f"{created} storage rows created, {deduped} deduplicated."
     )
 
-    # --- Drop old columns by recreating the table ---
-    print("Dropping old columns from incidental_requests...")
+    # Drop old columns by recreating the table
+    logger.info("Dropping old columns from incidental_requests...")
     kept_cols = ", ".join(KEPT_COLUMNS)
     async with engine.begin() as conn:
         await conn.execute(
@@ -267,7 +197,6 @@ async def migrate(db_path: Path) -> None:
                 "ALTER TABLE incidental_requests_new RENAME TO incidental_requests"
             )
         )
-        # Recreate indexes
         await conn.execute(
             sa.text(
                 "CREATE INDEX idx_incidental_requests_parent "
@@ -281,25 +210,9 @@ async def migrate(db_path: Path) -> None:
             )
         )
 
-    # --- Reclaim space from dropped columns/table ---
-    print("Running VACUUM to reclaim space...")
+    # Reclaim space
+    logger.info("Running VACUUM to reclaim space...")
     async with engine.begin() as conn:
         await conn.execute(sa.text("VACUUM"))
 
-    print("Migration complete.")
-    await engine.dispose()
-
-
-def main() -> None:
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} <database_path>")
-        sys.exit(1)
-    db_path = Path(sys.argv[1])
-    if not db_path.exists():
-        print(f"Database not found: {db_path}")
-        sys.exit(1)
-    asyncio.run(migrate(db_path))
-
-
-if __name__ == "__main__":
-    main()
+    return True

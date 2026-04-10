@@ -206,6 +206,10 @@ def inspect(scraper: str, seed_params: bool) -> None:
             parts.append(f"{r.limit}/{r.interval}ms")
         click.echo(f"Rate limits: {', '.join(parts)}")
 
+    driver_reqs = getattr(scraper_class, "driver_requirements", [])
+    if driver_reqs:
+        click.echo(f"Driver reqs: {', '.join(r.value for r in driver_reqs)}")
+
     # Entry points
     if entries:
         click.echo(f"\nEntry points ({len(entries)}):")
@@ -237,6 +241,73 @@ def inspect(scraper: str, seed_params: bool) -> None:
 
             tag_str = f" [{tag}]" if tag else ""
             click.echo(f"  {step_info.name}{tag_str}")
+
+
+@cli.command()
+@click.argument("db_path", type=click.Path(exists=True))
+@click.option(
+    "--target",
+    "target_version",
+    type=int,
+    default=None,
+    help="Target schema version. Defaults to latest.",
+)
+@click.option("-v", "--verbose", is_flag=True, help="Verbose logging.")
+def migrate(db_path: str, target_version: int | None, verbose: bool) -> None:
+    """Apply pending database migrations.
+
+    DB_PATH is the path to a SQLite database file.
+
+    \b
+    Examples:
+        kent migrate run.db
+        kent migrate run.db --target 16
+    """
+    from kent.driver.persistent_driver.migrations import (
+        get_current_version,
+        get_latest_version,
+        migrate_to,
+    )
+
+    log_level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    latest = get_latest_version()
+    target = target_version if target_version is not None else latest
+
+    async def _migrate() -> None:
+        engine = create_async_engine(
+            f"sqlite+aiosqlite:///{db_path}",
+            connect_args={"check_same_thread": False},
+            poolclass=NullPool,
+        )
+        try:
+            current = await get_current_version(engine)
+            click.echo(f"Current version: {current}")
+            click.echo(f"Target version:  {target}")
+
+            if current >= target:
+                click.echo("Nothing to do.")
+                return
+
+            applied = await migrate_to(engine, target=target)
+            if applied:
+                click.echo(
+                    f"Applied {len(applied)} migration(s): "
+                    f"{', '.join(str(v) for v in applied)}"
+                )
+            else:
+                click.echo("No migrations applied.")
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_migrate())
 
 
 @cli.command()
@@ -302,9 +373,8 @@ def serve(runs_dir: str, host: str, port: int, verbose: bool) -> None:
     "--driver",
     "driver_name",
     type=click.Choice(["sync", "async", "persistent", "playwright"]),
-    default="persistent",
-    show_default=True,
-    help="Driver to use.",
+    default=None,
+    help="Driver to use. Auto-selected from scraper requirements if omitted.",
 )
 @click.option(
     "--db",
@@ -374,7 +444,7 @@ def serve(runs_dir: str, host: str, port: int, verbose: bool) -> None:
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging.")
 def run(
     scraper: str,
-    driver_name: str,
+    driver_name: str | None,
     db_path: str | None,
     workers: int,
     max_workers: int | None,
@@ -390,6 +460,11 @@ def run(
 
     SCRAPER is a dotted import path in the form module.path:ClassName.
 
+    If --driver is omitted, the driver is auto-selected from the scraper's
+    driver_requirements. JS_EVAL, FF_ALIKE, or CHROME_ALIKE all select
+    the playwright driver. FF_ALIKE and CHROME_ALIKE also auto-resolve
+    a browser profile from $KENT_HOME/profiles/{firefox,chrome}/.
+
     \b
     Examples:
         kent run kent.demo.scraper:BugCourtDemoScraper
@@ -397,6 +472,10 @@ def run(
         kent run my.scraper:MyScraper --driver persistent --db run.db
         kent run my.scraper:MyScraper --params '[{"get_entry": {}}]'
     """
+    import os
+
+    from kent.data_types import DriverRequirement
+
     log_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=log_level,
@@ -419,6 +498,61 @@ def run(
             raise click.BadParameter(f"Invalid JSON for --params: {e}") from e
         if not isinstance(seed_params, list):
             raise click.BadParameter("--params must be a JSON list")
+
+    # --- Driver auto-selection from scraper requirements ---
+    reqs = getattr(scraper_class, "driver_requirements", [])
+    user_chose_driver = driver_name is not None
+
+    # Validate: FF_ALIKE and CHROME_ALIKE are mutually exclusive
+    if (
+        DriverRequirement.FF_ALIKE in reqs
+        and DriverRequirement.CHROME_ALIKE in reqs
+    ):
+        raise click.UsageError(
+            f"Scraper '{scraper_name}' declares both FF_ALIKE and "
+            f"CHROME_ALIKE driver requirements. These are mutually exclusive."
+        )
+
+    needs_playwright = any(
+        r in reqs
+        for r in (
+            DriverRequirement.JS_EVAL,
+            DriverRequirement.FF_ALIKE,
+            DriverRequirement.CHROME_ALIKE,
+        )
+    )
+
+    if not user_chose_driver:
+        driver_name = "playwright" if needs_playwright else "persistent"
+    elif needs_playwright and driver_name not in ("playwright",):
+        click.echo(
+            f"Warning: Scraper requires {[r.value for r in reqs]} "
+            f"but --driver {driver_name} was explicitly chosen.",
+            err=True,
+        )
+
+    # Auto-resolve browser profile from $KENT_HOME/profiles/{name}/
+    if not browser_profile_path and not user_chose_driver:
+        profile_name: str | None = None
+        if DriverRequirement.FF_ALIKE in reqs:
+            profile_name = "firefox"
+        elif DriverRequirement.CHROME_ALIKE in reqs:
+            profile_name = "chrome"
+
+        if profile_name is not None:
+            kent_home = Path(
+                os.environ.get("KENT_HOME", "~/.kent")
+            ).expanduser()
+            resolved_path = kent_home / "profiles" / profile_name
+            if not resolved_path.is_dir():
+                raise click.UsageError(
+                    f"Scraper requires {profile_name} browser profile but "
+                    f"no profile found at {resolved_path}.\n"
+                    f"Create the directory with a manifest.json, or pass "
+                    f"--browser-profile explicitly."
+                )
+            browser_profile_path = str(resolved_path)
+            click.echo(f"Profile: {resolved_path} (auto-resolved)")
 
     if browser_profile_path and driver_name != "playwright":
         raise click.UsageError(

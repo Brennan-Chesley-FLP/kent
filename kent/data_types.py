@@ -69,6 +69,25 @@ class ScraperStatus(Enum):
     RETIRED = "retired"
 
 
+class DriverRequirement(Enum):
+    """Capabilities a scraper requires from its driver.
+
+    Scrapers declare these as a ClassVar list on the class body.
+    ``kent run`` reads them to auto-select the driver and browser profile.
+
+    Values:
+        JS_EVAL: Requires JavaScript evaluation (auto-selects Playwright).
+        FF_ALIKE: Requires a Firefox-like browser profile.
+        CHROME_ALIKE: Requires a Chrome-like browser profile.
+
+    FF_ALIKE and CHROME_ALIKE are mutually exclusive.
+    """
+
+    JS_EVAL = "js_eval"
+    FF_ALIKE = "ff_alike"
+    CHROME_ALIKE = "chrome_alike"
+
+
 @dataclass(frozen=True)
 class StepInfo:
     """Metadata about a scraper step method.
@@ -160,6 +179,10 @@ class BaseScraper(Generic[ScraperReturnType]):
     # Optional metadata
     requires_auth: ClassVar[bool] = False
     rate_limits: ClassVar[list[Rate] | None] = None
+
+    # Driver requirements — capabilities the scraper needs from its driver.
+    # kent run reads these to auto-select driver and browser profile.
+    driver_requirements: ClassVar[list[DriverRequirement]] = []
 
     # SSL/TLS configuration for servers requiring specific ciphers or TLS versions.
     # If set, drivers will use this context for HTTPS connections.
