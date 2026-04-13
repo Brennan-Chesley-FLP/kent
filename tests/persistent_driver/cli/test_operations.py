@@ -1,4 +1,4 @@
-"""Tests for the requeue, cancel, and compression commands."""
+"""Tests for the cancel and compression commands."""
 
 from __future__ import annotations
 
@@ -8,71 +8,6 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from kent.driver.persistent_driver.cli import cli
-
-
-class TestRequeueCommands:
-    """Tests for the requeue commands."""
-
-    def test_requeue_request(
-        self, runner: CliRunner, populated_db: Path
-    ) -> None:
-        """Test requeue request command."""
-        result = runner.invoke(
-            cli, ["requeue", "request", "--db", str(populated_db), "2"]
-        )
-
-        assert result.exit_code == 0
-        assert "requeued" in result.output
-
-    def test_requeue_request_no_clear_downstream(
-        self, runner: CliRunner, populated_db: Path
-    ) -> None:
-        """Test requeue request without clearing downstream."""
-        result = runner.invoke(
-            cli,
-            [
-                "requeue",
-                "request",
-                "--db",
-                str(populated_db),
-                "2",
-                "--no-clear-downstream",
-            ],
-        )
-
-        assert result.exit_code == 0
-        assert "requeued" in result.output
-
-    def test_requeue_continuation(
-        self, runner: CliRunner, populated_db: Path
-    ) -> None:
-        """Test requeue continuation command."""
-        result = runner.invoke(
-            cli,
-            ["requeue", "continuation", "--db", str(populated_db), "step1"],
-        )
-
-        assert result.exit_code == 0
-        assert "Requeued" in result.output
-
-    def test_requeue_errors(
-        self, runner: CliRunner, populated_db: Path
-    ) -> None:
-        """Test requeue errors command."""
-        result = runner.invoke(
-            cli,
-            [
-                "requeue",
-                "errors",
-                "--db",
-                str(populated_db),
-                "--type",
-                "xpath",
-            ],
-        )
-
-        assert result.exit_code == 0
-        assert "Requeued" in result.output
 
 
 class TestCancelCommands:

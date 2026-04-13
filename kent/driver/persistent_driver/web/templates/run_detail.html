@@ -90,7 +90,6 @@
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeErrorModal()">Close</button>
             <button type="button" class="btn btn-info" id="view-html-btn" style="display:none;">View Response HTML</button>
-            <button type="button" class="btn btn-primary" id="requeue-btn" onclick="requeueCurrentError()">Requeue Request</button>
             <button type="button" class="btn btn-danger" id="resolve-btn" onclick="resolveCurrentError()">Mark Resolved</button>
         </div>
     </div>
@@ -134,7 +133,6 @@
             </div>
             <div>
                 <button type="button" class="btn btn-secondary" onclick="closeRequestsDetailModal()">Close</button>
-                <button type="button" class="btn btn-primary" id="requeue-all-btn" style="display:none;" onclick="requeueAllInModal()">Requeue All</button>
             </div>
         </div>
     </div>
@@ -290,10 +288,6 @@ async function openFilteredRequests(continuation, status) {
     document.getElementById('requests-detail-title').textContent = `${continuation} - ${status}`;
     document.getElementById('requests-detail-content').innerHTML = 'Loading...';
 
-    // Show "Requeue All" button only for failed requests
-    const requeueAllBtn = document.getElementById('requeue-all-btn');
-    requeueAllBtn.style.display = status === 'failed' ? 'inline-block' : 'none';
-
     // Reset sort/page controls to defaults
     document.getElementById('modal-sort').value = 'queue';
     document.getElementById('modal-page-size').value = '50';
@@ -353,7 +347,6 @@ async function loadModalPage(offset) {
                         <a class="pill pill-view" href="#" onclick="openResponseView(${req.id}, 'content', event)">View</a>
                         <a class="pill pill-annotated" href="#" onclick="openResponseView(${req.id}, 'annotated', event)">Annotated</a>
                     </span>
-                    <button class="btn-requeue" onclick="requeueRequest(${req.id}, event)" title="Requeue this request">ReQ</button>
                 </div>
                 <div class="request-url-full">${escapeHtml(req.url)}</div>
                 ${req.last_error ? `<div class="request-error">${escapeHtml(req.last_error)}</div>` : ''}
@@ -396,43 +389,6 @@ async function openResponseView(requestId, view, event) {
     pill.textContent = origText;
 }
 
-// Requeue all failed requests in the current modal view via errors batch-requeue
-async function requeueAllInModal() {
-    if (!currentModalContinuation || !currentModalStatus) return;
-
-    const btn = document.getElementById('requeue-all-btn');
-    const originalText = btn.textContent;
-    btn.textContent = 'Requeuing...';
-    btn.disabled = true;
-
-    try {
-        const response = await fetch(`/api/runs/${runId}/errors/batch-requeue`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                continuation: currentModalContinuation
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            addEvent('requeue', `Requeued ${data.requeued_count} errors for ${currentModalContinuation}`);
-            closeRequestsDetailModal();
-            loadRequestSummary();
-            loadRequests();
-            loadErrors();
-        } else {
-            const data = await response.json();
-            alert('Failed to requeue: ' + (data.detail || 'Unknown error'));
-        }
-    } catch (error) {
-        alert('Failed to requeue: ' + error.message);
-    } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
-    }
-}
-
 // Load request queue
 async function loadRequests() {
     const statusFilter = document.getElementById('status-filter').value;
@@ -460,7 +416,6 @@ async function loadRequests() {
                     <span class="method">${req.method}</span>
                     <span class="continuation">${req.continuation}</span>
                     ${req.retry_count > 0 ? `<span class="retries">Retries: ${req.retry_count}</span>` : ''}
-                    <button class="btn-requeue" onclick="requeueRequest(${req.id}, event)" title="Requeue this request">ReQ</button>
                 </div>
                 <div class="request-url-full">${escapeHtml(req.url)}</div>
                 ${req.last_error ? `<div class="request-error">${escapeHtml(req.last_error)}</div>` : ''}
@@ -503,7 +458,6 @@ async function loadErrors() {
                         <span class="error-type">${typeBadge}</span>
                         <span class="error-class">${err.error_class}</span>
                         ${err.is_resolved ? '<span class="badge resolved">Resolved</span>' : ''}
-                        ${err.request_id && !err.is_resolved ? `<button class="btn-requeue" onclick="requeueError(${err.id}, event)" title="Requeue this error's request">ReQ</button>` : ''}
                     </div>
                     <div class="error-message-full">${escapeHtml(err.message)}</div>
                     <div class="error-url-full">${escapeHtml(err.request_url)}</div>
@@ -559,7 +513,6 @@ async function showErrorDetail(errorId) {
         }
 
         // Update button states
-        document.getElementById('requeue-btn').style.display = err.request_id && !err.is_resolved ? 'inline-block' : 'none';
         document.getElementById('resolve-btn').style.display = err.is_resolved ? 'none' : 'inline-block';
         document.getElementById('view-html-btn').style.display = responseId ? 'inline-block' : 'none';
         document.getElementById('view-html-btn').onclick = responseId ? () => viewResponseHtml(responseId) : null;
@@ -682,24 +635,6 @@ function closeErrorModal() {
     currentErrorId = null;
 }
 
-async function requeueCurrentError() {
-    if (!currentErrorId) return;
-    try {
-        const response = await fetch(`/api/runs/${runId}/errors/${currentErrorId}/requeue`, { method: 'POST' });
-        if (response.ok) {
-            alert('Error requeued successfully');
-            closeErrorModal();
-            loadErrors();
-            loadRequests();
-        } else {
-            const data = await response.json();
-            alert('Failed to requeue: ' + (data.detail || 'Unknown error'));
-        }
-    } catch (error) {
-        alert('Failed to requeue: ' + error.message);
-    }
-}
-
 async function resolveCurrentError() {
     if (!currentErrorId) return;
     const notes = prompt('Resolution notes (optional):');
@@ -721,43 +656,6 @@ async function resolveCurrentError() {
         }
     } catch (error) {
         alert('Failed to resolve: ' + error.message);
-    }
-}
-
-// Requeue a request from the list
-async function requeueRequest(requestId, event) {
-    event.stopPropagation(); // Don't trigger parent click handlers
-    try {
-        const response = await fetch(`/api/runs/${runId}/requests/${requestId}/requeue`, { method: 'POST' });
-        if (response.ok) {
-            const data = await response.json();
-            addEvent('requeue', `Request ${requestId} requeued as ${data.new_request_id}`);
-            loadRequests();
-        } else {
-            const data = await response.json();
-            alert('Failed to requeue: ' + (data.detail || 'Unknown error'));
-        }
-    } catch (error) {
-        alert('Failed to requeue: ' + error.message);
-    }
-}
-
-// Requeue an error's request from the list
-async function requeueError(errorId, event) {
-    event.stopPropagation(); // Don't trigger parent click handlers (showErrorDetail)
-    try {
-        const response = await fetch(`/api/runs/${runId}/errors/${errorId}/requeue`, { method: 'POST' });
-        if (response.ok) {
-            const data = await response.json();
-            addEvent('requeue', `Error ${errorId} requeued as request ${data.new_request_ids[0]}`);
-            loadErrors();
-            loadRequests();
-        } else {
-            const data = await response.json();
-            alert('Failed to requeue: ' + (data.detail || 'Unknown error'));
-        }
-    } catch (error) {
-        alert('Failed to requeue: ' + error.message);
     }
 }
 

@@ -35,6 +35,7 @@ SCHEMA_VERSION = get_latest_version()
 async def create_engine_and_init(
     db_path: Path,
     echo: bool = False,
+    run_migrations: bool = True,
 ) -> AsyncEngine:
     """Create an async engine and initialize the database schema.
 
@@ -44,6 +45,9 @@ async def create_engine_and_init(
     Args:
         db_path: Path to the SQLite database file.
         echo: Whether to echo SQL statements (for debugging).
+        run_migrations: If True (default), apply pending migrations. If False,
+            assume the DB is fresh (just created by create_all at the current
+            schema) and stamp schema_info with the latest version directly.
 
     Returns:
         An initialized AsyncEngine.
@@ -67,9 +71,18 @@ async def create_engine_and_init(
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
-    from kent.driver.persistent_driver.migrations import migrate_to
+    if run_migrations:
+        from kent.driver.persistent_driver.migrations import migrate_to
 
-    await migrate_to(engine)
+        await migrate_to(engine)
+    else:
+        # Fresh DB: stamp schema_info with the latest version so any future
+        # `migrate_to` call on this DB is a no-op.
+        async with engine.begin() as conn:
+            await conn.execute(
+                sa.text("INSERT INTO schema_info (version) VALUES (:v)"),
+                {"v": SCHEMA_VERSION},
+            )
 
     return engine
 
@@ -91,6 +104,7 @@ def get_session_factory(
 async def init_database(
     db_path: Path,
     echo: bool = False,
+    run_migrations: bool = True,
 ) -> tuple[AsyncEngine, ScopedSessionFactory]:
     """Initialize database and return engine + scoped session factory.
 
@@ -99,6 +113,8 @@ async def init_database(
     Args:
         db_path: Path to the SQLite database file.
         echo: Whether to echo SQL statements.
+        run_migrations: If True (default), apply pending migrations. Pass False
+            when creating a fresh DB where migrations are known to be unneeded.
 
     Returns:
         Tuple of (engine, scoped_session_factory).
@@ -107,7 +123,9 @@ async def init_database(
         ScopedSessionFactory,
     )
 
-    engine = await create_engine_and_init(db_path, echo=echo)
+    engine = await create_engine_and_init(
+        db_path, echo=echo, run_migrations=run_migrations
+    )
     raw_factory = get_session_factory(engine)
     return engine, ScopedSessionFactory(raw_factory)
 

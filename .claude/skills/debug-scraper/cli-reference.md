@@ -151,22 +151,22 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  cancel       Cancel pending or held requests.
-  compare      Compare continuation output between stored and dry-run...
-  compression  Inspect and manipulate compression.
-  diagnose     Diagnose an error by re-running XPath observation.
-  doctor       Run health checks on database.
-  errors       Inspect and manipulate errors.
-  export       Export results and responses.
-  help-all     Show help for all commands and subcommands.
-  incidental   Inspect incidental requests (browser-initiated network...
-  info         Show run metadata and statistics.
-  requests     Inspect and manipulate requests.
-  requeue      Requeue requests or errors.
-  responses    Inspect responses.
-  results      Inspect and export results.
-  scrape       Scrape-level health checks and diagnostics.
-  step         Step-level development and debugging tools.
+  cancel                  Cancel pending or held requests.
+  compare                 Compare continuation output between stored and...
+  compression             Inspect and manipulate compression.
+  diagnose                Diagnose an error by re-running XPath observation.
+  doctor                  Run health checks on database.
+  errors                  Inspect and manipulate errors.
+  export                  Export results and responses.
+  help-all                Show help for all commands and subcommands.
+  incidental              Inspect incidental requests (browser-initiated...
+  info                    Show run metadata and statistics.
+  requests                Inspect and manipulate requests.
+  responses               Inspect responses.
+  results                 Inspect and export results.
+  scrape                  Scrape-level health checks and diagnostics.
+  seed-error-patch-rerun  Seed a fresh DB with the root ancestors of...
+  step                    Step-level development and debugging tools.
 ```
 
 ## pdd cancel
@@ -193,7 +193,7 @@ Usage: pdd cancel continuation [OPTIONS] CONTINUATION
   Cancel all pending/held requests for a continuation.
 
   Examples:
-      ldd-debug cancel continuation run.db step1
+      pdd cancel continuation --db run.db step1
 
 Options:
   --db PATH  Path to the database file
@@ -208,7 +208,7 @@ Usage: pdd cancel request [OPTIONS] REQUEST_ID
   Cancel a pending or held request.
 
   Examples:
-      ldd-debug cancel request run.db 123
+      pdd cancel request --db run.db 123
 
 Options:
   --db PATH  Path to the database file
@@ -530,13 +530,11 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  diagnose     Diagnose an error by re-running XPath observation.
-  list         List errors with optional filtering.
-  requeue      Requeue the request that caused an error.
-  requeue-all  Batch requeue errors matching filter criteria.
-  resolve      Mark an error as resolved.
-  show         Show detailed error information.
-  summary      Show error counts by type and resolution status.
+  diagnose  Diagnose an error by re-running XPath observation.
+  list      List errors with optional filtering.
+  resolve   Mark an error as resolved.
+  show      Show detailed error information.
+  summary   Show error counts by type and resolution status.
 ```
 
 ### pdd errors diagnose
@@ -581,41 +579,6 @@ Options:
                                   Output format
   --template TEXT                 Template name
   --help                          Show this message and exit.
-```
-
-### pdd errors requeue
-
-```
-Usage: pdd errors requeue [OPTIONS] ERROR_ID
-
-  Requeue the request that caused an error.
-
-  Examples:
-      pdd errors requeue --db run.db 123
-      pdd errors requeue --db run.db 123 --notes "Fixed server issue"
-
-Options:
-  --db PATH     Path to the database file
-  --notes TEXT  Resolution notes
-  --help        Show this message and exit.
-```
-
-### pdd errors requeue-all
-
-```
-Usage: pdd errors requeue-all [OPTIONS]
-
-  Batch requeue errors matching filter criteria.
-
-  Examples:
-      pdd errors requeue-all --db run.db --type xpath
-      pdd errors requeue-all --db run.db --step step1
-
-Options:
-  --db PATH    Path to the database file
-  --type TEXT  Filter by error type
-  --step TEXT  Filter by step name
-  --help       Show this message and exit.
 ```
 
 ### pdd errors resolve
@@ -858,8 +821,6 @@ Commands:
   orphans      List orphaned requests and responses with details.
   parents      Show the chain of parent requests from a request to the root.
   pending      List pending requests with details.
-  requeue      Requeue a completed or failed request.
-  requeue-all  Requeue all requests for a step with a given status.
   search       Search response content for matching patterns.
   show         Show detailed request information.
   summary      Show request counts by status and continuation.
@@ -1055,42 +1016,6 @@ Options:
   --help                          Show this message and exit.
 ```
 
-### pdd requests requeue
-
-```
-Usage: pdd requests requeue [OPTIONS] REQUEST_ID
-
-  Requeue a completed or failed request.
-
-  Examples:
-      pdd requests requeue --db run.db 123
-      pdd requests requeue --db run.db 123 --no-clear-downstream
-
-Options:
-  --db PATH                       Path to the database file
-  --clear-downstream / --no-clear-downstream
-                                  Clear downstream data (responses, results,
-                                  errors)
-  --help                          Show this message and exit.
-```
-
-### pdd requests requeue-all
-
-```
-Usage: pdd requests requeue-all [OPTIONS] STEP
-
-  Requeue all requests for a step with a given status.
-
-  Examples:
-      pdd requests requeue-all --db run.db step1
-      pdd requests requeue-all --db run.db step1 --status failed
-
-Options:
-  --db PATH                    Path to the database file
-  --status [completed|failed]  Which requests to requeue
-  --help                       Show this message and exit.
-```
-
 ### pdd requests search
 
 ```
@@ -1153,77 +1078,6 @@ Options:
   --format [default|summary|json|jsonl]
                                   Output format
   --template TEXT                 Template name
-  --help                          Show this message and exit.
-```
-
-## pdd requeue
-
-```
-Usage: pdd requeue [OPTIONS] COMMAND [ARGS]...
-
-  Requeue requests or errors.
-
-Options:
-  --db PATH  Path to the database file
-  --help     Show this message and exit.
-
-Commands:
-  continuation  Requeue all requests for a continuation with a given status.
-  errors        Batch requeue errors matching filter criteria.
-  request       Requeue a completed or failed request.
-```
-
-### pdd requeue continuation
-
-```
-Usage: pdd requeue continuation [OPTIONS] CONTINUATION
-
-  Requeue all requests for a continuation with a given status.
-
-  Examples:
-      ldd-debug requeue continuation run.db step1
-      ldd-debug requeue continuation run.db step1 --status failed
-
-Options:
-  --db PATH                    Path to the database file
-  --status [completed|failed]  Which requests to requeue
-  --help                       Show this message and exit.
-```
-
-### pdd requeue errors
-
-```
-Usage: pdd requeue errors [OPTIONS]
-
-  Batch requeue errors matching filter criteria.
-
-  Examples:
-      ldd-debug requeue errors run.db --type xpath
-      ldd-debug requeue errors run.db --continuation step1
-
-Options:
-  --db PATH            Path to the database file
-  --type TEXT          Filter by error type
-  --continuation TEXT  Filter by continuation (step name)
-  --help               Show this message and exit.
-```
-
-### pdd requeue request
-
-```
-Usage: pdd requeue request [OPTIONS] REQUEST_ID
-
-  Requeue a completed or failed request.
-
-  Examples:
-      ldd-debug requeue request run.db 123
-      ldd-debug requeue request run.db 123 --no-clear-downstream
-
-Options:
-  --db PATH                       Path to the database file
-  --clear-downstream / --no-clear-downstream
-                                  Clear downstream data (responses, results,
-                                  errors)
   --help                          Show this message and exit.
 ```
 
@@ -1526,6 +1380,35 @@ Options:
                                   Output format
   --template TEXT                 Template name
   --help                          Show this message and exit.
+```
+
+## pdd seed-error-patch-rerun
+
+```
+Usage: pdd seed-error-patch-rerun [OPTIONS]
+
+  Seed a fresh DB with the root ancestors of every errored request.
+
+  The new DB contains:
+    * Run metadata copied from the source (scraper_name, num_workers, etc.),
+      with seed_params cleared so the driver does not re-run initial_seed.
+    * One pending request per unique root ancestor of an unresolved error,
+      with URL/method/headers/cookies/body/continuation/aux/permanent data
+      copied from the source. Root requests are expected (by documented
+      contract) to originate from an entry function with a publicly
+      accessible URL.
+
+  Examples:
+      pdd seed-error-patch-rerun --db run.db --output-db patch.db
+      pdd seed-error-patch-rerun --db run.db --output-db patch.db --mark-resolved
+
+Options:
+  --db PATH         Path to the source database file (the one with errors).
+  --output-db PATH  Path to the new database to create, seeded with root
+                    ancestors.  [required]
+  --mark-resolved   Mark covered errors in the source DB as resolved with
+                    resolution_type='rerun_generated'.
+  --help            Show this message and exit.
 ```
 
 ## pdd step

@@ -1,7 +1,7 @@
 """Standalone types and utility functions for the sql_manager package.
 
-Defines data transfer objects (Page, RequeueResult, record dataclasses)
-and the compute_cache_key helper used across the driver.
+Defines data transfer objects (Page, record dataclasses) and the
+compute_cache_key helper used across the driver.
 """
 
 from __future__ import annotations
@@ -10,8 +10,6 @@ import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
-
-from pydantic import BaseModel
 
 
 def compute_cache_key(
@@ -159,31 +157,6 @@ class IncidentalRequestRecord:
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
-
-
-class RequeueResult(BaseModel):
-    """Result of a requeue operation.
-
-    Reports what was affected by a requeue operation including created
-    requests, cleared responses, downstream artifacts, and resolved errors.
-
-    Attributes:
-        requeued_request_ids: List of new request IDs created.
-        cleared_response_ids: List of response IDs deleted.
-        cleared_downstream_request_ids: List of downstream request IDs deleted.
-        cleared_result_ids: List of result IDs deleted.
-        cleared_error_ids: List of error IDs deleted.
-        resolved_error_ids: List of error IDs marked as resolved.
-        dry_run: Boolean indicating if this was a dry run.
-    """
-
-    requeued_request_ids: list[int] = []
-    cleared_response_ids: list[int] = []
-    cleared_downstream_request_ids: list[int] = []
-    cleared_result_ids: list[int] = []
-    cleared_error_ids: list[int] = []
-    resolved_error_ids: list[int] = []
-    dry_run: bool = False
 
 
 @dataclass

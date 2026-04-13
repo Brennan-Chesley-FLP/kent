@@ -63,33 +63,10 @@ class CancelResponse(BaseModel):
     message: str
 
 
-class RequeueResponse(BaseModel):
-    """Response model for requeue operations."""
-
-    requeued_request_ids: list[int]
-    cleared_response_ids: list[int] = []
-    cleared_downstream_request_ids: list[int] = []
-    cleared_result_ids: list[int] = []
-    cleared_error_ids: list[int] = []
-    resolved_error_ids: list[int] = []
-    dry_run: bool = False
-    message: str
-
-
 class CancelByContinuationRequest(BaseModel):
     """Request model for batch cancellation."""
 
     continuation: str = Field(..., description="Continuation to filter by")
-
-
-class RequeueByContinuationRequest(BaseModel):
-    """Request model for batch requeue."""
-
-    continuation: str = Field(..., description="Continuation to filter by")
-    status: str = Field(
-        default="failed",
-        description="Status of requests to requeue (deprecated, ignored)",
-    )
 
 
 class RequestSummaryItem(BaseModel):
@@ -543,79 +520,6 @@ async def cancel_request(
     )
 
 
-@router.post("/{request_id}/requeue", response_model=RequeueResponse)
-async def requeue_request(
-    run_id: str,
-    request_id: int,
-    manager: Annotated[RunManager, Depends(get_run_manager)],
-    clear_responses: bool = Query(
-        False, description="Clear responses to force re-fetch"
-    ),
-    clear_downstream: bool = Query(
-        False, description="Clear all downstream artifacts"
-    ),
-    dry_run: bool = Query(
-        False, description="Preview changes without executing"
-    ),
-) -> RequeueResponse:
-    """Requeue a failed or completed request.
-
-    Creates a new pending request with the same parameters as the
-    original request. Optionally clears responses and/or downstream artifacts.
-
-    Args:
-        run_id: The run identifier.
-        request_id: The request ID to requeue.
-        clear_responses: If True, delete responses to force re-fetch.
-        clear_downstream: If True, recursively delete downstream artifacts.
-        dry_run: If True, report what would happen without making changes.
-
-    Returns:
-        Requeue result with affected IDs.
-
-    Raises:
-        HTTPException: 404 if request not found.
-    """
-    debugger = await _get_debugger(run_id, manager, read_only=False)
-
-    # Verify request exists
-    record = await debugger.get_request(request_id)
-    if record is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Request {request_id} not found",
-        )
-
-    # Use SQLManager's requeue_requests method (via debugger.sql)
-    # TODO: LDDD's requeue_request doesn't support clear_responses/dry_run yet
-    result = await debugger.sql.requeue_requests(
-        [request_id],
-        clear_responses=clear_responses,
-        clear_downstream=clear_downstream,
-        dry_run=dry_run,
-    )
-
-    new_request_id = (
-        result.requeued_request_ids[0] if result.requeued_request_ids else None
-    )
-    message = f"Requeued request {request_id}"
-    if new_request_id:
-        message += f" as request {new_request_id}"
-    if dry_run:
-        message = f"[DRY RUN] {message}"
-
-    return RequeueResponse(
-        requeued_request_ids=result.requeued_request_ids,
-        cleared_response_ids=result.cleared_response_ids,
-        cleared_downstream_request_ids=result.cleared_downstream_request_ids,
-        cleared_result_ids=result.cleared_result_ids,
-        cleared_error_ids=result.cleared_error_ids,
-        resolved_error_ids=result.resolved_error_ids,
-        dry_run=result.dry_run,
-        message=message,
-    )
-
-
 @router.post("/cancel-by-continuation", response_model=CancelResponse)
 async def cancel_by_continuation(
     run_id: str,
@@ -640,65 +544,4 @@ async def cancel_by_continuation(
     return CancelResponse(
         cancelled_count=cancelled_count,
         message=f"Cancelled {cancelled_count} requests with continuation '{request.continuation}'",
-    )
-
-
-@router.post("/requeue-by-continuation", response_model=RequeueResponse)
-async def requeue_by_continuation(
-    run_id: str,
-    request: RequeueByContinuationRequest,
-    manager: Annotated[RunManager, Depends(get_run_manager)],
-    clear_responses: bool = Query(
-        False, description="Clear responses to force re-fetch"
-    ),
-    clear_downstream: bool = Query(
-        False, description="Clear all downstream artifacts"
-    ),
-    dry_run: bool = Query(
-        False, description="Preview changes without executing"
-    ),
-) -> RequeueResponse:
-    """Requeue all requests matching continuation and status.
-
-    Creates new pending requests with the same parameters as the
-    original requests. Optionally clears responses and/or downstream artifacts.
-
-    Note: The status filter from the request body is ignored. This endpoint now
-    requeues all completed requests for the continuation (the most common use case).
-    For error-based filtering, use the batch-requeue endpoint on /errors.
-
-    Args:
-        run_id: The run identifier.
-        request: Contains continuation name (status field is deprecated).
-        clear_responses: If True, delete responses to force re-fetch.
-        clear_downstream: If True, recursively delete downstream artifacts.
-        dry_run: If True, report what would happen without making changes.
-
-    Returns:
-        Requeue result with affected IDs.
-    """
-    debugger = await _get_debugger(run_id, manager, read_only=False)
-
-    # Use SQLManager's requeue_continuation method (via debugger.sql)
-    # TODO: LDDD's requeue_continuation doesn't support clear_responses/dry_run yet
-    result = await debugger.sql.requeue_continuation(
-        request.continuation,
-        clear_responses=clear_responses,
-        clear_downstream=clear_downstream,
-        dry_run=dry_run,
-    )
-
-    message = f"Requeued {len(result.requeued_request_ids)} requests with continuation '{request.continuation}'"
-    if dry_run:
-        message = f"[DRY RUN] {message}"
-
-    return RequeueResponse(
-        requeued_request_ids=result.requeued_request_ids,
-        cleared_response_ids=result.cleared_response_ids,
-        cleared_downstream_request_ids=result.cleared_downstream_request_ids,
-        cleared_result_ids=result.cleared_result_ids,
-        cleared_error_ids=result.cleared_error_ids,
-        resolved_error_ids=result.resolved_error_ids,
-        dry_run=result.dry_run,
-        message=message,
     )

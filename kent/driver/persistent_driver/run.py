@@ -34,9 +34,6 @@ Usage:
     python -m kent.driver.persistent_driver.run \\
         --db scraper.db --errors
 
-    # Requeue a specific error
-    python -m kent.driver.persistent_driver.run \\
-        --db scraper.db --requeue-error 123
 """
 
 from __future__ import annotations
@@ -47,7 +44,6 @@ import importlib
 import json
 import logging
 import sys
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -277,164 +273,6 @@ async def cmd_errors(args: argparse.Namespace) -> int:
     return 0
 
 
-async def cmd_requeue_error(args: argparse.Namespace) -> int:
-    """Requeue a specific error."""
-    import sqlalchemy as sa
-    from sqlmodel import select
-
-    from kent.driver.persistent_driver.database import init_database
-    from kent.driver.persistent_driver.errors import resolve_error
-    from kent.driver.persistent_driver.models import Error, Request
-
-    engine, session_factory = await init_database(Path(args.db))
-
-    async with session_factory() as session:
-        # Get error
-        error = await session.get(Error, args.requeue_error)
-        if error is None:
-            print(f"Error {args.requeue_error} not found")
-            await engine.dispose()
-            return 1
-        if error.is_resolved:
-            print(f"Error {args.requeue_error} is already resolved")
-            await engine.dispose()
-            return 1
-        if error.request_id is None:
-            print(f"Error {args.requeue_error} has no associated request")
-            await engine.dispose()
-            return 1
-
-        # Get the original request
-        orig_request = await session.get(Request, error.request_id)
-        if orig_request is None:
-            print(f"Original request {error.request_id} not found")
-            await engine.dispose()
-            return 1
-
-        # Get next queue counter
-        result = await session.execute(
-            select(sa.func.max(Request.queue_counter))
-        )
-        max_val = result.scalar()
-        queue_counter = (max_val or 0) + 1
-
-        # Create new pending request
-        new_request = Request(
-            priority=orig_request.priority or 9,
-            queue_counter=queue_counter,
-            request_type=orig_request.request_type or "navigating",
-            expected_type=orig_request.expected_type,
-            method=orig_request.method,
-            url=orig_request.url,
-            headers_json=orig_request.headers_json,
-            cookies_json=orig_request.cookies_json,
-            body=orig_request.body,
-            continuation=orig_request.continuation,
-            current_location=orig_request.current_location,
-            accumulated_data_json=orig_request.accumulated_data_json,
-            aux_data_json=orig_request.aux_data_json,
-            permanent_json=orig_request.permanent_json,
-            parent_request_id=error.request_id,
-            created_at_ns=time.monotonic_ns(),
-            status="pending",
-        )
-        session.add(new_request)
-        await session.commit()
-        new_request_id = new_request.id
-
-    await resolve_error(
-        session_factory,
-        args.requeue_error,
-        notes=f"Requeued as request {new_request_id}",
-    )
-    print(f"Requeued error {args.requeue_error} as request {new_request_id}")
-
-    await engine.dispose()
-    return 0
-
-
-async def cmd_requeue_errors(args: argparse.Namespace) -> int:
-    """Requeue all errors of a type."""
-    import sqlalchemy as sa
-    from sqlmodel import select
-
-    from kent.driver.persistent_driver.database import init_database
-    from kent.driver.persistent_driver.models import Error, Request
-
-    engine, session_factory = await init_database(Path(args.db))
-
-    async with session_factory() as session:
-        # Get matching unresolved errors of the given type
-        result = await session.execute(
-            select(Error).where(
-                Error.error_type == args.requeue_errors,
-                Error.is_resolved == sa.false(),
-            )
-        )
-        errors = result.scalars().all()
-
-        if not errors:
-            print(f"No unresolved errors of type '{args.requeue_errors}'")
-            await engine.dispose()
-            return 0
-
-        count = 0
-        for error in errors:
-            if error.request_id is None:
-                continue
-
-            # Get the original request
-            orig_request = await session.get(Request, error.request_id)
-            if orig_request is None:
-                continue
-
-            # Get next queue counter
-            result = await session.execute(
-                select(sa.func.max(Request.queue_counter))
-            )
-            max_val = result.scalar()
-            queue_counter = (max_val or 0) + 1
-
-            # Create new pending request
-            new_request = Request(
-                priority=orig_request.priority or 9,
-                queue_counter=queue_counter,
-                request_type=orig_request.request_type or "navigating",
-                expected_type=orig_request.expected_type,
-                method=orig_request.method,
-                url=orig_request.url,
-                headers_json=orig_request.headers_json,
-                cookies_json=orig_request.cookies_json,
-                body=orig_request.body,
-                continuation=orig_request.continuation,
-                current_location=orig_request.current_location,
-                accumulated_data_json=orig_request.accumulated_data_json,
-                aux_data_json=orig_request.aux_data_json,
-                permanent_json=orig_request.permanent_json,
-                parent_request_id=error.request_id,
-                created_at_ns=time.monotonic_ns(),
-                status="pending",
-            )
-            session.add(new_request)
-            await session.flush()
-            new_request_id = new_request.id
-
-            # Resolve the error within the same session via direct update
-            error.is_resolved = True
-            error.resolution_notes = (
-                f"Batch requeued as request {new_request_id}"
-            )
-
-            count += 1
-
-        await session.commit()
-
-    print(f"Requeued {count} errors of type '{args.requeue_errors}'")
-
-    await engine.dispose()
-    return 0
-
-
 async def cmd_resolve_error(args: argparse.Namespace) -> int:
     """Resolve an error without requeuing."""
     from kent.driver.persistent_driver.database import init_database
@@ -591,21 +429,10 @@ def create_parser() -> argparse.ArgumentParser:
         help="Limit number of results",
     )
     parser.add_argument(
-        "--requeue-error",
-        type=int,
-        metavar="ID",
-        help="Requeue a specific error",
-    )
-    parser.add_argument(
-        "--requeue-errors",
-        metavar="TYPE",
-        help="Requeue all errors of a type",
-    )
-    parser.add_argument(
         "--resolve-error",
         type=int,
         metavar="ID",
-        help="Resolve an error without requeuing",
+        help="Resolve an error",
     )
     parser.add_argument(
         "--notes",
@@ -639,10 +466,6 @@ async def main_async(args: argparse.Namespace) -> int:
         return await cmd_export_warc(args)
     elif args.errors:
         return await cmd_errors(args)
-    elif args.requeue_error:
-        return await cmd_requeue_error(args)
-    elif args.requeue_errors:
-        return await cmd_requeue_errors(args)
     elif args.resolve_error:
         return await cmd_resolve_error(args)
     elif args.scraper:

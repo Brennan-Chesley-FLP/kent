@@ -7,15 +7,6 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode, urlparse, urlunparse
 
-
-def _json_default(obj: Any) -> Any:
-    """Handle date/datetime objects in json.dumps."""
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    if isinstance(obj, date):
-        return obj.isoformat()
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
-
 from kent.data_types import (
     BaseRequest,
     HttpMethod,
@@ -27,6 +18,17 @@ from kent.driver.persistent_driver.sql_manager import SQLManager
 
 if TYPE_CHECKING:
     pass
+
+
+def _json_default(obj: Any) -> Any:
+    """Handle date/datetime objects in json.dumps."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    raise TypeError(
+        f"Object of type {type(obj).__name__} is not JSON serializable"
+    )
 
 
 class QueueMixin:
@@ -214,10 +216,14 @@ class QueueMixin:
             ),
             "continuation": continuation,
             "current_location": request.current_location,
-            "accumulated_data_json": json.dumps(request.accumulated_data, default=_json_default)
+            "accumulated_data_json": json.dumps(
+                request.accumulated_data, default=_json_default
+            )
             if request.accumulated_data
             else None,
-            "aux_data_json": json.dumps(request.aux_data, default=_json_default)
+            "aux_data_json": json.dumps(
+                request.aux_data, default=_json_default
+            )
             if request.aux_data
             else None,
             "permanent_json": json.dumps(permanent_data, default=_json_default)

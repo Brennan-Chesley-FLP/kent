@@ -70,7 +70,7 @@ class DiagnoseResult:
 class APIMixin:
     """Public inspection, control, listing, diagnostic, and cancellation APIs.
 
-    Provides methods for step control (pause/resume), error requeue,
+    Provides methods for step control (pause/resume),
     response content access, statistics, diagnosis, listing, and cancellation.
     """
 
@@ -143,80 +143,6 @@ class APIMixin:
             Count of held requests.
         """
         return await self.db.get_held_count(continuation)
-
-    # --- Error Requeue Methods ---
-
-    async def requeue_request(self, error_id: int) -> int | None:
-        """Recreate a pending request from an error's associated request.
-
-        Finds the original request that caused the error and creates a new
-        pending request with the same parameters. The error is marked as
-        resolved with a note indicating it was requeued.
-
-        This is useful after fixing scraper code to retry a failed request.
-
-        Args:
-            error_id: The database ID of the error to requeue.
-
-        Returns:
-            The database ID of the new pending request, or None if the error
-            has no associated request or was already resolved.
-        """
-        new_request_id = await self.db.requeue_error(error_id)
-
-        if new_request_id is not None:
-            # Get URL and continuation for progress event
-            error_info = await self.db.get_error_info_for_progress(error_id)
-            if error_info:
-                await self._emit_progress(
-                    "error_requeued",
-                    {
-                        "error_id": error_id,
-                        "new_request_id": new_request_id,
-                        "url": error_info.get("url", ""),
-                        "continuation": error_info.get("continuation", ""),
-                    },
-                )
-
-        return new_request_id
-
-    async def requeue_errors_by_type(
-        self,
-        error_type: str | None = None,
-        continuation: str | None = None,
-    ) -> list[int]:
-        """Batch requeue errors matching the given filters.
-
-        Finds all unresolved errors matching the filters and creates new
-        pending requests for each one. All matching errors are marked as
-        resolved.
-
-        This is useful after fixing scraper code to retry all errors of
-        a particular type or for a specific continuation.
-
-        Args:
-            error_type: Filter by error type (structural, validation, transient).
-            continuation: Filter by continuation method name.
-
-        Returns:
-            List of new request IDs created.
-        """
-        new_request_ids = await self.db.batch_requeue_errors(
-            error_type=error_type, continuation=continuation
-        )
-
-        if new_request_ids:
-            await self._emit_progress(
-                "errors_batch_requeued",
-                {
-                    "error_type": error_type,
-                    "continuation": continuation,
-                    "count": len(new_request_ids),
-                    "new_request_ids": new_request_ids,
-                },
-            )
-
-        return new_request_ids
 
     # --- Response Content Access ---
 

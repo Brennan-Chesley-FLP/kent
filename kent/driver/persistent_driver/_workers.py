@@ -607,7 +607,7 @@ class WorkerMixin:
                 # Non-transient error or max backoff exceeded - mark as failed
                 await self._mark_request_failed(request_id, str(e))
 
-                # Store error in database for tracking and requeue
+                # Store error in database for tracking
                 from kent.driver.persistent_driver.errors import (
                     store_error,
                 )

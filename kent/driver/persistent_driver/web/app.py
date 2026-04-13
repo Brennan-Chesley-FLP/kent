@@ -715,7 +715,7 @@ async def get_debugger_for_run(
         run_id: The run identifier.
         manager: The run manager.
         read_only: If True, open in read-only mode (prevents writes).
-                   Set to False for operations like requeue, cancel, etc.
+                   Set to False for operations like cancel, resolve, etc.
 
     Returns:
         LocalDevDriverDebugger instance wrapping the SQLManager.

@@ -741,21 +741,12 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 ### `debugger/test_manipulation.py`
 - `test_cancel_request_read_only` — cancel_request raises PermissionError in read-only mode
 - `test_cancel_requests_by_continuation_read_only` — cancel_requests_by_continuation raises PermissionError in read-only mode
-- `test_requeue_request_read_only` — requeue_request raises PermissionError in read-only mode
-- `test_requeue_continuation_read_only` — requeue_continuation raises PermissionError in read-only mode
 - `test_resolve_error_read_only` — resolve_error raises PermissionError in read-only mode
-- `test_requeue_error_read_only` — requeue_error raises PermissionError in read-only mode
-- `test_batch_requeue_errors_read_only` — batch_requeue_errors raises PermissionError in read-only mode
 - `test_train_compression_dict_read_only` — train_compression_dict raises PermissionError in read-only mode
 - `test_recompress_responses_read_only` — recompress_responses raises PermissionError in read-only mode
 - `test_cancel_request` — Cancels a pending request (marks as failed)
 - `test_cancel_requests_by_continuation` — Cancels all pending/held requests for a continuation
-- `test_requeue_request_with_downstream_clear` — Requeues a completed request with downstream cleanup
-- `test_requeue_request_without_downstream_clear` — Requeues a completed request without downstream cleanup
-- `test_requeue_continuation` — Requeues all completed requests for a continuation
 - `test_resolve_error` — Resolves an error with notes
-- `test_requeue_error` — Requeues an error (creates new request, resolves error)
-- `test_batch_requeue_errors` — Batch requeues errors by type
 - `test_export_results_jsonl` — Exports results to JSONL format
 - `test_export_results_jsonl_filtered` — Exports filtered (valid-only) results to JSONL
 - `test_preview_warc_export` — Previews WARC export with record count and estimated size
@@ -930,13 +921,8 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_list_errors_filter` — List errors with type and resolution filters
 - `test_exponential_backoff_calculation` — Retry delays follow exponential backoff with cap
 - `test_retry_respects_max_backoff` — Cumulative backoff capped at max_backoff_time
-- `test_requeue_creates_new_request` — Requeue creates new pending request linked to original
 - `test_transient_error_triggers_retry` — Transient errors trigger retry with backoff via PersistentDriver
 - `test_max_backoff_exceeded_marks_failed` — Exceeding max backoff marks request as failed
-- `test_requeue_single_error` — Re-enqueue a single errored request end-to-end
-- `test_requeue_errors_by_type_filters_correctly` — requeue_errors_by_type filters by error_type
-- `test_requeue_errors_by_continuation` — requeue_errors_by_type filters by continuation
-- `test_requeue_errors_no_matches_returns_empty` — requeue_errors_by_type returns empty when no matches
 
 ### `core/test_listing.py`
 - `test_list_requests` — List requests with status/continuation filters and pagination
@@ -1019,24 +1005,6 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_to_dict` — IncidentalRequestRecord.to_dict() includes computed fields
 - `test_to_json` — IncidentalRequestRecord.to_json() produces valid JSON
 
-### `sql_manager/test_requeue.py`
-- `test_requeue_requests_basic` — Basic requeue creates new pending request with same parameters
-- `test_requeue_requests_clear_responses` — Requeue with clear_responses deletes associated responses
-- `test_requeue_requests_clear_downstream` — Requeue with clear_downstream removes child and grandchild requests
-- `test_requeue_requests_clear_both` — Requeue with both clear flags removes responses and downstream requests
-- `test_requeue_requests_dry_run` — Dry run reports what would be changed without making changes
-- `test_requeue_requests_empty_list` — Requeue with empty list returns empty result
-- `test_requeue_error_with_mark_resolved` — Requeue error marks it resolved by default
-- `test_requeue_error_without_mark_resolved` — Requeue error with mark_resolved=False leaves error unresolved
-- `test_requeue_error_not_found` — Requeue nonexistent error returns empty result
-- `test_requeue_error_dry_run` — Requeue error dry run doesn't modify state
-- `test_requeue_continuation_basic` — Requeue by continuation name requeues all matching completed requests
-- `test_requeue_continuation_with_error_type_filter` — Requeue continuation filtered by error_type
-- `test_requeue_continuation_with_traceback_filter` — Requeue continuation filtered by traceback_contains
-- `test_requeue_continuation_combined_filters` — Requeue continuation with both error_type and traceback filters
-- `test_requeue_continuation_no_matches` — Requeue continuation with no matches returns empty result
-- `test_requeue_response` — Requeue via response ID helper
-- `test_requeue_multiple_requests` — Requeue multiple requests at once
 
 ### `sql_manager/test_responses.py`
 - `test_store_response` — Store an HTTP response and verify status code and content size
@@ -1209,7 +1177,6 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_errors_show` — Shows error details by ID
 - `test_errors_summary` — Displays error summary with totals and breakdown
 - `test_errors_resolve` — Marks an error as resolved with notes
-- `test_errors_requeue` — Requeues an error for retry
 - `test_results_list` — Lists all results with total count
 - `test_results_list_filter_by_validity` — Filters results by valid/invalid
 - `test_results_show` — Shows result details by ID
@@ -1228,10 +1195,6 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_invalid_request_id` — Commands fail with non-numeric request ID
 
 ### `cli/test_operations.py`
-- `test_requeue_request` — Requeue a specific request by ID
-- `test_requeue_request_no_clear_downstream` — Requeue request without clearing downstream data
-- `test_requeue_continuation` — Requeue all requests for a continuation step
-- `test_requeue_errors` — Requeue errors filtered by type
 - `test_cancel_request` — Cancel a pending request by ID
 - `test_cancel_request_not_pending` — Cancel fails for non-pending request
 - `test_cancel_continuation` — Cancel all pending requests for a continuation step
@@ -1254,6 +1217,5 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_requests_content_to_file` — Export response content to file
 
 ### `cli/test_integration.py`
-- `test_workflow_inspect_and_requeue` — Workflow: list failed requests, requeue one, verify pending count increases
 - `test_workflow_inspect_error_and_resolve` — Workflow: show error details, resolve it, verify unresolved count drops
 - `test_workflow_export_results` — Workflow: check results summary, export valid results to JSONL, verify file contents

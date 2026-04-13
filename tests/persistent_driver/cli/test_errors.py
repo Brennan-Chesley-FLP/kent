@@ -86,26 +86,6 @@ class TestErrorsCommands:
         assert result.exit_code == 0
         assert "resolved" in result.output
 
-    def test_errors_requeue(
-        self, runner: CliRunner, populated_db: Path
-    ) -> None:
-        """Test errors requeue command."""
-        result = runner.invoke(
-            cli,
-            [
-                "errors",
-                "requeue",
-                "--db",
-                str(populated_db),
-                "1",
-                "--notes",
-                "Trying again",
-            ],
-        )
-
-        assert result.exit_code == 0
-        assert "requeued" in result.output
-
 
 class TestResultsCommands:
     """Tests for the results commands."""

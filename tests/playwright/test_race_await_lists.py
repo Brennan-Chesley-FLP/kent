@@ -14,8 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from kent.data_types import WaitForSelector
-from kent.driver.interstitials import InterstitialHandler
-
+from kent.driver.interstitials import InterstitialHandler, WaitCondition
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,7 +28,7 @@ class _StubHandler(InterstitialHandler):
         self._selector = selector
         self.navigate_through_called = False
 
-    def waitlist(self) -> list[WaitForSelector]:
+    def waitlist(self) -> list[WaitCondition]:
         return [WaitForSelector(self._selector)]
 
     async def navigate_through(self, page: Any) -> None:
@@ -38,6 +37,9 @@ class _StubHandler(InterstitialHandler):
 
 class _DriverStub:
     """Minimal stand-in for PlaywrightDriver with only the methods under test."""
+
+    _race_await_lists: Any
+    _process_await_list: Any
 
     def __init__(self, handlers: list[InterstitialHandler]) -> None:
         self._interstitial_handlers = handlers
@@ -58,7 +60,9 @@ def _make_driver_stub(
 
     stub = _DriverStub(handlers)
     stub._race_await_lists = PlaywrightDriver._race_await_lists.__get__(stub)  # type: ignore[attr-defined]
-    stub._process_await_list = PlaywrightDriver._process_await_list.__get__(stub)  # type: ignore[attr-defined]
+    stub._process_await_list = PlaywrightDriver._process_await_list.__get__(
+        stub
+    )  # type: ignore[attr-defined]
     return stub
 
 

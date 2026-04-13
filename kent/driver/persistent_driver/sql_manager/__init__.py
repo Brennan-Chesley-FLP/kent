@@ -8,14 +8,13 @@ The SQLManager handles:
 - Request queue operations (enqueue, dequeue, status updates)
 - Response storage with compression
 - Result storage with validation tracking
-- Error requeue operations
+- Error tracking
 - Run metadata management
 - Speculative progress tracking
 - Statistics and listing operations
 """
 
 from kent.driver.persistent_driver.sql_manager._base import SQLManagerBase
-from kent.driver.persistent_driver.sql_manager._errors import ErrorRequeueMixin
 from kent.driver.persistent_driver.sql_manager._estimates import (
     EstimateStorageMixin,
 )
@@ -26,7 +25,6 @@ from kent.driver.persistent_driver.sql_manager._listing import ListingMixin
 from kent.driver.persistent_driver.sql_manager._requests import (
     RequestQueueMixin,
 )
-from kent.driver.persistent_driver.sql_manager._requeue import RequeueMixin
 from kent.driver.persistent_driver.sql_manager._responses import (
     ResponseStorageMixin,
 )
@@ -43,7 +41,6 @@ from kent.driver.persistent_driver.sql_manager._types import (
     IncidentalRequestRecord,
     Page,
     RequestRecord,
-    RequeueResult,
     ResponseRecord,
     ResultRecord,
     compute_cache_key,
@@ -60,11 +57,9 @@ class SQLManager(
     IncidentalRequestStorageMixin,
     ResultStorageMixin,
     EstimateStorageMixin,
-    ErrorRequeueMixin,
     SpeculationMixin,
     ValidationMixin,
     ListingMixin,
-    RequeueMixin,
     SQLManagerBase,
 ):
     """Database manager for LocalDevDriver operations.
@@ -91,7 +86,6 @@ class SQLManager(
 __all__ = [
     "IncidentalRequestRecord",
     "Page",
-    "RequeueResult",
     "RequestRecord",
     "ResponseRecord",
     "ResultRecord",

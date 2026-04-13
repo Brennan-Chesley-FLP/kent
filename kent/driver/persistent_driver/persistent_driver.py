@@ -3,7 +3,7 @@
 This driver extends AsyncDriver with persistent storage for:
 - Request queue with resumability
 - Response archival with compression
-- Error tracking with requeue capability
+- Error tracking
 - Progress events for web interface integration
 """
 

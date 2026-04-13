@@ -1,7 +1,7 @@
 """Tests for LocalDevDriverDebugger write operations and related features.
 
-Tests for read-only mode enforcement, manipulation methods (cancel, requeue,
-resolve), export, diagnose, response search, and seed speculative requests.
+Tests for read-only mode enforcement, manipulation methods (cancel, resolve),
+export, diagnose, response search, and seed speculative requests.
 """
 
 from __future__ import annotations
@@ -77,32 +77,6 @@ class TestReadOnlyModeEnforcement:
             with pytest.raises(PermissionError, match="write mode"):
                 await debugger.cancel_requests_by_continuation("step1")
 
-    async def test_requeue_request_read_only(
-        self, db_path: Path, populated_db
-    ) -> None:
-        """Test that requeue_request raises error in read-only mode."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=True
-        ) as debugger:
-            with pytest.raises(PermissionError, match="write mode"):
-                await debugger.requeue_request(2)
-
-    async def test_requeue_continuation_read_only(
-        self, db_path: Path, populated_db
-    ) -> None:
-        """Test that requeue_continuation raises error in read-only mode."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=True
-        ) as debugger:
-            with pytest.raises(PermissionError, match="write mode"):
-                await debugger.requeue_continuation("step1")
-
     async def test_resolve_error_read_only(
         self, db_path: Path, populated_db
     ) -> None:
@@ -115,32 +89,6 @@ class TestReadOnlyModeEnforcement:
         ) as debugger:
             with pytest.raises(PermissionError, match="write mode"):
                 await debugger.resolve_error(1)
-
-    async def test_requeue_error_read_only(
-        self, db_path: Path, populated_db
-    ) -> None:
-        """Test that requeue_error raises error in read-only mode."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=True
-        ) as debugger:
-            with pytest.raises(PermissionError, match="write mode"):
-                await debugger.requeue_error(1)
-
-    async def test_batch_requeue_errors_read_only(
-        self, db_path: Path, populated_db
-    ) -> None:
-        """Test that batch_requeue_errors raises error in read-only mode."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=True
-        ) as debugger:
-            with pytest.raises(PermissionError, match="write mode"):
-                await debugger.batch_requeue_errors(error_type="xpath")
 
     async def test_train_compression_dict_read_only(
         self, db_path: Path, populated_db
@@ -203,60 +151,6 @@ class TestManipulationMethods:
             count = await debugger.cancel_requests_by_continuation("step2")
             assert count == 1  # Only the held request
 
-    async def test_requeue_request_with_downstream_clear(
-        self, db_path: Path, populated_db
-    ) -> None:
-        """Test requeuing a request with downstream cleanup."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=False
-        ) as debugger:
-            # Requeue a completed request
-            new_id = await debugger.requeue_request(2, clear_downstream=True)
-            assert new_id > 0
-
-            # Verify new request exists
-            new_request = await debugger.get_request(new_id)
-            assert new_request is not None
-            assert new_request.url == "https://example.com/page2"
-            assert new_request.status == "pending"
-
-    async def test_requeue_request_without_downstream_clear(
-        self, db_path: Path, populated_db
-    ) -> None:
-        """Test requeuing a request without downstream cleanup."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=False
-        ) as debugger:
-            # Requeue without clearing downstream
-            new_id = await debugger.requeue_request(2, clear_downstream=False)
-            assert new_id > 0
-
-            # Verify new request exists
-            new_request = await debugger.get_request(new_id)
-            assert new_request is not None
-
-    async def test_requeue_continuation(
-        self, db_path: Path, populated_db
-    ) -> None:
-        """Test requeuing all requests for a continuation."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=False
-        ) as debugger:
-            # Requeue all completed requests for step1
-            count = await debugger.requeue_continuation(
-                "step1", status="completed"
-            )
-            assert count == 2  # Two completed requests in step1
-
     async def test_resolve_error(self, db_path: Path, populated_db) -> None:
         """Test resolving an error."""
         engine, _ = populated_db
@@ -274,37 +168,6 @@ class TestManipulationMethods:
             assert error is not None
             assert error["is_resolved"] is True
             assert error["resolution_notes"] == "Fixed the selector"
-
-    async def test_requeue_error(self, db_path: Path, populated_db) -> None:
-        """Test requeuing an error."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=False
-        ) as debugger:
-            # Requeue an error
-            new_id = await debugger.requeue_error(1, "Trying again")
-            assert new_id > 0
-
-            # Verify error is resolved
-            error = await debugger.get_error(1)
-            assert error is not None
-            assert error["is_resolved"] is True
-
-    async def test_batch_requeue_errors(
-        self, db_path: Path, populated_db
-    ) -> None:
-        """Test batch requeuing errors."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=False
-        ) as debugger:
-            # Batch requeue xpath errors
-            count = await debugger.batch_requeue_errors(error_type="xpath")
-            assert count == 1  # One unresolved xpath error
 
 
 class TestExportMethods:

@@ -58,19 +58,6 @@ class ResponseListResponse(BaseModel):
     has_more: bool
 
 
-class RequeueResponse(BaseModel):
-    """Response model for requeue operations."""
-
-    requeued_request_ids: list[int]
-    cleared_response_ids: list[int] = []
-    cleared_downstream_request_ids: list[int] = []
-    cleared_result_ids: list[int] = []
-    cleared_error_ids: list[int] = []
-    resolved_error_ids: list[int] = []
-    dry_run: bool = False
-    message: str
-
-
 async def _get_debugger(
     run_id: str, manager: RunManager, read_only: bool = True
 ) -> LocalDevDriverDebugger:
@@ -303,77 +290,6 @@ async def get_response(
         created_at=record.created_at,
         compression_dict_id=record.compression_dict_id,
         speculation_outcome=record.speculation_outcome,
-    )
-
-
-@router.post("/{request_id}/requeue", response_model=RequeueResponse)
-async def requeue_response(
-    run_id: str,
-    request_id: int,
-    manager: Annotated[RunManager, Depends(get_run_manager)],
-    clear_responses: bool = Query(
-        False, description="Clear responses to force re-fetch"
-    ),
-    clear_downstream: bool = Query(
-        False, description="Clear all downstream artifacts"
-    ),
-    dry_run: bool = Query(
-        False, description="Preview changes without executing"
-    ),
-) -> RequeueResponse:
-    """Requeue the request associated with a response.
-
-    Creates a new pending request with the same parameters as the
-    original request that generated this response.
-
-    Args:
-        run_id: The run identifier.
-        request_id: The request ID.
-        clear_responses: If True, delete responses to force re-fetch.
-        clear_downstream: If True, recursively delete downstream artifacts.
-        dry_run: If True, report what would happen without making changes.
-
-    Returns:
-        Requeue result with affected IDs.
-
-    Raises:
-        HTTPException: 404 if response not found.
-    """
-    debugger = await _get_debugger(run_id, manager, read_only=False)
-
-    # Verify response exists
-    record = await debugger.get_response(request_id)
-    if record is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response for request {request_id} not found in run '{run_id}'",
-        )
-
-    result = await debugger.sql.requeue_response(
-        request_id,
-        clear_responses=clear_responses,
-        clear_downstream=clear_downstream,
-        dry_run=dry_run,
-    )
-
-    new_request_id = (
-        result.requeued_request_ids[0] if result.requeued_request_ids else None
-    )
-    message = f"Requeued request {request_id}"
-    if new_request_id:
-        message += f" as request {new_request_id}"
-    if dry_run:
-        message = f"[DRY RUN] {message}"
-
-    return RequeueResponse(
-        requeued_request_ids=result.requeued_request_ids,
-        cleared_response_ids=result.cleared_response_ids,
-        cleared_downstream_request_ids=result.cleared_downstream_request_ids,
-        cleared_result_ids=result.cleared_result_ids,
-        cleared_error_ids=result.cleared_error_ids,
-        resolved_error_ids=result.resolved_error_ids,
-        dry_run=result.dry_run,
-        message=message,
     )
 
 

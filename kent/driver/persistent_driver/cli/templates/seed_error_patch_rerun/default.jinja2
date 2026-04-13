@@ -1,0 +1,37 @@
+{% from "_macros.jinja2" import section %}
+{% macro pct(value) -%}
+{% if value is none %}n/a{% else %}{{ "%.1f" | format(value) }}%{% endif %}
+{%- endmacro %}
+{% if data.mode.report_only %}
+{{ section("seed-error-patch-rerun report") }}
+{% else %}
+{{ section("seed-error-patch-rerun plan") }}
+{% endif %}
+Source DB: {{ data.source_db }}
+  total requests:      {{ data.source_stats.total_requests }}
+  unresolved errors:   {{ data.source_stats.unresolved_errors }}
+
+{% if data.roots.count == 0 %}
+No unresolved errors with traceable root ancestors found. Nothing to do.
+{% else %}
+Unique root ancestors: {{ data.roots.count }} ({{ pct(data.roots.pct_of_all_requests) }} of all requests)
+Errors covered by these roots: {{ data.roots.covered_error_count }}
+
+Original-tree blast radius (descendants of those roots, including the roots themselves):
+  total descendants:       {{ data.blast_radius.total_descendants }} ({{ pct(data.blast_radius.pct_of_all_requests) }} of all requests)
+  errored descendants:     {{ data.blast_radius.errored_descendants }} ({{ pct(data.blast_radius.errored_pct_of_descendants) }} of descendants)
+  non-errored descendants: {{ data.blast_radius.non_errored_descendants }} ({{ pct(data.blast_radius.non_errored_pct_of_descendants) }} of descendants; potentially duplicated work)
+
+Note: re-running the new DB will produce its own tree and may diverge from the original.
+
+{% if data.mode.report_only %}
+(--report mode: no output DB written, no source DB changes.)
+{% elif data.mode.wrote_output_db %}
+Wrote new seeded database to: {{ data.output_db }}
+{% if data.mode.no_resolve %}
+Source DB errors left unresolved (--no-resolve).
+{% else %}
+Marked {{ data.resolution.resolved_count }} source errors as resolved (resolution_type='{{ data.resolution.resolution_type }}').
+{% endif %}
+{% endif %}
+{% endif %}

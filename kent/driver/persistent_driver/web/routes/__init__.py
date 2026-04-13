@@ -6,7 +6,7 @@ This package contains all API route modules:
 - requests: Request listing and cancellation endpoints
 - responses: Response viewing and content retrieval
 - results: Result listing and data access
-- errors: Error tracking and requeue endpoints
+- errors: Error tracking endpoints
 - compression: Dictionary training and recompression
 - export: WARC export endpoints
 - debug: Response diagnosis with XPath observation

@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
-from sqlmodel import select
 
-from kent.driver.persistent_driver.models import (
-    Error,
-    Request,
-)
+from kent.driver.persistent_driver.models import Error
 from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 from kent.driver.persistent_driver.sql_manager import (
     SQLManager,
@@ -22,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class ManipulationMixin:
-    """Write operations: cancel, requeue, resolve, seed, train, recompress."""
+    """Write operations: cancel, resolve, seed, train, recompress."""
 
     sql: SQLManager
     _session_factory: ScopedSessionFactory
@@ -66,85 +62,6 @@ class ManipulationMixin:
         self._require_write_mode()
         return await self.sql.cancel_requests_by_continuation(continuation)
 
-    async def requeue_request(
-        self, request_id: int, clear_downstream: bool = True
-    ) -> int:
-        """Requeue a completed or failed request.
-
-        Args:
-            request_id: The request ID to requeue.
-            clear_downstream: If True (default), delete all downstream data.
-
-        Returns:
-            The new request ID.
-
-        Raises:
-            PermissionError: If the debugger is in read-only mode.
-            ValueError: If the request doesn't exist.
-        """
-        self._require_write_mode()
-
-        if clear_downstream:
-            result = await self.sql.requeue_requests(
-                [request_id], clear_downstream=True
-            )
-            if not result.requeued_request_ids:
-                raise ValueError(f"Request {request_id} not found")
-            return result.requeued_request_ids[0]
-        else:
-            # Just create a new request without clearing
-            async with self._session_factory() as session:
-                result = await session.execute(
-                    select(Request).where(Request.id == request_id)
-                )
-                req = result.scalars().first()
-                if not req:
-                    raise ValueError(f"Request {request_id} not found")
-
-            new_id = await self.sql.insert_requeue_request(
-                priority=req.priority,
-                method=req.method,
-                url=req.url,
-                headers_json=req.headers_json,
-                cookies_json=req.cookies_json,
-                body=req.body,
-                continuation=req.continuation,
-                current_location=req.current_location,
-                accumulated_data_json=req.accumulated_data_json,
-                aux_data_json=req.aux_data_json,
-                permanent_json=req.permanent_json,
-                original_request_id=request_id,
-                request_type=req.request_type or "navigating",
-                expected_type=req.expected_type,
-                verify=req.verify,
-            )
-            return new_id
-
-    async def requeue_continuation(
-        self,
-        continuation: str,
-        status: Literal["completed", "failed"] = "completed",
-        clear_downstream: bool = True,
-    ) -> int:
-        """Requeue all requests for a continuation with a given status.
-
-        Args:
-            continuation: The continuation (step name) to requeue.
-            status: Which requests to requeue ('completed' or 'failed').
-            clear_downstream: If True (default), clear downstream data.
-
-        Returns:
-            Number of requests requeued.
-
-        Raises:
-            PermissionError: If the debugger is in read-only mode.
-        """
-        self._require_write_mode()
-        return await self.sql.requeue_requests_by_continuation(
-            continuation=continuation,
-            status=status,
-        )
-
     # =========================================================================
     # Error Manipulation
     # =========================================================================
@@ -178,74 +95,6 @@ class ManipulationMixin:
             )
             await session.commit()
             return result.rowcount > 0
-
-    async def requeue_error(
-        self, error_id: int, resolution_notes: str | None = None
-    ) -> int:
-        """Requeue the request that caused an error.
-
-        Args:
-            error_id: The error ID to requeue.
-            resolution_notes: Optional notes (defaults to "Requeued for retry").
-
-        Returns:
-            The new request ID.
-
-        Raises:
-            PermissionError: If the debugger is in read-only mode.
-            ValueError: If the error doesn't exist.
-        """
-        self._require_write_mode()
-
-        if resolution_notes is None:
-            resolution_notes = "Requeued for retry"
-
-        result = await self.sql.requeue_error(error_id, mark_resolved=True)
-
-        if not result.requeued_request_ids:
-            raise ValueError(
-                f"Error {error_id} not found or has no associated request"
-            )
-
-        new_request_id = result.requeued_request_ids[0]
-
-        async with self._session_factory() as session:
-            await session.execute(
-                sa.update(Error)
-                .where(Error.id == error_id)
-                .values(
-                    is_resolved=True,
-                    resolved_at=sa.func.current_timestamp(),
-                    resolution_notes=f"{resolution_notes} (requeued as request {new_request_id})",
-                )
-            )
-            await session.commit()
-
-        return new_request_id
-
-    async def batch_requeue_errors(
-        self,
-        error_type: str | None = None,
-        continuation: str | None = None,
-    ) -> int:
-        """Requeue multiple errors matching filter criteria.
-
-        Args:
-            error_type: Filter by error type.
-            continuation: Filter by continuation (step name).
-
-        Returns:
-            Number of errors requeued.
-
-        Raises:
-            PermissionError: If the debugger is in read-only mode.
-        """
-        self._require_write_mode()
-        new_request_ids = await self.sql.batch_requeue_errors(
-            error_type=error_type,
-            continuation=continuation,
-        )
-        return len(new_request_ids)
 
     # =========================================================================
     # Compression Manipulation

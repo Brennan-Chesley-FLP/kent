@@ -12,45 +12,6 @@ from kent.driver.persistent_driver.cli import cli
 class TestIntegration:
     """Integration tests that test workflows across multiple commands."""
 
-    def test_workflow_inspect_and_requeue(
-        self, runner: CliRunner, populated_db: Path
-    ) -> None:
-        """Test workflow: inspect failed request, then requeue it."""
-        # First, list failed requests
-        result = runner.invoke(
-            cli,
-            [
-                "requests",
-                "list",
-                "--db",
-                str(populated_db),
-                "--status",
-                "failed",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "Total: 1" in result.output
-
-        # Then requeue it (request ID 3 is failed)
-        result = runner.invoke(
-            cli, ["requests", "requeue", "--db", str(populated_db), "3"]
-        )
-        assert result.exit_code == 0
-
-        # Verify it was requeued by checking pending requests increased
-        result = runner.invoke(
-            cli,
-            [
-                "requests",
-                "list",
-                "--db",
-                str(populated_db),
-                "--status",
-                "pending",
-            ],
-        )
-        assert result.exit_code == 0
-
     def test_workflow_inspect_error_and_resolve(
         self, runner: CliRunner, populated_db: Path
     ) -> None:

@@ -356,6 +356,7 @@ class Error(SQLModel, table=True):  # type: ignore[call-arg]
     )
     resolved_at: str | None = None
     resolution_notes: str | None = None
+    resolution_type: str | None = None
 
     # Timestamps
     created_at: str | None = Field(

@@ -9,7 +9,6 @@ Usage:
     pdd --db run.db requests show <id>          # Show request details
     pdd --db run.db requests search <query>     # Search response content
     pdd --db run.db requests cancel <id>        # Cancel a pending request
-    pdd --db run.db requests requeue <id>       # Requeue a request
     pdd --db run.db requests export <output>    # Export to WARC
     pdd --db run.db requests compression stats  # Compression statistics
     pdd --db run.db errors list                 # List errors
@@ -451,6 +450,9 @@ def main() -> None:
 # (imports trigger @cli.group/@cli.command decorators)
 # =========================================================================
 from kent.driver.persistent_driver.cli import (
+    cancel as _cancel_mod,
+)
+from kent.driver.persistent_driver.cli import (
     compare as _compare_mod,
 )
 from kent.driver.persistent_driver.cli import (
@@ -472,9 +474,6 @@ from kent.driver.persistent_driver.cli import (
     requests as _requests_mod,
 )
 from kent.driver.persistent_driver.cli import (
-    requeue as _requeue_mod,
-)
-from kent.driver.persistent_driver.cli import (
     responses as _responses_mod,
 )
 from kent.driver.persistent_driver.cli import (
@@ -482,6 +481,9 @@ from kent.driver.persistent_driver.cli import (
 )
 from kent.driver.persistent_driver.cli import (
     scrape as _scrape_mod,
+)
+from kent.driver.persistent_driver.cli import (
+    seed_error_patch_rerun as _seed_error_patch_rerun_mod,
 )
 from kent.driver.persistent_driver.cli import (
     step as _step_mod,

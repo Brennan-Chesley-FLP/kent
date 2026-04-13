@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-WaitCondition = WaitForSelector | WaitForLoadState | WaitForURL | WaitForTimeout
+WaitCondition = (
+    WaitForSelector | WaitForLoadState | WaitForURL | WaitForTimeout
+)
 
 
 class InterstitialHandler(abc.ABC):
