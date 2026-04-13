@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode, urlparse, urlunparse
+
+
+def _json_default(obj: Any) -> Any:
+    """Handle date/datetime objects in json.dumps."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 from kent.data_types import (
     BaseRequest,
@@ -204,13 +214,13 @@ class QueueMixin:
             ),
             "continuation": continuation,
             "current_location": request.current_location,
-            "accumulated_data_json": json.dumps(request.accumulated_data)
+            "accumulated_data_json": json.dumps(request.accumulated_data, default=_json_default)
             if request.accumulated_data
             else None,
-            "aux_data_json": json.dumps(request.aux_data)
+            "aux_data_json": json.dumps(request.aux_data, default=_json_default)
             if request.aux_data
             else None,
-            "permanent_json": json.dumps(permanent_data)
+            "permanent_json": json.dumps(permanent_data, default=_json_default)
             if permanent_data
             else None,
             "expected_type": expected_type,

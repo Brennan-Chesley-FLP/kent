@@ -43,6 +43,23 @@ class RequestQueueMixin:
             )
             return result.scalar() is not None
 
+    async def _find_by_dedup_key(self, dedup_key: str) -> int | None:
+        """Find an existing request ID by deduplication key.
+
+        Args:
+            dedup_key: The deduplication key to look up.
+
+        Returns:
+            The request ID if found, None otherwise.
+        """
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(Request.id).where(
+                    Request.deduplication_key == dedup_key
+                )
+            )
+            return result.scalar()
+
     async def find_parent_request_id(self, url: str) -> int | None:
         """Find the request ID for a given URL.
 
@@ -112,9 +129,15 @@ class RequestQueueMixin:
             bypass_rate_limit: If True, skip rate limiting for this request.
 
         Returns:
-            The ID of the newly inserted request.
+            The ID of the newly inserted request, or the existing ID if
+            deduplicated.
         """
         async with self._lock:
+            if dedup_key is not None:
+                existing = await self._find_by_dedup_key(dedup_key)
+                if existing is not None:
+                    return existing
+
             queue_counter = await self._get_next_queue_counter()  # type: ignore[attr-defined]
             created_at_ns = time.monotonic_ns()
             cache_key = compute_cache_key(method, url, body, headers_json)
@@ -189,9 +212,15 @@ class RequestQueueMixin:
             expected_type: Expected type for archive requests.
 
         Returns:
-            The ID of the newly inserted request.
+            The ID of the newly inserted request, or the existing ID if
+            deduplicated.
         """
         async with self._lock:
+            if dedup_key is not None:
+                existing = await self._find_by_dedup_key(dedup_key)
+                if existing is not None:
+                    return existing
+
             queue_counter = await self._get_next_queue_counter()  # type: ignore[attr-defined]
             created_at_ns = time.monotonic_ns()
 

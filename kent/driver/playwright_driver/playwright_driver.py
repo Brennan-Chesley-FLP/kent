@@ -64,6 +64,10 @@ from kent.data_types import (
     WaitForTimeout,
     WaitForURL,
 )
+from kent.driver.interstitials import (
+    INTERSTITIAL_HANDLERS,
+    InterstitialHandler,
+)
 from kent.driver.persistent_driver.compression import (
     compress,
 )
@@ -325,6 +329,12 @@ class PlaywrightDriver(
             "media",
             "font",
         }
+        # Interstitial handlers resolved from scraper's driver_requirements
+        self._interstitial_handlers: list[InterstitialHandler] = [
+            INTERSTITIAL_HANDLERS[req]
+            for req in getattr(scraper, "driver_requirements", [])
+            if req in INTERSTITIAL_HANDLERS
+        ]
 
     async def _acquire_worker_page(self, worker_id: int) -> WorkerPage:
         """Get or create the reusable page for a worker."""
@@ -826,7 +836,10 @@ class PlaywrightDriver(
                         request.request.url, wait_until="domcontentloaded"
                     )
 
-                # Process await_list if continuation has one (skip on nav error)
+                # Process await_list if continuation has one (skip on nav error).
+                # When interstitial handlers are configured, race them against
+                # the scraper's await_list; if an interstitial wins, navigate
+                # through it then re-process the scraper's own conditions.
                 await_list_error: (
                     PlaywrightTimeoutError | TransientException | None
                 ) = None
@@ -838,9 +851,19 @@ class PlaywrightDriver(
                         metadata = get_step_metadata(continuation)
                         if metadata and metadata.await_list:
                             try:
-                                await self._process_await_list(
-                                    page, metadata.await_list
-                                )
+                                if self._interstitial_handlers:
+                                    winner = await self._race_await_lists(
+                                        page, metadata.await_list
+                                    )
+                                    if winner is not None:
+                                        await winner.navigate_through(page)
+                                        await self._process_await_list(
+                                            page, metadata.await_list
+                                        )
+                                else:
+                                    await self._process_await_list(
+                                        page, metadata.await_list
+                                    )
                             except (
                                 PlaywrightTimeoutError,
                                 TransientException,
@@ -1277,6 +1300,69 @@ class PlaywrightDriver(
                 raise TransientException(
                     f"Wait condition timeout: {condition}"
                 ) from e
+
+    async def _race_await_lists(
+        self,
+        page: Page,
+        scraper_await_list: list[Any],
+    ) -> InterstitialHandler | None:
+        """Race scraper waitlist against interstitial handler waitlists.
+
+        Each group's conditions are awaited sequentially (conjunction).
+        The first group to fully resolve wins; losing tasks are cancelled.
+
+        Returns:
+            The winning ``InterstitialHandler``, or ``None`` if the
+            scraper's own await_list completed first.
+        """
+
+        async def _run_group(conditions: list[Any]) -> None:
+            for condition in conditions:
+                if isinstance(condition, WaitForSelector):
+                    await page.wait_for_selector(
+                        condition.selector,
+                        state=condition.state,
+                        timeout=condition.timeout,
+                    )
+                elif isinstance(condition, WaitForLoadState):
+                    await page.wait_for_load_state(
+                        condition.state, timeout=condition.timeout
+                    )
+                elif isinstance(condition, WaitForURL):
+                    await page.wait_for_url(
+                        condition.url, timeout=condition.timeout
+                    )
+                elif isinstance(condition, WaitForTimeout):
+                    await asyncio.sleep(condition.timeout / 1000.0)
+
+        scraper_task = asyncio.create_task(
+            _run_group(scraper_await_list), name="scraper"
+        )
+        handler_tasks: dict[asyncio.Task[None], InterstitialHandler] = {}
+        for handler in self._interstitial_handlers:
+            task = asyncio.create_task(
+                _run_group(handler.waitlist()),
+                name=type(handler).__name__,
+            )
+            handler_tasks[task] = handler
+
+        all_tasks = {scraper_task} | set(handler_tasks.keys())
+        try:
+            done, _pending = await asyncio.wait(
+                all_tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+        finally:
+            for t in all_tasks:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*all_tasks, return_exceptions=True)
+
+        winner = next(iter(done))
+        winner.result()  # re-raise if the winner raised
+
+        if winner is scraper_task:
+            return None
+        return handler_tasks[winner]
 
     async def _process_generator_with_autowait(
         self,

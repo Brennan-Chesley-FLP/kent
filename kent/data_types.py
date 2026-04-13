@@ -79,6 +79,7 @@ class DriverRequirement(Enum):
         JS_EVAL: Requires JavaScript evaluation (auto-selects Playwright).
         FF_ALIKE: Requires a Firefox-like browser profile.
         CHROME_ALIKE: Requires a Chrome-like browser profile.
+        HCAP_HANDLER: Requires hCaptcha interstitial handling (auto-selects Playwright).
 
     FF_ALIKE and CHROME_ALIKE are mutually exclusive.
     """
@@ -86,6 +87,7 @@ class DriverRequirement(Enum):
     JS_EVAL = "js_eval"
     FF_ALIKE = "ff_alike"
     CHROME_ALIKE = "chrome_alike"
+    HCAP_HANDLER = "hcap_handler"
 
 
 @dataclass(frozen=True)

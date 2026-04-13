@@ -519,6 +519,7 @@ def run(
             DriverRequirement.JS_EVAL,
             DriverRequirement.FF_ALIKE,
             DriverRequirement.CHROME_ALIKE,
+            DriverRequirement.HCAP_HANDLER,
         )
     )
 
