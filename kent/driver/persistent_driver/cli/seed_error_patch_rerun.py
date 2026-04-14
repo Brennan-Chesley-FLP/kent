@@ -272,7 +272,9 @@ async def _build_plan(debugger: LocalDevDriverDebugger) -> _Plan:
                 ancestors_cte.c.error_id,
             )
             .select_from(Request)
-            .join(ancestors_cte, Request.id == ancestors_cte.c.parent_request_id)
+            .join(
+                ancestors_cte, Request.id == ancestors_cte.c.parent_request_id
+            )
         )
         ancestors_cte = ancestors_cte.union_all(recursive)
 
@@ -375,9 +377,7 @@ async def _write_output_db(
     schema directly via SQLModel.metadata.create_all, and schema_info is
     stamped with the latest version.
     """
-    engine, session_factory = await init_database(
-        output_db, run_migrations=False
-    )
+    engine, session_factory = await init_database(output_db)
     try:
         sql = SQLManager(engine, session_factory)
 

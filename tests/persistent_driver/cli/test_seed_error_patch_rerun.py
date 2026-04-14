@@ -170,9 +170,7 @@ async def tree_db(tmp_path: Path) -> Path:
 
 async def _read_output(output_db: Path) -> dict[str, Any]:
     """Return the contents of the output DB as a simple dict."""
-    engine, session_factory = await init_database(
-        output_db, run_migrations=False
-    )
+    engine, session_factory = await init_database(output_db)
     try:
         async with session_factory() as session:
             r = await session.execute(
@@ -418,9 +416,7 @@ class TestSeedErrorPatchRerun:
             ],
         )
         assert result.exit_code == 0, result.output
-        assert not out.exists(), (
-            "--report must not create an output DB"
-        )
+        assert not out.exists(), "--report must not create an output DB"
         assert "report" in result.output.lower()
         assert "Unique root ancestors: 3" in result.output
 
@@ -479,6 +475,40 @@ class TestSeedErrorPatchRerun:
         )
         assert result.exit_code != 0
         assert "Refusing to overwrite" in result.output
+
+    def test_output_db_records_every_migration_version(
+        self, runner: CliRunner, tree_db: Path, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "out.db"
+        result = runner.invoke(
+            cli,
+            [
+                "seed-error-patch-rerun",
+                "--db",
+                str(tree_db),
+                "--output-db",
+                str(out),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        import asyncio
+
+        from kent.driver.persistent_driver.database import SCHEMA_VERSION
+
+        async def _read_max_version() -> int:
+            engine, sf = await init_database(out)
+            try:
+                async with sf() as session:
+                    r = await session.execute(
+                        sa.text("SELECT MAX(version) FROM schema_info")
+                    )
+                    return r.scalar() or 0
+            finally:
+                await engine.dispose()
+
+        max_version = asyncio.run(_read_max_version())
+        assert max_version == SCHEMA_VERSION
 
     def test_no_errors_is_a_noop(
         self, runner: CliRunner, tmp_path: Path
