@@ -335,6 +335,14 @@ class PlaywrightDriver(
             for req in getattr(scraper, "driver_requirements", [])
             if req in INTERSTITIAL_HANDLERS
         ]
+        # Browser restart state — populated by open() for crash recovery
+        self._playwright: Any | None = None
+        self._browser_obj: Browser | None = None
+        self._browser_launcher: Any | None = None
+        self._launch_kwargs: dict[str, Any] = {}
+        self._context_kwargs: dict[str, Any] = {}
+        self._browser_profile: BrowserProfile | None = None
+        self._browser_restart_lock = asyncio.Lock()
 
     async def _acquire_worker_page(self, worker_id: int) -> WorkerPage:
         """Get or create the reusable page for a worker."""
@@ -343,7 +351,19 @@ class PlaywrightDriver(
             self._worker_pages.pop(worker_id)
             wp = None
         if wp is None:
-            page = await self.browser_context.new_page()
+            try:
+                page = await self.browser_context.new_page()
+            except PlaywrightError as e:
+                if self._is_connection_dead(e):
+                    async with self._browser_restart_lock:
+                        # Double-check: another worker may have restarted already
+                        try:
+                            page = await self.browser_context.new_page()
+                        except PlaywrightError:
+                            await self._restart_browser_context()
+                            page = await self.browser_context.new_page()
+                else:
+                    raise
             wp = WorkerPage(page, self.excluded_resource_types)
             self._worker_pages[worker_id] = wp
         return wp
@@ -353,6 +373,58 @@ class PlaywrightDriver(
         wp = self._worker_pages.pop(worker_id, None)
         if wp:
             await wp.close()
+
+    def _is_connection_dead(self, error: PlaywrightError) -> bool:
+        """Check if a PlaywrightError indicates the browser connection died."""
+        msg = str(error)
+        return (
+            "Connection closed" in msg
+            or "Browser has been closed" in msg
+            or "Target page, context or browser has been closed" in msg
+        )
+
+    async def _restart_browser_context(self) -> None:
+        """Restart the browser and context after a crash.
+
+        Called under ``_browser_restart_lock`` to prevent concurrent
+        restarts from multiple workers.  Only the standard (non-persistent)
+        launch path is supported; persistent contexts cannot be safely
+        restarted.
+        """
+        if self._browser_launcher is None:
+            raise TransientException(
+                "Browser connection lost and restart is not available "
+                "(persistent context or missing launch params)"
+            )
+
+        logger.warning("Browser connection lost — restarting browser")
+
+        # Discard all worker pages (they reference the dead browser)
+        self._worker_pages.clear()
+
+        # Best-effort close of the old browser
+        if self._browser_obj is not None:
+            try:
+                await self._browser_obj.close()
+            except Exception:
+                pass
+
+        # Relaunch browser and context
+        new_browser = await self._browser_launcher.launch(
+            **self._launch_kwargs
+        )
+        self._browser_obj = new_browser
+        self.browser_context = await new_browser.new_context(
+            **self._context_kwargs
+        )
+
+        # Re-add init scripts from browser profile
+        if self._browser_profile is not None:
+            for script_path in self._browser_profile.init_scripts:
+                js = script_path.read_text(encoding="utf-8")
+                await self.browser_context.add_init_script(js)
+
+        logger.info("Browser restarted successfully")
 
     async def _db_worker(self, worker_id: int) -> None:
         """Wrap parent _db_worker to clean up the worker's page on exit."""
@@ -535,6 +607,7 @@ class PlaywrightDriver(
                         js = script_path.read_text(encoding="utf-8")
                         await browser_context.add_init_script(js)
 
+            driver: PlaywrightDriver[ScraperReturnDatatype] | None = None
             try:
                 # Create driver instance (no request manager needed for Playwright)
                 effective_rates = rates or scraper.rate_limits
@@ -552,6 +625,19 @@ class PlaywrightDriver(
                     excluded_resource_types=excluded_resource_types,
                     rates=effective_rates,
                 )
+
+                # Store restart params for crash recovery (standard path only;
+                # persistent contexts leave these as None).
+                if not (
+                    browser_profile is not None
+                    and browser_profile.persistent_context
+                ):
+                    driver._playwright = playwright
+                    driver._browser_obj = browser_obj
+                    driver._browser_launcher = browser_launcher  # type: ignore[possibly-undefined]
+                    driver._launch_kwargs = launch_kwargs  # type: ignore[possibly-undefined]
+                    driver._context_kwargs = context_kwargs  # type: ignore[possibly-undefined]
+                    driver._browser_profile = browser_profile
 
                 # Restore cookies on resume
                 if resume:
@@ -574,9 +660,26 @@ class PlaywrightDriver(
                 await driver.close()
 
             finally:
-                await browser_context.close()
-                if browser_obj is not None:
-                    await browser_obj.close()
+                # After a browser restart, driver.browser_context and
+                # driver._browser_obj may differ from the originals.
+                # Close whichever is current.
+                ctx_to_close = (
+                    driver.browser_context if driver is not None
+                    else browser_context
+                )
+                try:
+                    await ctx_to_close.close()
+                except Exception:
+                    pass
+                current_browser = (
+                    driver._browser_obj if driver is not None
+                    else browser_obj
+                )
+                if current_browser is not None:
+                    try:
+                        await current_browser.close()
+                    except Exception:
+                        pass
 
         finally:
             await playwright.stop()
@@ -925,6 +1028,13 @@ class PlaywrightDriver(
             raise TransientException(f"Playwright timeout: {e}") from e
 
         except PlaywrightError as e:
+            if self._is_connection_dead(e):
+                # Browser process crashed — evict the dead worker page
+                # so the next retry gets a fresh one after browser restart.
+                self._worker_pages.pop(worker_id, None)
+                raise TransientException(
+                    f"Browser connection lost: {e}"
+                ) from e
             if "NS_ERROR_ABORT" in str(e):
                 logger.warning(
                     f"Navigation aborted for request {request_id}: {e}"

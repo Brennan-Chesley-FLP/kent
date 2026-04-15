@@ -22,3 +22,5 @@ wheels/
 
 # Lock file
 uv.lock
+.coverage
+.hypothesis

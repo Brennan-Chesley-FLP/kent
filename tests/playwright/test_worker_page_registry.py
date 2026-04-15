@@ -6,6 +6,7 @@ mapping between worker IDs and Playwright pages, regardless of operation order.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -71,6 +72,8 @@ def _make_driver_with_fake_context() -> tuple[Any, FakeBrowserContext]:
     driver.browser_context = ctx
     driver._worker_pages = {}
     driver.excluded_resource_types = {"image", "media", "font"}
+    driver._browser_restart_lock = asyncio.Lock()
+    driver._browser_launcher = None
     return driver, ctx
 
 
@@ -219,3 +222,149 @@ async def test_release_then_reacquire_gives_fresh_page() -> None:
 
     assert page_id_1 != page_id_2
     assert len(ctx.pages_created) == 2
+
+
+# ---------------------------------------------------------------------------
+# Browser crash recovery tests
+# ---------------------------------------------------------------------------
+
+
+class DeadBrowserContext:
+    """Simulates a browser context whose connection has died."""
+
+    def __init__(self) -> None:
+        self.pages_created: list[FakePage] = []
+
+    async def new_page(self) -> FakePage:
+        from playwright.async_api import Error as PlaywrightError
+
+        raise PlaywrightError("Connection closed")
+
+
+class RevivableBrowserContext:
+    """Starts dead, becomes alive after restart() is called."""
+
+    def __init__(self) -> None:
+        self.alive = False
+        self.pages_created: list[FakePage] = []
+
+    async def new_page(self) -> FakePage:
+        if not self.alive:
+            from playwright.async_api import Error as PlaywrightError
+
+            raise PlaywrightError("Connection closed")
+        page = FakePage()
+        self.pages_created.append(page)
+        return page
+
+    async def close(self) -> None:
+        pass
+
+
+class FakeBrowser:
+    """Minimal Browser stand-in for restart tests."""
+
+    def __init__(self, context: Any) -> None:
+        self._context = context
+
+    async def new_context(self, **kwargs: Any) -> Any:
+        self._context.alive = True
+        return self._context
+
+    async def close(self) -> None:
+        pass
+
+
+class FakeLauncher:
+    """Mimics playwright.firefox / playwright.chromium."""
+
+    def __init__(self, browser: FakeBrowser) -> None:
+        self._browser = browser
+
+    async def launch(self, **kwargs: Any) -> FakeBrowser:
+        return self._browser
+
+
+def _make_driver_with_dead_browser() -> (
+    tuple[Any, RevivableBrowserContext]
+):
+    """Create a PlaywrightDriver whose browser connection is dead,
+    but can be restarted via _restart_browser_context."""
+    from kent.driver.playwright_driver.playwright_driver import (
+        PlaywrightDriver,
+    )
+
+    ctx = RevivableBrowserContext()
+    browser = FakeBrowser(ctx)
+    launcher = FakeLauncher(browser)
+
+    driver = object.__new__(PlaywrightDriver)
+    driver.browser_context = ctx
+    driver._worker_pages = {}
+    driver.excluded_resource_types = {"image", "media", "font"}
+    driver._browser_restart_lock = asyncio.Lock()
+    driver._playwright = None
+    driver._browser_obj = browser
+    driver._browser_launcher = launcher
+    driver._launch_kwargs = {}
+    driver._context_kwargs = {}
+    driver._browser_profile = None
+
+    return driver, ctx
+
+
+@pytest.mark.asyncio
+async def test_acquire_restarts_browser_on_connection_closed() -> None:
+    """When new_page() raises 'Connection closed', the driver restarts
+    the browser and retries, returning a valid page."""
+    driver, ctx = _make_driver_with_dead_browser()
+
+    wp = await driver._acquire_worker_page(0)
+    assert not wp.page.is_closed()
+    assert ctx.alive
+    assert len(ctx.pages_created) == 1
+
+
+@pytest.mark.asyncio
+async def test_acquire_clears_stale_worker_pages_on_restart() -> None:
+    """Browser restart clears all stale worker pages from the registry."""
+    from kent.driver.playwright_driver.playwright_driver import WorkerPage
+
+    driver, ctx = _make_driver_with_dead_browser()
+
+    # Manually seed stale worker pages (as if they existed before crash)
+    stale_page = FakePage()
+    stale_page._closed = True
+    driver._worker_pages[1] = WorkerPage(stale_page, driver.excluded_resource_types)
+    driver._worker_pages[2] = WorkerPage(stale_page, driver.excluded_resource_types)
+
+    # Acquiring worker 0 triggers restart, which should clear all pages
+    wp = await driver._acquire_worker_page(0)
+    assert not wp.page.is_closed()
+    # Stale pages for workers 1 and 2 should be gone
+    assert 1 not in driver._worker_pages
+    assert 2 not in driver._worker_pages
+
+
+@pytest.mark.asyncio
+async def test_is_connection_dead_detects_known_messages() -> None:
+    """_is_connection_dead recognises the error strings from Playwright crashes."""
+    from playwright.async_api import Error as PlaywrightError
+
+    driver, _ = _make_driver_with_dead_browser()
+
+    assert driver._is_connection_dead(
+        PlaywrightError("Connection closed while reading from the driver")
+    )
+    assert driver._is_connection_dead(
+        PlaywrightError("Browser has been closed")
+    )
+    assert driver._is_connection_dead(
+        PlaywrightError("Target page, context or browser has been closed")
+    )
+    assert not driver._is_connection_dead(
+        PlaywrightError("NS_ERROR_ABORT")
+    )
+    assert not driver._is_connection_dead(
+        PlaywrightError("Navigation timeout of 30000ms exceeded")
+    )
