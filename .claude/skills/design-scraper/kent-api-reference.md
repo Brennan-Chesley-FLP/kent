@@ -22,10 +22,24 @@ class MyScraper(BaseScraper[OutputType]):
 
     # Optional
     rate_limits: ClassVar[list[Rate] | None] = [Rate(1, Duration.SECOND)]
+    driver_requirements: ClassVar[list[DriverRequirement]] = []  # Playwright needs
     ssl_context: ClassVar[ssl.SSLContext | None] = None
     oldest_record: ClassVar[date | None] = None
     last_verified: ClassVar[str] = "2026-01-01"
 ```
+
+### DriverRequirement
+
+When a site needs Playwright:
+
+```python
+from kent.data_types import DriverRequirement
+
+class MyScraper(BaseScraper[MyData]):
+    driver_requirements = [DriverRequirement.JS_EVAL, DriverRequirement.FF_ALIKE]
+```
+
+Values: `JS_EVAL`, `FF_ALIKE`, `CHROME_ALIKE`, `HCAP_HANDLER` (hCaptcha), `RCAP_HANDLER` (reCAPTCHA).
 
 If the scraper yields multiple top-level types, use a union:
 `BaseScraper[Docket | OralArgument]`.
@@ -89,6 +103,9 @@ Step options:
 - `priority: int = 9` — queue ordering (lower = higher priority)
 - `encoding: str = "utf-8"` — text decoding
 - `xsd: str | None` — path to XSD schema (structural validation hints)
+- `json_model: str | None` — dotted path to Pydantic model for JSON response validation (e.g. `"api.responses.SearchResult"`)
+- `auto_await_timeout: int | None` — timeout in ms for Playwright autowait retry logic
+- `await_list: list | None` — wait conditions for Playwright (WaitForSelector, WaitForLoadState, WaitForURL, WaitForTimeout)
 
 ---
 
@@ -127,7 +144,28 @@ yield Request(
     expected_type="pdf",  # or "audio", "image"
     accumulated_data={...},
 )
+
+# Deduplication control
+from kent.data_types import SkipDeduplicationCheck
+
+yield Request(
+    request=HTTPRequestParams(method=HttpMethod.GET, url=next_page_url),
+    continuation=self.parse_results,
+    deduplication_key=SkipDeduplicationCheck(),  # pagination must always execute
+)
+
+# Custom dedup key (prevents visiting same case from overlapping searches)
+yield Request(
+    request=HTTPRequestParams(method=HttpMethod.GET, url=case_url),
+    continuation=self.parse_case,
+    deduplication_key=docket_id,
+)
 ```
+
+Additional Request fields:
+- `deduplication_key: str | None | SkipDeduplicationCheck` — custom dedup key (auto-generated from URL if None)
+- `via: ViaLink | ViaFormSubmit | None` — set automatically by `find_links()` and `form.submit()`
+- `bypass_rate_limit: bool = False` — skip rate limiter for this request
 
 ---
 
@@ -299,20 +337,31 @@ form = page.find_form("//form[@action='/search']", "search form")
 for field in form.fields:
     print(field.name, field.field_type, field.value, field.options)
 
-# Submit with data overrides
-request = form.submit(
+# submit() accepts **request_kwargs passed to the Request constructor.
+# You can pass continuation, accumulated_data, deduplication_key, etc. directly:
+yield form.submit(
     data={"query": "smith", "bot_check": "Y"},
     submit_selector="//input[@type='submit']",  # optional
+    continuation=self.parse_results,
+    accumulated_data=accumulated_data,
 )
 
-# Set continuation and yield
+# Or equivalently, use dataclasses.replace on the returned Request:
 from dataclasses import replace
+request = form.submit(data={"query": "smith"})
 yield replace(request, continuation=self.parse_results)
 ```
 
 ---
 
 ## Common Patterns
+
+### accumulated_data serialization
+
+Values in `accumulated_data` must be JSON-serializable (str, int, float,
+bool, None, list, dict) because the dict is persisted between requests.
+For Pydantic models, use `.model_dump(mode="json")`; for dates, use
+`.isoformat()`.
 
 ### Chaining tabs via accumulated_data
 
@@ -331,7 +380,11 @@ def parse_summary(self, page, response, accumulated_data):
 
 ### Pagination
 
+Use `SkipDeduplicationCheck()` on pagination requests so they always execute:
+
 ```python
+from kent.data_types import SkipDeduplicationCheck
+
 @step()
 def parse_results(self, page, response, accumulated_data):
     # Process current page...
@@ -347,6 +400,7 @@ def parse_results(self, page, response, accumulated_data):
             request=HTTPRequestParams(method=HttpMethod.GET, url=next_links[0].url),
             continuation=self.parse_results,
             accumulated_data=accumulated_data,
+            deduplication_key=SkipDeduplicationCheck(),
         )
 ```
 

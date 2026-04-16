@@ -120,24 +120,18 @@ ln -s /path/to/kent/.claude/skills/debug-scraper .claude/skills/debug-scraper
 
 Then invoke it in Claude Code with `/debug-scraper`.
 
-The skill gives Claude knowledge of all `pdd` and `kent` CLI commands and a structured debugging workflow. After each debugging session it writes a brief incident report to `.claude/debug-incidents/` noting what worked and where `pdd` fell short.
+The skill gives Claude knowledge of all `pdd` and `kent` CLI commands and a structured debugging workflow. After each debugging session it should write a brief incident report to `.claude/debug-incidents/` noting what worked and where `pdd` fell short. If you're comfortable sharing these, we can use them to improve the pdd tool. 
 
 ## Stability
 
-### Well Tested
+### Mostly settled
 
 - Sync / Async / Persistent Driver
 - Basic `@entry` and `@step` decorators
-- Core scraper-driver features (navigating/nonnavigating/archive requests, accumulated data, callbacks, data validation, transient exceptions, deduplication, priority queue, lifecycle hooks)
+- Core scraper-driver features (navigating/nonnavigating/archive requests, accumulated data, callbacks, data validation, transient exceptions, deduplication, priority queue)
 
 ### Moving Target/Active development
 
-- Speculative entry points
 - Playwright Driver
 - Kent WebUI
 - `pdd` feature set
-- Exact format of SQLite databases (persistent and Playwright drivers)
-- Page form support
-- Data estimate integrity checks
-- WARC export
-- Selector and XPath observers (primarily used in WebUI currently to highlight elements)

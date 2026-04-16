@@ -409,5 +409,5 @@ Output:
 What's Next
 -----------
 
-In :doc:`06_aux_data`, we will introduce auxiliary data, for data that helps
-us navigate the website, but that we aren't necessarily interested in keeping.
+In :doc:`06_callbacks`, we will introduce callbacks that let drivers react to
+scraper yields for side effects like persistence and logging.

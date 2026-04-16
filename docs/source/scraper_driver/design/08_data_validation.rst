@@ -316,5 +316,5 @@ Here's the complete Bug Court scraper with deferred data validation:
 What's Next
 -----------
 
-In :doc:`10_transient_exceptions`, we'll take a look at transient exceptions
+In :doc:`09_transient_exceptions`, we'll take a look at transient exceptions
 like response timeouts.

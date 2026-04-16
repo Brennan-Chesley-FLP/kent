@@ -65,7 +65,6 @@ The ``priority`` field is on ``Request`` with a default value of 9:
         current_location: str = ""
         previous_requests: list[Request] = field(default_factory=list)
         accumulated_data: dict[str, Any] = field(default_factory=dict)
-        aux_data: dict[str, Any] = field(default_factory=dict)
         nonnavigating: bool = False
         archive: bool = False
         expected_type: str | None = None
@@ -150,6 +149,6 @@ The counter ensures that requests with the same priority are processed in FIFO o
 Next Steps
 ----------
 
-In :doc:`14_deduplication`, we'll explore request deduplication to avoid
+In :doc:`13_deduplication`, we'll explore request deduplication to avoid
 fetching the same URL multiple times when navigating complex site structures
 with cyclic links.

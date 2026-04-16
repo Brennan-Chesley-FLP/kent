@@ -57,6 +57,7 @@ dev = [
     "types-lxml>=2025.11.25",
     "aiohttp>=3.13.3",
     "ruff>=0.15.0",
+    "sphinx>=8.0,<9",
     "sphinx-immaterial>=0.13.9",
     "sphinxcontrib-mermaid>=2.0.0",
     "sphinx-autobuild>=2024.10.3",

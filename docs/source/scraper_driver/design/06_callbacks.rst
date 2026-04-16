@@ -1,9 +1,10 @@
 Step 7: Callbacks - Data Events
 ================================
 
-In Step 6, we introduced aux_data for navigation metadata. Now we need a way
-to handle scraped data as it's produced - for persistence, logging, monitoring,
-or other side effects. This is where the **on_data callback** comes in.
+In Step 5, we introduced accumulated_data for carrying data through request
+chains. Now we need a way to handle scraped data as it's produced - for
+persistence, logging, monitoring, or other side effects. This is where the
+**on_data callback** comes in.
 
 This step introduces a simple callback system that allows you to define custom
 behavior when ParsedData is yielded, without subclassing the driver or modifying
@@ -153,6 +154,6 @@ Here's a complete example using callbacks for multiple purposes:
 What's Next
 -----------
 
-In :doc:`08_structural_errors`, we will look at our second operational concern,
+In :doc:`07_structural_errors`, we will look at our second operational concern,
 structural assumptions about webpages.
 

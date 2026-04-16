@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l tests/unorganized/persistent_driver/test_cli/*.py)",
+      "Bash(ls tests/unorganized/*.py)",
+      "Bash(ls tests/unorganized/persistent_driver/*.py)",
+      "Bash(ls tests/unorganized/persistent_driver/test_cli/*.py)",
+      "Bash(git mv:*)",
+      "Read(//Users/bc/code/freelaw/juriscraper/juriscraper/sd/state/**)",
+      "Bash(xargs -I {} basename {})"
+    ]
+  }
+}

@@ -284,5 +284,5 @@ transient exceptions and invoke the ``on_transient_exception`` callback:
 Next Steps
 ----------
 
-In :doc:`11_archive_callback`, we'll introduce archive callbacks for handling
+In :doc:`10_archive_callback`, we'll introduce archive callbacks for handling
 file storage and archival during scraping.

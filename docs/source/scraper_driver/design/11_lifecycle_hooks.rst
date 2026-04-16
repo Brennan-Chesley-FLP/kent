@@ -95,7 +95,7 @@ to ensure it fires even when exceptions occur:
 Next Steps
 ----------
 
-In :doc:`13_priority_queue`, we introduce a priority queue for request
+In :doc:`12_priority_queue`, we introduce a priority queue for request
 ordering. This allows scrapers to control execution order by assigning
 priorities to requests, ensuring archive requests run after detail pages
 or urgent requests run first.

@@ -334,17 +334,20 @@ from typing import TYPE_CHECKING, ClassVar
 from urllib.parse import urljoin
 
 from kent.common.decorators import entry, step
+from kent.common.exceptions import TransientException
 from kent.common.page_element import PageElement
-from kent.common.param_models import DateRange
+from kent.common.param_models import DateRange, SpeculativeRange
 from kent.common.speculation_types import SimpleSpeculation  # or YearlySpeculation
 from kent.data_types import (
     BaseScraper,
+    DriverRequirement,
     HttpMethod,
     HTTPRequestParams,
     ParsedData,
     Request,
     Response,
     ScraperStatus,
+    SkipDeduplicationCheck,
 )
 from pyrate_limiter import Duration, Rate
 
@@ -370,6 +373,10 @@ class {Name}Scraper(BaseScraper[{MainType}]):
     version: ClassVar[str] = "{YYYY-MM-DD}"
     requires_auth: ClassVar[bool] = False
     rate_limits: ClassVar[list[Rate] | None] = [Rate(1, Duration.SECOND)]
+    # Only if Playwright is needed (bot protection, JS SPA):
+    # driver_requirements: ClassVar[list[DriverRequirement]] = [
+    #     DriverRequirement.JS_EVAL, DriverRequirement.FF_ALIKE,
+    # ]
 ```
 
 If the scraper yields multiple top-level types, the generic parameter should
@@ -415,6 +422,15 @@ def fetch_{court_prefix}_docket(self, case_number: int) -> Request:
     )
 ```
 
+Alternative: use `SpeculativeRange` as the parameter type (provides `.number`
+and `.gap`):
+```python
+@entry({Docket})
+def fetch_{court_prefix}_docket(self, rid: SpeculativeRange) -> Request:
+    docket_id = f"{PREFIX}{rid.number:06d}"
+    return self._make_search_request(docket_id, court_id="...")
+```
+
 For year-partitioned numbers use `YearlySpeculation` with `YearPartition`
 entries per year.
 
@@ -430,12 +446,14 @@ def get_oral_arguments_by_date(self, date_range: DateRange) -> Generator[Request
 
 Each step function:
 - Accepts injected parameters by name: `page` (PageElement), `response`
-  (Response), `accumulated_data` (dict), `json_content` (dict),
-  `local_filepath` (str | None).
+  (Response), `accumulated_data` (dict), `json_content` (dict/list),
+  `text` (str), `local_filepath` (str | None)
 - Uses `page.query_xpath()`, `page.find_form()`, `page.find_links()` for
   HTML parsing.
 - Yields `Request` for follow-on pages and `ParsedData` for final output.
 - Passes context forward via `accumulated_data`.
+- Values in `accumulated_data` must be JSON-serializable. Use
+  `.model_dump(mode="json")` for Pydantic models, `.isoformat()` for dates.
 
 **Typical flow for a case detail scraper:**
 ```
@@ -498,6 +516,74 @@ yield Request(
 )
 ```
 
+### Deduplication
+
+Use `deduplication_key` on Requests to avoid visiting the same case twice when
+overlapping searches produce duplicate results:
+
+```python
+yield Request(
+    request=HTTPRequestParams(method=HttpMethod.GET, url=case_url),
+    continuation=self.parse_case,
+    deduplication_key=docket_id,  # same docket_id won't be fetched twice
+)
+```
+
+For pagination requests that must always execute, skip dedup:
+
+```python
+from kent.data_types import SkipDeduplicationCheck
+
+yield Request(
+    request=HTTPRequestParams(method=HttpMethod.GET, url=next_page_url),
+    continuation=self.parse_results,
+    deduplication_key=SkipDeduplicationCheck(),
+)
+```
+
+### Pagination
+
+**HTML next-link pagination**: follow "Next" links with
+`page.find_links("//a[contains(text(), 'Next')]", ...)`.
+
+**API offset pagination**: track `page` in `accumulated_data`, increment,
+and yield a new Request until `current_page >= total_pages`.
+
+**Date-range splitting**: some APIs cap results (e.g., 10,000). If a search
+returns the maximum, split the date range in half and re-search each half.
+
+All pagination requests should use
+`deduplication_key=SkipDeduplicationCheck()`.
+
+### Driver requirements
+
+If Phase 4 determines Playwright is needed, add to the class:
+
+```python
+from kent.data_types import DriverRequirement
+
+driver_requirements: ClassVar[list[DriverRequirement]] = [
+    DriverRequirement.JS_EVAL,
+    DriverRequirement.FF_ALIKE,
+]
+```
+
+Values: `JS_EVAL`, `FF_ALIKE`, `CHROME_ALIKE`, `HCAP_HANDLER` (hCaptcha),
+`RCAP_HANDLER` (reCAPTCHA).
+
+Steps that need to wait for JS rendering should use `@step(await_list=[...])`:
+
+```python
+from kent.data_types import WaitForLoadState, WaitForSelector
+
+@step(await_list=[
+    WaitForLoadState("networkidle"),
+    WaitForSelector("table.results"),
+])
+def parse_results(self, page, accumulated_data):
+    ...
+```
+
 ---
 
 ## Checklist Before Finishing
@@ -505,11 +591,15 @@ yield Request(
 - [ ] DESIGN.md documents all findings from Phases 1-4
 - [ ] Court mapping table is complete with CourtListener IDs
 - [ ] models.py has all ScrapedData models with typed fields
-- [ ] scraper.py has proper class metadata (court_ids, status, rate_limits)
+- [ ] scraper.py has proper class metadata (court_ids, data_types, status, version, rate_limits)
+- [ ] `driver_requirements` set if Playwright needed
 - [ ] Entry points cover all courts (one per court if speculative)
 - [ ] Entry points cover oral arguments if the site has a calendar
 - [ ] Step functions parse every tab/section discovered in Phase 3
+- [ ] Pagination handled with `SkipDeduplicationCheck()` on next-page requests
+- [ ] Custom `deduplication_key` set where overlapping searches may yield duplicates
 - [ ] Document downloads use `archive=True`
+- [ ] `accumulated_data` values are JSON-serializable
 - [ ] Email notification capability is documented (not necessarily implemented)
 - [ ] Bot protection fields are handled in form submissions
 - [ ] `__init__.py` exists in the target directory

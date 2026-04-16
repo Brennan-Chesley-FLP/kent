@@ -390,7 +390,7 @@ Speculative Entries
 -------------------
 
 For scrapers that probe sequential IDs, entry function parameters can
-implement the ``Speculative`` protocol (see :doc:`19_speculative_request`).
+implement the ``Speculative`` protocol (see :doc:`18_speculative_request`).
 The ``@entry`` decorator auto-detects these parameters:
 
 .. code-block:: python
@@ -504,7 +504,7 @@ Best Practices
 
 1. Use Pydantic BaseModel parameters for structured input (date ranges, filters)
 2. Use primitives (``str``, ``int``, ``date``) for simple single-value parameters
-3. Use a ``Speculative`` protocol model for ID-based scrapers (see :doc:`19_speculative_request`)
+3. Use a ``Speculative`` protocol model for ID-based scrapers (see :doc:`18_speculative_request`)
 4. Every scraper needs at least one ``@entry`` method
 
 **initial_seed():**
@@ -579,6 +579,6 @@ Testing
 Next Steps
 ----------
 
-In :doc:`18_async_driver`, we introduce the AsyncDriver - an asynchronous
+In :doc:`17_async_driver`, we introduce the AsyncDriver - an asynchronous
 implementation that processes multiple requests concurrently using worker
 coroutines for improved performance on I/O-bound workloads.

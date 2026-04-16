@@ -59,7 +59,6 @@ The ``deduplication_key`` field is added to ``BaseRequest``:
         current_location: str = ""
         previous_requests: list[BaseRequest] = field(default_factory=list)
         accumulated_data: dict[str, Any] = field(default_factory=dict)
-        aux_data: dict[str, Any] = field(default_factory=dict)
         priority: int = 9
         deduplication_key: str | None = None  # Step 16
 
@@ -79,7 +78,7 @@ This ensures:
 - Different URL or data = different key
 
 In the event that we need to skip deduplication checks, the key may be set to ``SkipDeduplicationCheck()``.
-This can be important if the request is changing every time, or we're retrying something with aux_data.
+This can be important if the request is changing every time, or we're retrying something with transient state.
 
 
 Duplicate Check Callback
@@ -114,7 +113,7 @@ The ``duplicate_check`` callback allows custom deduplication logic:
 Next Steps
 ----------
 
-In :doc:`15_permanent_data`, we introduce permanent request data - headers
+In :doc:`14_permanent_data`, we introduce permanent request data - headers
 and cookies that persist across the entire request chain. This simplifies
 authentication workflows where session cookies or auth tokens must flow
 through all requests.

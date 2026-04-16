@@ -43,7 +43,6 @@ The decorator inspects function signatures and injects values based on parameter
 - **lxml_tree**: Response content parsed as CheckedHtmlElement
 - **text**: Response content as string
 - **accumulated_data**: From the Request object
-- **aux_data**: From the Request object
 
 Implementation Details
 ----------------------
@@ -133,7 +132,7 @@ JSON API
 Next Steps
 ----------
 
-In :doc:`17_search_and_standardization`, we introduce standardized metadata
+In :doc:`16_search_and_standardization`, we introduce standardized metadata
 on scrapers, ``@entry`` decorators with typed parameters, and the
 ``initial_seed()`` interface for configuring scraper filters.
 

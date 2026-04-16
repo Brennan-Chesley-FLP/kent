@@ -202,6 +202,6 @@ More workers might overwhelm servers, be mindful.
 Next Steps
 ----------
 
-In :doc:`19_speculative_request`, we introduce the ``Speculative`` protocol for
+In :doc:`18_speculative_request`, we introduce the ``Speculative`` protocol for
 probing sequential IDs.  Scraper-owned Pydantic models implement the protocol,
 and the driver handles seeding, tracking, and adaptive extension automatically.

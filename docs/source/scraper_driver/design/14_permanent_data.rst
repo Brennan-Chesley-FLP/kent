@@ -101,7 +101,7 @@ Session Cookie Authentication
 Next Steps
 ----------
 
-In :doc:`16_step_decorators`, we introduce the @step decorator for scraper
+In :doc:`15_step_decorators`, we introduce the @step decorator for scraper
 methods. This decorator uses argument inspection to automatically inject
 parsed content (lxml trees, JSON, text) and request context, reducing
 boilerplate and enabling callable continuations.

@@ -184,7 +184,7 @@ class PersistentDriver(
             None
         )
 
-        # Stop event for graceful shutdown (always set, not optional like in parent)
+        # Stop event for graceful shutdown
         self.stop_event: asyncio.Event = asyncio.Event()
 
         # Worker management for dynamic scaling

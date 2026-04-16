@@ -137,7 +137,7 @@ The archive callback is called in ``resolve_archive_request``:
 Next Steps
 ----------
 
-In :doc:`12_lifecycle_hooks`, we introduce lifecycle hooks (on_run_start and
+In :doc:`11_lifecycle_hooks`, we introduce lifecycle hooks (on_run_start and
 on_run_complete) for tracking scraper runs. These callbacks fire at the
 beginning and end of each run, providing visibility into scraper lifecycle
 for monitoring and metrics.
