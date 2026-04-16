@@ -67,22 +67,6 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_full_scraping_pipeline_with_accumulated_data` — Integration: data flows through multi-page pipeline
 - `test_accumulated_data_flows_through_three_pages` — Integration: data flows through three-page chain
 
-### `test_aux_data.py`
-- `test_base_request_has_aux_data_field` — BaseRequest has aux_data dict field
-- `test_aux_data_can_be_set` — aux_data can be set at construction
-- `test_aux_data_is_deep_copied` — aux_data is deep copied to prevent sharing
-- `test_aux_data_and_accumulated_data_are_independent` — aux_data and accumulated_data are separate concerns
-- `test_sibling_requests_have_independent_aux_data` — Sibling requests get independent aux_data copies
-- `test_nested_dict_mutations_do_not_propagate` — Nested dict mutations don't cross request boundaries
-- `test_navigating_request_propagates_aux_data` — Navigating request carries aux_data forward
-- `test_non_navigating_request_propagates_aux_data` — Non-navigating request carries aux_data forward
-- `test_archive_request_propagates_aux_data` — Archive request carries aux_data forward
-- `test_parse_list_extracts_session_token_to_aux_data` — Scraper extracts session token into aux_data
-- `test_parse_list_puts_case_data_in_accumulated_data` — Scraper separates case data from navigation metadata
-- `test_full_scraping_pipeline_with_aux_data` — Integration: aux_data flows through multi-page pipeline
-- `test_aux_data_flows_through_three_pages` — Integration: aux_data flows through three-page chain
-- `test_session_token_validated_when_provided` — Integration: session token in aux_data is validated by server
-
 ### `test_archive_request.py`
 - `test_archive_request_stores_url` — Archive request stores the target URL
 - `test_archive_request_stores_continuation` — Archive request stores continuation name
@@ -427,8 +411,6 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_local_filepath_injected_for_archive_response` — local_filepath injected from ArchiveResponse
 - `test_local_filepath_none_for_regular_response` — local_filepath is None for regular Response
 - `test_accumulated_data_injected` — @step injects accumulated_data from request
-- `test_aux_data_injected` — @step injects aux_data from request
-- `test_both_data_types_injected` — accumulated_data and aux_data injected together
 
 ### `test_single_page.py`
 - `test_parses_html` — single_page() parses HTML and returns ParsedData items

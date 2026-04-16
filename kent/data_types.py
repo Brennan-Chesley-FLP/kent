@@ -12,7 +12,6 @@ Step 2 adds Request and Response.
 Step 3 introduces BaseRequest and current_location tracking.
 Step 4 adds archive support and ArchiveResponse for file downloads.
 Step 5 adds accumulated_data to BaseRequest with deep copy semantics.
-Step 6 adds aux_data to BaseRequest for navigation metadata (tokens, session data).
 """
 
 from __future__ import annotations
@@ -797,7 +796,6 @@ class BaseRequest:
         current_location: The URL context for resolving relative URLs.
         previous_requests: Chain of requests that led to this one.
         accumulated_data: Data collected across the request chain.
-        aux_data: Navigation metadata (tokens, session data) needed for requests.
         priority: Priority for request queue ordering (lower = higher priority).
         deduplication_key: Key for deduplication (defaults to hash of URL and data).
         permanent: Persistent data (cookies, headers) that flows through the request chain.
@@ -817,7 +815,6 @@ class BaseRequest:
     current_location: str = ""
     previous_requests: list[BaseRequest] = field(default_factory=list)
     accumulated_data: dict[str, Any] = field(default_factory=dict)
-    aux_data: dict[str, Any] = field(default_factory=dict)
     priority: int = 9
     deduplication_key: str | None | SkipDeduplicationCheck = None
     permanent: dict[str, Any] = field(default_factory=dict)
@@ -827,24 +824,22 @@ class BaseRequest:
     bypass_rate_limit: bool = False
 
     def __post_init__(self) -> None:
-        """Deep copy accumulated_data, aux_data, and permanent to prevent unintended sharing.
+        """Deep copy accumulated_data and permanent to prevent unintended sharing.
 
         Step 16: Also generates default deduplication_key if not provided.
         Step 18: Also deep copies permanent dict and merges permanent headers/cookies
         into the HTTPRequestParams.
 
         When a scraper yields multiple requests from the same method, they might
-        share the same accumulated_data or aux_data dicts. Without deep copy,
-        mutations in one branch would affect sibling branches. This is critical
-        for correctness.
+        share the same accumulated_data dict. Without deep copy, mutations in one
+        branch would affect sibling branches. This is critical for correctness.
 
         Example problem without deep copy::
 
             shared_data = {"case_name": "Ant v. Bee"}
-            shared_aux = {"session_token": "abc123"}
-            yield Request(url="/detail/1", accumulated_data=shared_data, aux_data=shared_aux)
-            yield Request(url="/detail/2", accumulated_data=shared_data, aux_data=shared_aux)
-            # If detail/1 mutates the dicts, detail/2 sees the mutation - BUG!
+            yield Request(url="/detail/1", accumulated_data=shared_data)
+            yield Request(url="/detail/2", accumulated_data=shared_data)
+            # If detail/1 mutates the dict, detail/2 sees the mutation - BUG!
 
         The deep copy ensures each request gets its own independent copy of the data.
         """
@@ -852,7 +847,6 @@ class BaseRequest:
         object.__setattr__(
             self, "accumulated_data", deepcopy(self.accumulated_data)
         )
-        object.__setattr__(self, "aux_data", deepcopy(self.aux_data))
         object.__setattr__(self, "permanent", deepcopy(self.permanent))
 
         # Step 18: Merge permanent headers and cookies into HTTPRequestParams
@@ -1029,7 +1023,7 @@ class Request(BaseRequest):
 
         - If context is a Response, use the response's URL as current_location
         - If context is a Request, use its current_location
-        - accumulated_data and aux_data are carried forward from the new request (self)
+        - accumulated_data is carried forward from the new request (self)
 
         Args:
             context: Response from a previous request or the originating Request.
@@ -1046,7 +1040,6 @@ class Request(BaseRequest):
             current_location=location,
             previous_requests=parent.previous_requests + [parent],
             accumulated_data=self.accumulated_data,
-            aux_data=self.aux_data,
             priority=self.priority,
             deduplication_key=self.deduplication_key,
             permanent=merged_permanent,
@@ -1082,7 +1075,6 @@ class Request(BaseRequest):
             current_location=self.current_location,
             previous_requests=self.previous_requests,
             accumulated_data=self.accumulated_data,
-            aux_data=self.aux_data,
             priority=self.priority,
             deduplication_key=self.deduplication_key,
             permanent=self.permanent,

@@ -9,7 +9,6 @@ It evolves across the 29 steps of the design documentation.
 - Step 3: Tracks current_location and handles non-navigating requests.
 - Step 4: Handles archive requests to download and save files locally.
 - Step 5: No driver changes - accumulated_data flows through requests automatically.
-- Step 6: No driver changes - aux_data flows through requests automatically.
 - Step 7: Adds on_data callback for side effects (persistence, logging) when data yielded.
 - Step 9: Adds on_invalid_data callback for handling validation failures.
 - Step 10: Adds on_transient_exception callback for handling transient errors.

@@ -621,7 +621,6 @@ async def get_response_output(
             RequestModel.method,
             RequestModel.url,
             RequestModel.accumulated_data_json,
-            RequestModel.aux_data_json,
             RequestModel.permanent_json,
         ).where(
             RequestModel.id == request_id,
@@ -644,7 +643,6 @@ async def get_response_output(
         method,
         request_url,
         accumulated_data_json,
-        aux_data_json,
         permanent_json,
     ) = row
 
@@ -662,7 +660,6 @@ async def get_response_output(
     accumulated_data = (
         json.loads(accumulated_data_json) if accumulated_data_json else {}
     )
-    aux_data = json.loads(aux_data_json) if aux_data_json else {}
     permanent = json.loads(permanent_json) if permanent_json else {}
 
     http_params = HTTPRequestParams(
@@ -674,7 +671,6 @@ async def get_response_output(
         continuation=continuation_name,
         current_location=request_url,
         accumulated_data=accumulated_data,
-        aux_data=aux_data,
         permanent=permanent,
     )
 

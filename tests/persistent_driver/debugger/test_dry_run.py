@@ -100,7 +100,6 @@ def test_dry_run_captures_data_and_requests():
 
     request_data = {
         "accumulated_data_json": json.dumps({}),
-        "aux_data_json": json.dumps({}),
         "permanent_json": json.dumps({}),
         "current_location": "https://example.com",
         "url": "https://example.com/index",
@@ -145,7 +144,6 @@ def test_dry_run_captures_archive_request():
 
     request_data = {
         "accumulated_data_json": json.dumps({}),
-        "aux_data_json": json.dumps({}),
         "permanent_json": json.dumps({}),
         "current_location": "https://example.com",
         "url": "https://example.com/page",
@@ -180,7 +178,6 @@ def test_dry_run_captures_error():
 
     request_data = {
         "accumulated_data_json": json.dumps({}),
-        "aux_data_json": json.dumps({}),
         "permanent_json": json.dumps({}),
         "current_location": "https://example.com",
         "url": "https://example.com/error",
@@ -209,7 +206,6 @@ def test_dry_run_reconstructs_context():
 
     # Prepare request data with context
     accumulated_data = {"case_name": "Test v. Case", "count": 5}
-    aux_data = {"token": "abc123"}
     permanent_data = {"session_id": "xyz789"}
 
     response_data = {
@@ -222,7 +218,6 @@ def test_dry_run_reconstructs_context():
 
     request_data = {
         "accumulated_data_json": json.dumps(accumulated_data),
-        "aux_data_json": json.dumps(aux_data),
         "permanent_json": json.dumps(permanent_data),
         "current_location": "https://example.com",
         "url": "https://example.com/index",
@@ -241,7 +236,6 @@ def test_dry_run_reconstructs_context():
     # The child request should inherit the context
     # (actual assertion would depend on how scraper yields requests)
     assert child_request.accumulated_data == {}  # New request resets this
-    assert child_request.aux_data == {}
     assert child_request.permanent == {}
 
 
@@ -264,7 +258,6 @@ def test_dry_run_no_network_io():
 
     request_data = {
         "accumulated_data_json": json.dumps({}),
-        "aux_data_json": json.dumps({}),
         "permanent_json": json.dumps({}),
         "current_location": "https://example.com",
         "url": "https://example.com",

@@ -9,7 +9,6 @@ Step 2: A class with multiple methods, yielding ParsedData and Request.
 Step 3: Uses Request(nonnavigating=True) to fetch JSON API data without navigating.
 Step 4: Uses Request(archive=True) to download and archive PDF and MP3 files.
 Step 5: Uses accumulated_data to flow case data from appeals to trial court.
-Step 6: Uses aux_data to flow session tokens for authenticated file downloads.
 Step 8: Uses CheckedHtmlElement to validate HTML structure assumptions.
 Step 9: Uses Pydantic models with deferred validation for data validation.
 """

@@ -539,7 +539,6 @@ def _requests_equal(req1: CapturedRequest, req2: CapturedRequest) -> bool:
         and req1.method == req2.method
         and req1.continuation == req2.continuation
         and req1.accumulated_data == req2.accumulated_data
-        and req1.aux_data == req2.aux_data
         and req1.permanent == req2.permanent
         and req1.current_location == req2.current_location
         and req1.priority == req2.priority

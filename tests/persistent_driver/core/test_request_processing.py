@@ -606,7 +606,7 @@ class TestNonNavigatingHandling:
                     ),
                     continuation="parse_metadata",
                     current_location=response.url,  # Keep same location
-                    aux_data={"source": "main_page"},
+                    accumulated_data={"source": "main_page"},
                 )
 
             def parse_metadata(self, response: Response):
@@ -614,7 +614,9 @@ class TestNonNavigatingHandling:
                     {
                         "metadata": "fetched",
                         "source_location": response.request.current_location,
-                        "aux_source": response.request.aux_data.get("source"),
+                        "aux_source": response.request.accumulated_data.get(
+                            "source"
+                        ),
                     }
                 )
 

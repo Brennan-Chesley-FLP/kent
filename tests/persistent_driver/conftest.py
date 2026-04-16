@@ -96,7 +96,6 @@ async def populated_db(initialized_db):
             continuation=continuation,
             current_location="",
             accumulated_data_json="{}",
-            aux_data_json="{}",
             permanent_json="{}",
             expected_type=None,
             dedup_key=None,

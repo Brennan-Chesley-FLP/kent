@@ -101,7 +101,6 @@ class QueueMixin:
             continuation=request_data["continuation"],
             current_location=request_data["current_location"],
             accumulated_data_json=request_data["accumulated_data_json"],
-            aux_data_json=request_data["aux_data_json"],
             permanent_json=request_data["permanent_json"],
             expected_type=request_data["expected_type"],
             dedup_key=dedup_key,
@@ -221,11 +220,6 @@ class QueueMixin:
             )
             if request.accumulated_data
             else None,
-            "aux_data_json": json.dumps(
-                request.aux_data, default=_json_default
-            )
-            if request.aux_data
-            else None,
             "permanent_json": json.dumps(permanent_data, default=_json_default)
             if permanent_data
             else None,
@@ -267,10 +261,10 @@ class QueueMixin:
             return None
 
         request_id = row[0]
-        parent_request_id = row[20]  # Last column in RETURNING clause
+        parent_request_id = row[19]  # Last column in RETURNING clause
 
-        # Deserialize using the first 20 columns (excluding parent_request_id)
-        request = self._deserialize_request(row[:20])
+        # Deserialize using the first 19 columns (excluding parent_request_id)
+        request = self._deserialize_request(row[:19])
         return (request_id, request, parent_request_id)
 
     def _deserialize_request(self, row: tuple[Any, ...]) -> BaseRequest:
@@ -294,7 +288,6 @@ class QueueMixin:
             continuation,
             current_location,
             accumulated_data_json,
-            aux_data_json,
             permanent_json,
             expected_type,
             priority,
@@ -312,7 +305,6 @@ class QueueMixin:
         accumulated_data = (
             json.loads(accumulated_data_json) if accumulated_data_json else {}
         )
-        aux_data = json.loads(aux_data_json) if aux_data_json else {}
         permanent = json.loads(permanent_json) if permanent_json else {}
 
         # Parse speculation_id from JSON tuple ["func_name", param_index, spec_id]
@@ -378,7 +370,6 @@ class QueueMixin:
                 continuation=continuation,
                 current_location=current_location,
                 accumulated_data=accumulated_data,
-                aux_data=aux_data,
                 permanent=permanent,
                 priority=priority,
                 deduplication_key=deduplication_key_raw,
@@ -393,7 +384,6 @@ class QueueMixin:
                 continuation=continuation,
                 current_location=current_location,
                 accumulated_data=accumulated_data,
-                aux_data=aux_data,
                 permanent=permanent,
                 priority=priority,
                 deduplication_key=deduplication_key_raw,
@@ -407,7 +397,6 @@ class QueueMixin:
                 continuation=continuation,
                 current_location=current_location,
                 accumulated_data=accumulated_data,
-                aux_data=aux_data,
                 permanent=permanent,
                 priority=priority,
                 deduplication_key=deduplication_key_raw,

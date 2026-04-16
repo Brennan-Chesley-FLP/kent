@@ -238,8 +238,8 @@ CASES: list[MockCase] = [
 def generate_cases_html() -> str:
     """Generate HTML for the case list page.
 
-    Step 6: Includes a hidden session_token field for demonstrating aux_data.
-    The token is required for downloading PDF opinions.
+    Includes a hidden session_token field. The token is required for
+    downloading PDF opinions.
 
     Returns:
         HTML string containing the list of cases.
@@ -487,8 +487,8 @@ async def handle_opinion_pdf(request: web.Request) -> web.Response:
     This endpoint provides downloadable opinion PDFs for cases that have
     opinions available, useful for demonstrating Request(archive=True).
 
-    Step 6: Requires X-Session-Token header for authentication, demonstrating
-    the use of aux_data to carry navigation metadata through request chains.
+    Requires X-Session-Token header for authentication when a token is
+    provided; unauthenticated access is allowed for backward compatibility.
     """
     docket = request.match_info["docket"].replace(".pdf", "")
     case = get_case_by_docket(docket)
@@ -500,10 +500,8 @@ async def handle_opinion_pdf(request: web.Request) -> web.Response:
             content_type="text/html",
         )
 
-    # Step 6: Optionally check for session token in header
+    # Optionally check for session token in header.
     # If the client provides a token, validate it. If not provided, allow access.
-    # This maintains backward compatibility with Step 4 tests while demonstrating
-    # aux_data in Step 6.
     session_token = request.headers.get("X-Session-Token")
     if session_token and session_token != "bug-session-token-abc123":
         return web.Response(

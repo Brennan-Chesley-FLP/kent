@@ -183,7 +183,6 @@ class SpeculationMixin:
                     accumulated_data_json=request_data[
                         "accumulated_data_json"
                     ],
-                    aux_data_json=request_data["aux_data_json"],
                     permanent_json=request_data["permanent_json"],
                     expected_type=request_data["expected_type"],
                     dedup_key=None,
@@ -217,7 +216,6 @@ class SpeculationMixin:
                         accumulated_data_json=request_data[
                             "accumulated_data_json"
                         ],
-                        aux_data_json=request_data["aux_data_json"],
                         permanent_json=request_data["permanent_json"],
                         expected_type=request_data["expected_type"],
                         dedup_key=None,
@@ -287,7 +285,6 @@ class SpeculationMixin:
                     accumulated_data_json=request_data[
                         "accumulated_data_json"
                     ],
-                    aux_data_json=request_data["aux_data_json"],
                     permanent_json=request_data["permanent_json"],
                     expected_type=request_data["expected_type"],
                     dedup_key=None,

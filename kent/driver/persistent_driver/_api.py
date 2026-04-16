@@ -218,7 +218,6 @@ class APIMixin:
                 RequestModel.method,
                 RequestModel.url,
                 RequestModel.accumulated_data_json,
-                RequestModel.aux_data_json,
                 RequestModel.permanent_json,
             ).where(
                 RequestModel.id == request_id,
@@ -238,7 +237,6 @@ class APIMixin:
             method,
             request_url,
             accumulated_data_json,
-            aux_data_json,
             permanent_json,
         ) = row
 
@@ -252,7 +250,6 @@ class APIMixin:
         accumulated_data = (
             json.loads(accumulated_data_json) if accumulated_data_json else {}
         )
-        aux_data = json.loads(aux_data_json) if aux_data_json else {}
         permanent = json.loads(permanent_json) if permanent_json else {}
 
         http_params = HTTPRequestParams(
@@ -265,7 +262,6 @@ class APIMixin:
             continuation=continuation_name,
             current_location=request_url,
             accumulated_data=accumulated_data,
-            aux_data=aux_data,
             permanent=permanent,
         )
 

@@ -25,7 +25,6 @@ async def _create_parent_request(sql_manager: SQLManager) -> int:
         continuation="parse",
         current_location="",
         accumulated_data_json=None,
-        aux_data_json=None,
         permanent_json=None,
         expected_type=None,
         dedup_key=None,

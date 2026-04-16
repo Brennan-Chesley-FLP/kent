@@ -11,7 +11,6 @@ Supported parameter names:
 - request: The current BaseRequest
 - previous_request: The parent request from the chain
 - accumulated_data: Data collected across the request chain (from request)
-- aux_data: Navigation metadata like tokens, session data (from request)
 - json_content: Response content parsed as JSON
 - lxml_tree: Response content parsed as CheckedHtmlElement
 - text: Response content as string
@@ -272,7 +271,6 @@ def step(
     - request: The current BaseRequest
     - previous_request: The parent request from the chain (if available)
     - accumulated_data: Data collected across the request chain (from request)
-    - aux_data: Navigation metadata like tokens, session data (from request)
     - json_content: Response content parsed as JSON
     - lxml_tree: Response content parsed as CheckedHtmlElement
     - page: Response content parsed as PageElement (LxmlPageElement with observer)
@@ -384,9 +382,6 @@ def step(
                 injected_kwargs["accumulated_data"] = (
                     response.request.accumulated_data
                 )
-
-            if "aux_data" in param_names:
-                injected_kwargs["aux_data"] = response.request.aux_data
 
             # Content transformations (lazy - only parse if requested)
             if "json_content" in param_names:

@@ -247,7 +247,6 @@ class ComparisonMixin:
                     Request.continuation,
                     Request.current_location,
                     Request.accumulated_data_json,
-                    Request.aux_data_json,
                     Request.permanent_json,
                 ).where(Request.id == request_id)
             )
@@ -261,8 +260,7 @@ class ComparisonMixin:
             "continuation": request_row[3],
             "current_location": request_row[4],
             "accumulated_data_json": request_row[5],
-            "aux_data_json": request_row[6],
-            "permanent_json": request_row[7],
+            "permanent_json": request_row[6],
         }
 
         # Get the response data from the request row (merged table)
@@ -329,7 +327,6 @@ class ComparisonMixin:
                 Request.continuation,
                 Request.current_location,
                 Request.accumulated_data_json,
-                Request.aux_data_json,
                 Request.permanent_json,
                 Request.priority,
                 Request.deduplication_key,
@@ -348,7 +345,6 @@ class ComparisonMixin:
             req_alias.c.continuation,
             req_alias.c.current_location,
             req_alias.c.accumulated_data_json,
-            req_alias.c.aux_data_json,
             req_alias.c.permanent_json,
             req_alias.c.priority,
             req_alias.c.deduplication_key,
@@ -379,14 +375,13 @@ class ComparisonMixin:
                     method=row[3],
                     continuation=row[4],
                     accumulated_data=(json.loads(row[6]) if row[6] else {}),
-                    aux_data=(json.loads(row[7]) if row[7] else {}),
-                    permanent=(json.loads(row[8]) if row[8] else {}),
+                    permanent=(json.loads(row[7]) if row[7] else {}),
                     current_location=row[5] or "",
-                    priority=row[9],
-                    deduplication_key=row[10],
+                    priority=row[8],
+                    deduplication_key=row[9],
                     is_speculative=False,
                     speculation_id=None,
-                    expected_type=row[11],
+                    expected_type=row[10],
                 )
             )
 
@@ -479,7 +474,6 @@ class ComparisonMixin:
                     Request.continuation,
                     Request.current_location,
                     Request.accumulated_data_json,
-                    Request.aux_data_json,
                     Request.permanent_json,
                 ).where(Request.id == request_id)
             )
@@ -493,7 +487,6 @@ class ComparisonMixin:
             continuation_name,
             current_location,
             accumulated_data_json,
-            aux_data_json,
             permanent_json,
         ) = request_row
 
@@ -525,7 +518,6 @@ class ComparisonMixin:
         accumulated_data = (
             json.loads(accumulated_data_json) if accumulated_data_json else {}
         )
-        aux_data = json.loads(aux_data_json) if aux_data_json else {}
         permanent = json.loads(permanent_json) if permanent_json else {}
 
         reconstructed_request = DataRequest(
@@ -536,7 +528,6 @@ class ComparisonMixin:
             continuation=continuation_name,
             current_location=current_location or url,
             accumulated_data=accumulated_data,
-            aux_data=aux_data,
             permanent=permanent,
         )
 

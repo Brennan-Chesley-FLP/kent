@@ -48,7 +48,6 @@ class CapturedRequest:
         method: HTTP method.
         continuation: Continuation method name.
         accumulated_data: Data accumulated through the request chain.
-        aux_data: Navigation metadata (tokens, session data).
         permanent: Persistent data (cookies, headers).
         current_location: URL context for relative URL resolution.
         priority: Request priority.
@@ -63,7 +62,6 @@ class CapturedRequest:
     method: str
     continuation: str
     accumulated_data: dict[str, Any]
-    aux_data: dict[str, Any]
     permanent: dict[str, Any]
     current_location: str
     priority: int
@@ -155,7 +153,6 @@ class DryRunDriver(Generic[T]):
                 - url: Final URL after redirects
             request_data: Stored request data with fields:
                 - accumulated_data_json: JSON string of accumulated_data
-                - aux_data_json: JSON string of aux_data
                 - permanent_json: JSON string of permanent data
                 - current_location: URL context for relative URLs
                 - url: Request URL
@@ -169,11 +166,6 @@ class DryRunDriver(Generic[T]):
         accumulated_data = (
             json.loads(request_data["accumulated_data_json"])
             if request_data.get("accumulated_data_json")
-            else {}
-        )
-        aux_data = (
-            json.loads(request_data["aux_data_json"])
-            if request_data.get("aux_data_json")
             else {}
         )
         permanent = (
@@ -192,7 +184,6 @@ class DryRunDriver(Generic[T]):
             continuation=request_data.get("continuation", continuation_name),
             current_location=current_location,
             accumulated_data=accumulated_data,
-            aux_data=aux_data,
             permanent=permanent,
         )
 
@@ -296,7 +287,6 @@ class DryRunDriver(Generic[T]):
                 else request.continuation.__name__
             ),
             accumulated_data=request.accumulated_data,
-            aux_data=request.aux_data,
             permanent=request.permanent,
             current_location=request.current_location,
             priority=request.priority,

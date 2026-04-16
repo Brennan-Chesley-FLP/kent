@@ -95,7 +95,6 @@ class RequestQueueMixin:
         continuation: str,
         current_location: str,
         accumulated_data_json: str | None,
-        aux_data_json: str | None,
         permanent_json: str | None,
         expected_type: str | None,
         dedup_key: str | None,
@@ -119,7 +118,6 @@ class RequestQueueMixin:
             continuation: Continuation method name.
             current_location: Current navigation location.
             accumulated_data_json: JSON-encoded accumulated data.
-            aux_data_json: JSON-encoded aux data.
             permanent_json: JSON-encoded permanent data.
             expected_type: Expected type for archive requests.
             dedup_key: Deduplication key.
@@ -156,7 +154,6 @@ class RequestQueueMixin:
                     continuation=continuation,
                     current_location=current_location,
                     accumulated_data_json=accumulated_data_json,
-                    aux_data_json=aux_data_json,
                     permanent_json=permanent_json,
                     expected_type=expected_type,
                     deduplication_key=dedup_key,
@@ -184,7 +181,6 @@ class RequestQueueMixin:
         continuation: str,
         current_location: str,
         accumulated_data_json: str | None,
-        aux_data_json: str | None,
         permanent_json: str | None,
         dedup_key: str | None,
         verify: str | None = None,
@@ -204,7 +200,6 @@ class RequestQueueMixin:
             continuation: Continuation method name.
             current_location: Current location.
             accumulated_data_json: JSON-encoded accumulated data.
-            aux_data_json: JSON-encoded aux data.
             permanent_json: JSON-encoded permanent data.
             dedup_key: Deduplication key.
             bypass_rate_limit: If True, skip rate limiting for this request.
@@ -238,7 +233,6 @@ class RequestQueueMixin:
                     continuation=continuation,
                     current_location=current_location,
                     accumulated_data_json=accumulated_data_json,
-                    aux_data_json=aux_data_json,
                     permanent_json=permanent_json,
                     deduplication_key=dedup_key,
                     expected_type=expected_type,
@@ -274,7 +268,6 @@ class RequestQueueMixin:
                     Request.continuation,
                     Request.current_location,
                     Request.accumulated_data_json,
-                    Request.aux_data_json,
                     Request.permanent_json,
                     Request.expected_type,
                     Request.priority,
@@ -354,7 +347,6 @@ class RequestQueueMixin:
                     Request.continuation,
                     Request.current_location,
                     Request.accumulated_data_json,
-                    Request.aux_data_json,
                     Request.permanent_json,
                     Request.expected_type,
                     Request.priority,

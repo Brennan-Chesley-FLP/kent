@@ -96,7 +96,6 @@ class Request(SQLModel, table=True):  # type: ignore[call-arg]
         sa_column_kwargs={"server_default": sa.text("''")},
     )
     accumulated_data_json: str | None = None
-    aux_data_json: str | None = None
     permanent_json: str | None = None
     deduplication_key: str | None = Field(default=None)
     cache_key: str | None = None

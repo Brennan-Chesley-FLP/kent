@@ -30,7 +30,6 @@ class TestRequestTypeRoundTrip:
             continuation="parse_page",
             current_location="https://example.com",
             accumulated_data={"key": "value", "count": 42},
-            aux_data={"token": "xyz789"},
             permanent={"headers": {"Authorization": "Bearer token"}},
             priority=5,
         )
@@ -56,13 +55,13 @@ class TestRequestTypeRoundTrip:
                     status, priority, queue_counter, request_type,
                     method, url, headers_json, cookies_json, body,
                     continuation, current_location,
-                    accumulated_data_json, aux_data_json, permanent_json,
+                    accumulated_data_json, permanent_json,
                     expected_type
                 ) VALUES (
                     'pending', :priority, 1, :request_type,
                     :method, :url, :headers_json, :cookies_json, :body,
                     :continuation, :current_location,
-                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :accumulated_data_json, :permanent_json,
                     :expected_type
                 )
                 """),
@@ -79,7 +78,6 @@ class TestRequestTypeRoundTrip:
                     "accumulated_data_json": serialized[
                         "accumulated_data_json"
                     ],
-                    "aux_data_json": serialized["aux_data_json"],
                     "permanent_json": serialized["permanent_json"],
                     "expected_type": serialized["expected_type"],
                 },
@@ -92,7 +90,7 @@ class TestRequestTypeRoundTrip:
                 sa.text("""
                 SELECT id, request_type, method, url, headers_json, cookies_json, body,
                        continuation, current_location,
-                       accumulated_data_json, aux_data_json, permanent_json,
+                       accumulated_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
                        bypass_rate_limit, deduplication_key
@@ -117,7 +115,6 @@ class TestRequestTypeRoundTrip:
         assert deserialized.continuation == original.continuation
         assert deserialized.current_location == original.current_location
         assert deserialized.accumulated_data == original.accumulated_data
-        assert deserialized.aux_data == original.aux_data
         assert deserialized.permanent == original.permanent
         assert deserialized.priority == original.priority
 
@@ -148,7 +145,6 @@ class TestRequestTypeRoundTrip:
             continuation="process_api_response",
             current_location="https://example.com/main",
             accumulated_data={"items": [1, 2, 3]},
-            aux_data={"page": 2},
             permanent={"cookies": {"auth": "secret"}},
             priority=3,
         )
@@ -170,13 +166,13 @@ class TestRequestTypeRoundTrip:
                     status, priority, queue_counter, request_type,
                     method, url, headers_json, cookies_json, body,
                     continuation, current_location,
-                    accumulated_data_json, aux_data_json, permanent_json,
+                    accumulated_data_json, permanent_json,
                     expected_type
                 ) VALUES (
                     'pending', :priority, 1, :request_type,
                     :method, :url, :headers_json, :cookies_json, :body,
                     :continuation, :current_location,
-                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :accumulated_data_json, :permanent_json,
                     :expected_type
                 )
                 """),
@@ -193,7 +189,6 @@ class TestRequestTypeRoundTrip:
                     "accumulated_data_json": serialized[
                         "accumulated_data_json"
                     ],
-                    "aux_data_json": serialized["aux_data_json"],
                     "permanent_json": serialized["permanent_json"],
                     "expected_type": serialized["expected_type"],
                 },
@@ -206,7 +201,7 @@ class TestRequestTypeRoundTrip:
                 sa.text("""
                 SELECT id, request_type, method, url, headers_json, cookies_json, body,
                        continuation, current_location,
-                       accumulated_data_json, aux_data_json, permanent_json,
+                       accumulated_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
                        bypass_rate_limit, deduplication_key
@@ -230,7 +225,6 @@ class TestRequestTypeRoundTrip:
         assert deserialized.continuation == original.continuation
         assert deserialized.current_location == original.current_location
         assert deserialized.accumulated_data == original.accumulated_data
-        assert deserialized.aux_data == original.aux_data
         assert deserialized.permanent == original.permanent
         assert deserialized.priority == original.priority
 
@@ -257,7 +251,6 @@ class TestRequestTypeRoundTrip:
             current_location="https://example.com/documents",
             expected_type="pdf",
             accumulated_data={"document_id": "12345"},
-            aux_data={"filename": "document.pdf"},
             permanent={},
             priority=1,  # Default for archive Request
         )
@@ -279,13 +272,13 @@ class TestRequestTypeRoundTrip:
                     status, priority, queue_counter, request_type,
                     method, url, headers_json, cookies_json, body,
                     continuation, current_location,
-                    accumulated_data_json, aux_data_json, permanent_json,
+                    accumulated_data_json, permanent_json,
                     expected_type
                 ) VALUES (
                     'pending', :priority, 1, :request_type,
                     :method, :url, :headers_json, :cookies_json, :body,
                     :continuation, :current_location,
-                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :accumulated_data_json, :permanent_json,
                     :expected_type
                 )
                 """),
@@ -302,7 +295,6 @@ class TestRequestTypeRoundTrip:
                     "accumulated_data_json": serialized[
                         "accumulated_data_json"
                     ],
-                    "aux_data_json": serialized["aux_data_json"],
                     "permanent_json": serialized["permanent_json"],
                     "expected_type": serialized["expected_type"],
                 },
@@ -315,7 +307,7 @@ class TestRequestTypeRoundTrip:
                 sa.text("""
                 SELECT id, request_type, method, url, headers_json, cookies_json, body,
                        continuation, current_location,
-                       accumulated_data_json, aux_data_json, permanent_json,
+                       accumulated_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
                        bypass_rate_limit, deduplication_key
@@ -339,7 +331,6 @@ class TestRequestTypeRoundTrip:
         assert deserialized.current_location == original.current_location
         assert deserialized.expected_type == original.expected_type
         assert deserialized.accumulated_data == original.accumulated_data
-        assert deserialized.aux_data == original.aux_data
         assert deserialized.permanent == original.permanent
         assert deserialized.priority == original.priority
 
@@ -384,13 +375,13 @@ class TestRequestTypeRoundTrip:
                     status, priority, queue_counter, request_type,
                     method, url, headers_json, cookies_json, body,
                     continuation, current_location,
-                    accumulated_data_json, aux_data_json, permanent_json,
+                    accumulated_data_json, permanent_json,
                     expected_type
                 ) VALUES (
                     'pending', :priority, 1, :request_type,
                     :method, :url, :headers_json, :cookies_json, :body,
                     :continuation, :current_location,
-                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :accumulated_data_json, :permanent_json,
                     :expected_type
                 )
                 """),
@@ -407,7 +398,6 @@ class TestRequestTypeRoundTrip:
                     "accumulated_data_json": serialized[
                         "accumulated_data_json"
                     ],
-                    "aux_data_json": serialized["aux_data_json"],
                     "permanent_json": serialized["permanent_json"],
                     "expected_type": serialized["expected_type"],
                 },
@@ -419,7 +409,7 @@ class TestRequestTypeRoundTrip:
                 sa.text("""
                 SELECT id, request_type, method, url, headers_json, cookies_json, body,
                        continuation, current_location,
-                       accumulated_data_json, aux_data_json, permanent_json,
+                       accumulated_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
                        bypass_rate_limit, deduplication_key
@@ -469,13 +459,13 @@ class TestRequestTypeRoundTrip:
                     status, priority, queue_counter, request_type,
                     method, url, headers_json, cookies_json, body,
                     continuation, current_location,
-                    accumulated_data_json, aux_data_json, permanent_json,
+                    accumulated_data_json, permanent_json,
                     expected_type
                 ) VALUES (
                     'pending', :priority, 1, :request_type,
                     :method, :url, :headers_json, :cookies_json, :body,
                     :continuation, :current_location,
-                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :accumulated_data_json, :permanent_json,
                     :expected_type
                 )
                 """),
@@ -492,7 +482,6 @@ class TestRequestTypeRoundTrip:
                     "accumulated_data_json": serialized[
                         "accumulated_data_json"
                     ],
-                    "aux_data_json": serialized["aux_data_json"],
                     "permanent_json": serialized["permanent_json"],
                     "expected_type": serialized["expected_type"],
                 },
@@ -504,7 +493,7 @@ class TestRequestTypeRoundTrip:
                 sa.text("""
                 SELECT id, request_type, method, url, headers_json, cookies_json, body,
                        continuation, current_location,
-                       accumulated_data_json, aux_data_json, permanent_json,
+                       accumulated_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
                        bypass_rate_limit, deduplication_key
@@ -549,7 +538,6 @@ class TestRequestTypeRoundTrip:
         assert serialized["cookies_json"] is None
         assert serialized["body"] is None
         assert serialized["accumulated_data_json"] is None
-        assert serialized["aux_data_json"] is None
         assert serialized["permanent_json"] is None
 
         # Insert and retrieve
@@ -561,13 +549,13 @@ class TestRequestTypeRoundTrip:
                     status, priority, queue_counter, request_type,
                     method, url, headers_json, cookies_json, body,
                     continuation, current_location,
-                    accumulated_data_json, aux_data_json, permanent_json,
+                    accumulated_data_json, permanent_json,
                     expected_type
                 ) VALUES (
                     'pending', :priority, 1, :request_type,
                     :method, :url, :headers_json, :cookies_json, :body,
                     :continuation, :current_location,
-                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :accumulated_data_json, :permanent_json,
                     :expected_type
                 )
                 """),
@@ -584,7 +572,6 @@ class TestRequestTypeRoundTrip:
                     "accumulated_data_json": serialized[
                         "accumulated_data_json"
                     ],
-                    "aux_data_json": serialized["aux_data_json"],
                     "permanent_json": serialized["permanent_json"],
                     "expected_type": serialized["expected_type"],
                 },
@@ -596,7 +583,7 @@ class TestRequestTypeRoundTrip:
                 sa.text("""
                 SELECT id, request_type, method, url, headers_json, cookies_json, body,
                        continuation, current_location,
-                       accumulated_data_json, aux_data_json, permanent_json,
+                       accumulated_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
                        bypass_rate_limit, deduplication_key
@@ -613,7 +600,6 @@ class TestRequestTypeRoundTrip:
         assert deserialized.request.cookies is None
         assert deserialized.request.data is None
         assert deserialized.accumulated_data == {}
-        assert deserialized.aux_data == {}
         assert deserialized.permanent == {}
 
     async def test_bypass_rate_limit_round_trip(self, initialized_db) -> None:
@@ -649,13 +635,13 @@ class TestRequestTypeRoundTrip:
                     status, priority, queue_counter, request_type,
                     method, url, headers_json, cookies_json, body,
                     continuation, current_location,
-                    accumulated_data_json, aux_data_json, permanent_json,
+                    accumulated_data_json, permanent_json,
                     expected_type, bypass_rate_limit
                 ) VALUES (
                     'pending', :priority, 1, :request_type,
                     :method, :url, :headers_json, :cookies_json, :body,
                     :continuation, :current_location,
-                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :accumulated_data_json, :permanent_json,
                     :expected_type, :bypass_rate_limit
                 )
                 """),
@@ -672,7 +658,6 @@ class TestRequestTypeRoundTrip:
                     "accumulated_data_json": serialized[
                         "accumulated_data_json"
                     ],
-                    "aux_data_json": serialized["aux_data_json"],
                     "permanent_json": serialized["permanent_json"],
                     "expected_type": serialized["expected_type"],
                     "bypass_rate_limit": serialized["bypass_rate_limit"],
@@ -685,7 +670,7 @@ class TestRequestTypeRoundTrip:
                 sa.text("""
                 SELECT id, request_type, method, url, headers_json, cookies_json, body,
                        continuation, current_location,
-                       accumulated_data_json, aux_data_json, permanent_json,
+                       accumulated_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
                        bypass_rate_limit, deduplication_key
@@ -732,13 +717,13 @@ class TestRequestTypeRoundTrip:
                     status, priority, queue_counter, request_type,
                     method, url, headers_json, cookies_json, body,
                     continuation, current_location,
-                    accumulated_data_json, aux_data_json, permanent_json,
+                    accumulated_data_json, permanent_json,
                     expected_type
                 ) VALUES (
                     'pending', :priority, 1, :request_type,
                     :method, :url, :headers_json, :cookies_json, :body,
                     :continuation, :current_location,
-                    :accumulated_data_json, :aux_data_json, :permanent_json,
+                    :accumulated_data_json, :permanent_json,
                     :expected_type
                 )
                 """),
@@ -755,7 +740,6 @@ class TestRequestTypeRoundTrip:
                     "accumulated_data_json": serialized[
                         "accumulated_data_json"
                     ],
-                    "aux_data_json": serialized["aux_data_json"],
                     "permanent_json": serialized["permanent_json"],
                     "expected_type": serialized["expected_type"],
                 },
@@ -767,7 +751,7 @@ class TestRequestTypeRoundTrip:
                 sa.text("""
                 SELECT id, request_type, method, url, headers_json, cookies_json, body,
                        continuation, current_location,
-                       accumulated_data_json, aux_data_json, permanent_json,
+                       accumulated_data_json, permanent_json,
                        expected_type, priority,
                        is_speculative, speculation_id, verify, via_json,
                        bypass_rate_limit, deduplication_key

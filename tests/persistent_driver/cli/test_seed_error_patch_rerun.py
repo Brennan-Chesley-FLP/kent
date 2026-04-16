@@ -37,7 +37,6 @@ async def _insert_root(
         continuation=continuation,
         current_location="",
         accumulated_data_json=None,
-        aux_data_json=None,
         permanent_json=None,
         dedup_key=dedup_key,
     )
@@ -58,7 +57,6 @@ async def _insert_child(
         continuation=continuation,
         current_location="",
         accumulated_data_json=None,
-        aux_data_json=None,
         permanent_json=None,
         expected_type=None,
         dedup_key=None,

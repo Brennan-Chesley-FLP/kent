@@ -463,7 +463,6 @@ class PersistentDriver(
                         accumulated_data_json=request_data[
                             "accumulated_data_json"
                         ],
-                        aux_data_json=request_data["aux_data_json"],
                         permanent_json=request_data["permanent_json"],
                         dedup_key=dedup_key,
                         verify=request_data.get("verify"),

@@ -116,7 +116,7 @@ class Form:
             submit_selector: Optional selector for submit element (relative to form).
             **request_kwargs: Additional kwargs passed to Request constructor.
                 Common ones: continuation, accumulated_data, archive, expected_type,
-                priority, deduplication_key, aux_data, permanent.
+                priority, deduplication_key, permanent.
 
         Returns:
             Request with the form's action as URL, method as HTTP method,

@@ -334,9 +334,6 @@ class ManipulationMixin:
                 accumulated_data_json=json.dumps(request.accumulated_data)
                 if request.accumulated_data
                 else None,
-                aux_data_json=json.dumps(request.aux_data)
-                if request.aux_data
-                else None,
                 permanent_json=json.dumps(permanent_data)
                 if permanent_data
                 else None,
