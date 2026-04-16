@@ -664,7 +664,8 @@ class PlaywrightDriver(
                 # driver._browser_obj may differ from the originals.
                 # Close whichever is current.
                 ctx_to_close = (
-                    driver.browser_context if driver is not None
+                    driver.browser_context
+                    if driver is not None
                     else browser_context
                 )
                 try:
@@ -672,8 +673,7 @@ class PlaywrightDriver(
                 except Exception:
                     pass
                 current_browser = (
-                    driver._browser_obj if driver is not None
-                    else browser_obj
+                    driver._browser_obj if driver is not None else browser_obj
                 )
                 if current_browser is not None:
                     try:

@@ -285,9 +285,7 @@ class FakeLauncher:
         return self._browser
 
 
-def _make_driver_with_dead_browser() -> (
-    tuple[Any, RevivableBrowserContext]
-):
+def _make_driver_with_dead_browser() -> tuple[Any, RevivableBrowserContext]:
     """Create a PlaywrightDriver whose browser connection is dead,
     but can be restarted via _restart_browser_context."""
     from kent.driver.playwright_driver.playwright_driver import (
@@ -335,8 +333,12 @@ async def test_acquire_clears_stale_worker_pages_on_restart() -> None:
     # Manually seed stale worker pages (as if they existed before crash)
     stale_page = FakePage()
     stale_page._closed = True
-    driver._worker_pages[1] = WorkerPage(stale_page, driver.excluded_resource_types)
-    driver._worker_pages[2] = WorkerPage(stale_page, driver.excluded_resource_types)
+    driver._worker_pages[1] = WorkerPage(
+        stale_page, driver.excluded_resource_types
+    )
+    driver._worker_pages[2] = WorkerPage(
+        stale_page, driver.excluded_resource_types
+    )
 
     # Acquiring worker 0 triggers restart, which should clear all pages
     wp = await driver._acquire_worker_page(0)
@@ -362,9 +364,7 @@ async def test_is_connection_dead_detects_known_messages() -> None:
     assert driver._is_connection_dead(
         PlaywrightError("Target page, context or browser has been closed")
     )
-    assert not driver._is_connection_dead(
-        PlaywrightError("NS_ERROR_ABORT")
-    )
+    assert not driver._is_connection_dead(PlaywrightError("NS_ERROR_ABORT"))
     assert not driver._is_connection_dead(
         PlaywrightError("Navigation timeout of 30000ms exceeded")
     )

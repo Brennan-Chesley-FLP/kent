@@ -1398,17 +1398,31 @@ Usage: pdd seed-error-patch-rerun [OPTIONS]
       contract) to originate from an entry function with a publicly
       accessible URL.
 
+  By default, covered errors in the source DB are marked resolved with
+  resolution_type='rerun_generated'. Use --no-resolve to skip this and
+  guarantee zero writes to the source DB. Use --report to print the stats
+  without creating --output-db or modifying the source DB.
+
   Examples:
       pdd seed-error-patch-rerun --db run.db --output-db patch.db
-      pdd seed-error-patch-rerun --db run.db --output-db patch.db --mark-resolved
+      pdd seed-error-patch-rerun --db run.db --output-db patch.db --no-resolve
+      pdd seed-error-patch-rerun --db run.db --report
 
 Options:
-  --db PATH         Path to the source database file (the one with errors).
-  --output-db PATH  Path to the new database to create, seeded with root
-                    ancestors.  [required]
-  --mark-resolved   Mark covered errors in the source DB as resolved with
-                    resolution_type='rerun_generated'.
-  --help            Show this message and exit.
+  --db PATH                       Path to the source database file (the one
+                                  with errors).
+  --output-db PATH                Path to the new database to create, seeded
+                                  with root ancestors. Required unless
+                                  --report is passed.
+  --no-resolve                    Do not mark covered errors in the source DB
+                                  as resolved. Guarantees no writes to the
+                                  source DB.
+  --report                        Only print the plan/stats. Do not create
+                                  --output-db and do not modify the source DB.
+  --format [default|summary|table|json|jsonl]
+                                  Output format.
+  --template TEXT                 Template name.
+  --help                          Show this message and exit.
 ```
 
 ## pdd step
