@@ -120,7 +120,7 @@ ln -s /path/to/kent/.claude/skills/debug-scraper .claude/skills/debug-scraper
 
 Then invoke it in Claude Code with `/debug-scraper`.
 
-The skill gives Claude knowledge of all `pdd` and `kent` CLI commands and a structured debugging workflow. After each debugging session it should write a brief incident report to `.claude/debug-incidents/` noting what worked and where `pdd` fell short. If you're comfortable sharing these, we can use them to improve the pdd tool. 
+The skill gives Claude knowledge of all `pdd` and `kent` CLI commands and a structured debugging workflow. After each debugging session it should write a brief incident report to `.claude/debug-incidents/` noting what worked and where `pdd` fell short. If you're comfortable sharing these, we can use them to improve the pdd tool.
 
 ## Stability
 
@@ -135,3 +135,4 @@ The skill gives Claude knowledge of all `pdd` and `kent` CLI commands and a stru
 - Playwright Driver
 - Kent WebUI
 - `pdd` feature set
+- - Specifically the doctor/health/scrape subcommands

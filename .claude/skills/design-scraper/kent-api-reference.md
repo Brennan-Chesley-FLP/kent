@@ -67,11 +67,8 @@ def get_dockets_by_date(self, date_range: DateRange) -> Generator[Request, None,
     yield Request(...)
 
 # Speculative entry — driver generates sequential IDs
-@entry(OutputType, speculative=SimpleSpeculation(
-    highest_observed=100000,
-    largest_observed_gap=20,
-))
-def fetch_docket(self, case_number: int) -> Request:
+@entry(OutputType)
+def fetch_docket(self, case_number: SpeculativeRange) -> Request:
     return Request(...)
 ```
 
@@ -247,37 +244,27 @@ yield ParsedData(data=docket)
 
 ## Speculation Types
 
-### SimpleSpeculation
+### SpeculativeRange
 Single sequential integer parameter:
 
 ```python
-from kent.common.speculation_types import SimpleSpeculation
+from kent.common.param_models import SpeculativeRange
 
-@entry(Docket, speculative=SimpleSpeculation(
-    highest_observed=105000,       # Highest known ID
-    largest_observed_gap=20,       # Max gap between consecutive IDs
-    observation_date=date(2026, 1, 1),  # Optional
-))
-def fetch_docket(self, case_number: int) -> Request:
+
+@entry(Docket)
+def fetch_docket(self, case_number: SpeculativeRange) -> Request:
     ...
 ```
 
-### YearlySpeculation
+### YearlySpeculativeRange
 Year + sequential number:
 
 ```python
-from kent.common.speculation_types import YearlySpeculation, YearPartition
-from datetime import timedelta
+from kent.common.param_models import YearlySpeculativeRange
 
-@entry(Docket, speculative=YearlySpeculation(
-    backfill=(
-        YearPartition(year=2024, number=(1, 5000), frozen=True),
-        YearPartition(year=2025, number=(1, 3000), frozen=False),
-    ),
-    trailing_period=timedelta(days=60),
-    largest_observed_gap=15,
-))
-def fetch_docket(self, year: int, number: int) -> Request:
+
+@entry(Docket)
+def fetch_docket(self, case_id: YearlySpeculativeRange) -> Request:
     ...
 ```
 

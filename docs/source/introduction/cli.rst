@@ -253,7 +253,7 @@ Compare step execution results:
 seed-error-patch-rerun
 ----------------------
 
-Create patch databases from errored requests for targeted re-runs. 
+Create patch databases from errored requests for targeted re-runs.
 This finds the terminal ancestor requests for all errors and seeds a new database with those requests:
 
 .. code-block:: bash

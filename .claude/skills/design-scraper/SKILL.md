@@ -95,11 +95,11 @@ If there is no date-based search, speculative entry is required. Determine:
 - The largest gaps between sequential numbers.
 - Whether numbers reset yearly or are continuous.
 - Example: District 3 uses prefix `C` + up to 6 digits, highest observed
-  `C105926` → `SimpleSpeculation(highest_observed=105926,
-  largest_observed_gap=20)`.
+  `C105926` → use `SpeculativeRange` as the entry parameter type and seed
+  with `{"number": 105926, "gap": 20}`.
 
-For year-partitioned numbers (e.g., `2024-00003`), use `YearlySpeculation`
-with a `YearPartition` per year.
+For year-partitioned numbers (e.g., `2024-00003`), use `YearlySpeculativeRange`
+as the entry parameter type and seed with `{"year": 2024, "number": 1, "gap": 15}`.
 
 ---
 
@@ -337,7 +337,6 @@ from kent.common.decorators import entry, step
 from kent.common.exceptions import TransientException
 from kent.common.page_element import PageElement
 from kent.common.param_models import DateRange, SpeculativeRange
-from kent.common.speculation_types import SimpleSpeculation  # or YearlySpeculation
 from kent.data_types import (
     BaseScraper,
     DriverRequirement,
@@ -402,15 +401,13 @@ def get_dockets_by_date(self, date_range: DateRange) -> Generator[Request, None,
     ...
 ```
 
-**Speculative entry (one per court):**
+**Speculative entry (one per court):** the driver detects speculation via
+the parameter type — no decorator argument needed.
 ```python
-@entry({Docket}, speculative=SimpleSpeculation(
-    highest_observed=N,
-    largest_observed_gap=G,
-))
-def fetch_{court_prefix}_docket(self, case_number: int) -> Request:
+@entry({Docket})
+def fetch_{court_prefix}_docket(self, rid: SpeculativeRange) -> Request:
     """Speculative docket fetcher for {Court Name}."""
-    docket_id = f"{PREFIX}{case_number:06d}"  # Format to match site pattern
+    docket_id = f"{PREFIX}{rid.number:06d}"  # Format to match site pattern
     return Request(
         request=HTTPRequestParams(
             method=HttpMethod.POST,
@@ -422,17 +419,8 @@ def fetch_{court_prefix}_docket(self, case_number: int) -> Request:
     )
 ```
 
-Alternative: use `SpeculativeRange` as the parameter type (provides `.number`
-and `.gap`):
-```python
-@entry({Docket})
-def fetch_{court_prefix}_docket(self, rid: SpeculativeRange) -> Request:
-    docket_id = f"{PREFIX}{rid.number:06d}"
-    return self._make_search_request(docket_id, court_id="...")
-```
-
-For year-partitioned numbers use `YearlySpeculation` with `YearPartition`
-entries per year.
+For year-partitioned numbers use `YearlySpeculativeRange` as the parameter
+type (provides `.year` and `.number`).
 
 **Oral arguments (if discovered):**
 ```python
@@ -591,6 +579,7 @@ def parse_results(self, page, accumulated_data):
 - [ ] DESIGN.md documents all findings from Phases 1-4
 - [ ] Court mapping table is complete with CourtListener IDs
 - [ ] models.py has all ScrapedData models with typed fields
+- [ ] Models include at least *Docket, *DocketEntry, and *Document (for files, if there are any) 
 - [ ] scraper.py has proper class metadata (court_ids, data_types, status, version, rate_limits)
 - [ ] `driver_requirements` set if Playwright needed
 - [ ] Entry points cover all courts (one per court if speculative)

@@ -108,7 +108,7 @@ Class-level attributes provide metadata:
       court_ids = {"ca9", "ca9b"}
 
 - ``rate_limits``: List of ``pyrate_limiter.Rate`` objects controlling how
-  fast we hit this server. A good default for testing is given above. 
+  fast we hit this server. A good default for testing is given above.
   Bump it up gradually to observe rate limiting or server slowdown.
 
   .. code-block:: python
@@ -374,7 +374,7 @@ Wrap your data models in ``ParsedData`` when yielding results:
     )
 
 Use ``.raw()`` for **deferred validation** -- the data is validated later by the
-driver rather than immediately. This is the standard pattern, and allows us to 
+driver rather than immediately. This is the standard pattern, and allows us to
 collect invalid data for debugging purposes.
 
 EstimateData
@@ -384,7 +384,7 @@ Yield ``EstimateData`` to capture **total result counts** reported by the
 website for post-hoc integrity checking. For example, when a search results
 page says "355 results found", emit an ``EstimateData`` with that count. After
 the scrape completes, the driver can verify that the actual number of items
-collected matches the estimate. 
+collected matches the estimate.
 
 .. code-block:: python
 

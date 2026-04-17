@@ -71,9 +71,9 @@ The Playwright driver solves this with **route-intercepted parent replay**
 
 This is a compromise. It works enough of the time, capturing enough of the
 javascript and html state to be useful. In practice, it appeared a more robust
-approach than stateful tree-climbing via history navigation, and tab forking. 
+approach than stateful tree-climbing via history navigation, and tab forking.
 
-**Fallback:** If the parent has no stored response because it is a seeded request, 
+**Fallback:** If the parent has no stored response because it is a seeded request,
 the driver falls back to a direct ``page.goto()`` with the request's URL.
 
 

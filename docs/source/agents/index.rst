@@ -27,7 +27,6 @@ Imports
     from kent.common.exceptions import TransientException
     from kent.common.lxml_page_element import LxmlPageElement
     from kent.common.param_models import DateRange, SpeculativeRange, YearlySpeculativeRange
-    from kent.common.speculation_types import SimpleSpeculation, YearlySpeculation
     from kent.data_types import (
         BaseScraper,
         DriverRequirement,
@@ -439,29 +438,12 @@ Speculative Case Discovery
 ---------------------------
 
 There are two speculation modes: simple (integer) and yearly (year + number).
+This can be expanded easily via the Speculation Protocol. These are for sites
+where we can't search by a date of some sort and need to get coverage in some other way.
 
-**Simple speculation** -- for continuous sequential IDs (e.g., ``C105926``):
 
-.. code-block:: python
-
-    from kent.common.speculation_types import SimpleSpeculation
-
-    @entry(CaseData, speculative=SimpleSpeculation(
-        highest_observed=105926,
-        largest_observed_gap=20,
-    ))
-    def fetch_case(self, case_number: int) -> Request:
-        docket_id = f"C{case_number:06d}"
-        return Request(
-            request=HTTPRequestParams(
-                method=HttpMethod.GET,
-                url=f"{self.court_url}/cases/{docket_id}",
-            ),
-            continuation=self.parse_case,
-        )
-
-The driver also supports ``SpeculativeRange`` as an entry parameter type,
-which provides ``.number`` and ``.gap`` attributes:
+The driver supports ``SpeculativeRange`` as an entry parameter type,
+which provides ``.number``:
 
 .. code-block:: python
 
