@@ -33,7 +33,10 @@ if TYPE_CHECKING:
         HTMLStructuralAssumptionException,
     )
     from kent.data_types import ArchiveResponse
-    from kent.driver.archive_handler import AsyncArchiveHandler
+    from kent.driver.archive_handler import (
+        AsyncArchiveHandler,
+        AsyncStreamingArchiveHandler,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +55,7 @@ class WorkerMixin:
     num_workers: int
     request_manager: Any
     rate_limiter: Limiter | None
-    archive_handler: AsyncArchiveHandler
+    archive_handler: AsyncArchiveHandler | AsyncStreamingArchiveHandler
     _rates: list[Rate] | None
     _worker_tasks: dict[int, asyncio.Task[None]]
     _next_worker_id: int

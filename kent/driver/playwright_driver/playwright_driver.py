@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
@@ -857,39 +858,78 @@ class PlaywrightDriver(
 
                     download = await self._execute_via_download(request, page)
 
-                    import hashlib as _hashlib
-
                     download_path = await download.path()
                     if download_path is None:
                         raise TransientException(
                             f"Archive request {request_id}: download produced no file"
                         )
-                    file_content = download_path.read_bytes()
-
-                    # Build a unique URL so the handler derives a unique filename.
                     suggested = download.suggested_filename
                     ext = Path(suggested).suffix if suggested else ""
-                    content_hash = _hashlib.sha256(file_content).hexdigest()
-                    unique_filename = f"{content_hash}{ext}"
-                    archive_url = f"{request.request.url}/{unique_filename}"
 
-                    file_url = await self.archive_handler.save(
-                        url=archive_url,
-                        deduplication_key=dedup_key,
-                        expected_type=expected_type,
-                        hash_header_value=None,
-                        content=file_content,
-                    )
+                    if hasattr(self.archive_handler, "save_stream"):
+                        # Playwright already placed the file at a unique
+                        # path; reuse its stem for the archive URL suffix.
+                        unique_filename = f"{download_path.stem}{ext}"
+                        archive_url = (
+                            f"{request.request.url}/{unique_filename}"
+                        )
 
-                    response = ArchiveResponse(
-                        status_code=200,
-                        url=download.url or request.request.url,
-                        content=file_content,
-                        text="",
-                        headers={},
-                        request=request,
-                        file_url=file_url,
-                    )
+                        async def _iter_chunks(
+                            path: Path = download_path,
+                        ) -> AsyncIterator[bytes]:
+                            with path.open("rb") as src:
+                                while True:
+                                    chunk = src.read(64 * 1024)
+                                    if not chunk:
+                                        break
+                                    yield chunk
+
+                        file_url = await self.archive_handler.save_stream(
+                            url=archive_url,
+                            deduplication_key=dedup_key,
+                            expected_type=expected_type,
+                            hash_header_value=None,
+                            chunks=_iter_chunks(),
+                        )
+
+                        response = ArchiveResponse(
+                            status_code=200,
+                            url=download.url or request.request.url,
+                            content=b"",
+                            text="",
+                            headers={},
+                            request=request,
+                            file_url=file_url,
+                        )
+                    else:
+                        import hashlib as _hashlib
+
+                        file_content = download_path.read_bytes()
+                        content_hash = _hashlib.sha256(
+                            file_content
+                        ).hexdigest()
+                        unique_filename = f"{content_hash}{ext}"
+                        archive_url = (
+                            f"{request.request.url}/{unique_filename}"
+                        )
+
+                        file_url = await self.archive_handler.save(
+                            url=archive_url,
+                            deduplication_key=dedup_key,
+                            expected_type=expected_type,
+                            hash_header_value=None,
+                            content=file_content,
+                        )
+
+                        response = ArchiveResponse(
+                            status_code=200,
+                            url=download.url or request.request.url,
+                            content=file_content,
+                            text="",
+                            headers={},
+                            request=request,
+                            file_url=file_url,
+                        )
 
                 await self._complete_request(
                     request_id, response, request, continuation_name

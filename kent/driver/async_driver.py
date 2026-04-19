@@ -50,6 +50,7 @@ from kent.data_types import (
 )
 from kent.driver.archive_handler import (
     AsyncArchiveHandler,
+    AsyncStreamingArchiveHandler,
     LocalAsyncArchiveHandler,
 )
 from kent.driver.sync_driver import SpeculationState
@@ -123,7 +124,9 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         | None = None,
         on_transient_exception: Callable[[TransientException], Awaitable[bool]]
         | None = None,
-        archive_handler: AsyncArchiveHandler | None = None,
+        archive_handler: AsyncArchiveHandler
+        | AsyncStreamingArchiveHandler
+        | None = None,
         on_run_start: Callable[[str], Awaitable[None]] | None = None,
         on_run_complete: Callable[
             [str, str, Exception | None], Awaitable[None]
@@ -197,9 +200,9 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         self.on_structural_error = on_structural_error
         self.on_invalid_data = on_invalid_data
         self.on_transient_exception = on_transient_exception
-        self.archive_handler = archive_handler or LocalAsyncArchiveHandler(
-            self.storage_dir
-        )
+        self.archive_handler: (
+            AsyncArchiveHandler | AsyncStreamingArchiveHandler
+        ) = archive_handler or LocalAsyncArchiveHandler(self.storage_dir)
         self.on_run_start = on_run_start
         self.on_run_complete = on_run_complete
         self.duplicate_check = duplicate_check
@@ -687,6 +690,25 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
                 request=request,
                 file_url=archive_decision.file_url,
             )
+
+        if hasattr(self.archive_handler, "save_stream"):
+            async with self.request_manager.stream_request(request) as stream:
+                file_url = await self.archive_handler.save_stream(
+                    url=request.request.url,
+                    deduplication_key=dedup_key,
+                    expected_type=request.expected_type,
+                    hash_header_value=None,
+                    chunks=stream.aiter_bytes(),
+                )
+                return ArchiveResponse(
+                    status_code=stream.status_code,
+                    headers=dict(stream.headers),
+                    content=b"",
+                    text="",
+                    url=request.request.url,
+                    request=request,
+                    file_url=file_url,
+                )
 
         http_response = await self.resolve_request(request)
 

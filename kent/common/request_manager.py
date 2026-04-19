@@ -13,6 +13,7 @@ orchestration while delegating HTTP concerns to the request manager.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import ssl
 from typing import TYPE_CHECKING, Any, cast
@@ -26,9 +27,43 @@ from kent.common.exceptions import (
 from kent.data_types import BaseRequest, Response
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Iterator
     from http.cookiejar import CookieJar
 
     from pyrate_limiter import Limiter, Rate
+
+
+class SyncStreamingResponse:
+    """Streaming wrapper around an open :class:`httpx.Response`.
+
+    Exposes status/headers/url immediately and defers body consumption to the
+    ``iter_bytes`` method. Only valid while the enclosing context manager
+    returned by :meth:`SyncRequestManager.stream_request` is open.
+    """
+
+    def __init__(self, http_response: httpx.Response, url: str) -> None:
+        self._response = http_response
+        self.status_code = http_response.status_code
+        self.headers = dict(http_response.headers)
+        self.url = url
+
+    def iter_bytes(self, chunk_size: int | None = None) -> Iterator[bytes]:
+        return self._response.iter_bytes(chunk_size=chunk_size)
+
+
+class AsyncStreamingResponse:
+    """Async streaming wrapper around an open :class:`httpx.Response`."""
+
+    def __init__(self, http_response: httpx.Response, url: str) -> None:
+        self._response = http_response
+        self.status_code = http_response.status_code
+        self.headers = dict(http_response.headers)
+        self.url = url
+
+    def aiter_bytes(
+        self, chunk_size: int | None = None
+    ) -> AsyncIterator[bytes]:
+        return self._response.aiter_bytes(chunk_size=chunk_size)
 
 
 logger = logging.getLogger(__name__)
@@ -251,6 +286,54 @@ class SyncRequestManager:
 
         return response
 
+    @contextlib.contextmanager
+    def stream_request(
+        self, request: BaseRequest
+    ) -> Iterator[SyncStreamingResponse]:
+        """Open a streaming HTTP request.
+
+        Yields a :class:`SyncStreamingResponse` whose ``iter_bytes`` can be
+        consumed incrementally.  The underlying httpx connection is released
+        when the context manager exits.
+
+        Raises:
+            HTMLResponseAssumptionException: If server returns 5xx status code.
+            RequestTimeoutException: If the request times out.
+        """
+        http_params = request.request
+        bypass = getattr(request, "bypass_rate_limit", False)
+        if bypass:
+            client = self._bypass_client_for(http_params.verify)
+        else:
+            client = self._client_for(http_params.verify)
+
+        headers = dict(http_params.headers) if http_params.headers else {}
+        _merge_cookies_into_headers(http_params.cookies, headers)
+
+        try:
+            with client.stream(
+                method=http_params.method.value,
+                url=http_params.url,
+                headers=headers,
+                content=http_params.data
+                if isinstance(http_params.data, bytes)
+                else None,
+                data=http_params.data  # type: ignore[arg-type]
+                if isinstance(http_params.data, dict)
+                else None,
+            ) as http_response:
+                if http_response.status_code >= 500:
+                    raise HTMLResponseAssumptionException(
+                        status_code=http_response.status_code,
+                        expected_codes=[200],
+                        url=http_params.url,
+                    )
+                yield SyncStreamingResponse(http_response, http_params.url)
+        except httpx.TimeoutException:
+            raise RequestTimeoutException(
+                url=http_params.url, timeout_seconds=30
+            )
+
 
 class AsyncRequestManager:
     """Manages HTTP requests for asynchronous drivers.
@@ -451,3 +534,54 @@ class AsyncRequestManager:
         )
 
         return response
+
+    @contextlib.asynccontextmanager
+    async def stream_request(
+        self, request: BaseRequest
+    ) -> AsyncIterator[AsyncStreamingResponse]:
+        """Open a streaming HTTP request.
+
+        Yields an :class:`AsyncStreamingResponse` whose ``aiter_bytes`` can be
+        consumed incrementally.  The underlying httpx connection is released
+        when the context manager exits.
+        """
+        http_params = request.request
+        bypass = getattr(request, "bypass_rate_limit", False)
+        if bypass:
+            client = self._bypass_client_for(http_params.verify)
+        else:
+            client = self._client_for(http_params.verify)
+
+        request_data = http_params.data
+        content_param: bytes | None = (
+            request_data if isinstance(request_data, bytes) else None
+        )
+        data_param: dict[str, Any] | None = (
+            cast(dict[str, Any], request_data)
+            if isinstance(request_data, dict)
+            else None
+        )
+
+        headers = dict(http_params.headers) if http_params.headers else {}
+        _merge_cookies_into_headers(http_params.cookies, headers)
+
+        try:
+            async with client.stream(
+                method=http_params.method.value,
+                url=http_params.url,
+                headers=headers,
+                content=content_param,
+                data=data_param,
+            ) as http_response:
+                if http_response.status_code >= 500:
+                    raise HTMLResponseAssumptionException(
+                        status_code=http_response.status_code,
+                        expected_codes=[200],
+                        url=http_params.url,
+                    )
+                yield AsyncStreamingResponse(http_response, http_params.url)
+        except httpx.TimeoutException:
+            raise RequestTimeoutException(
+                url=http_params.url,
+                timeout_seconds=30,
+            )
