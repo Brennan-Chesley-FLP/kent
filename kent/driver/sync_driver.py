@@ -233,6 +233,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
                 ssl_context=scraper.get_ssl_context(),
                 rates=scraper.rate_limits,
                 proxy=proxy,
+                scraper=scraper,
             )
             self._owns_request_manager = True
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import ssl
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date
@@ -30,6 +30,7 @@ from typing import (
     Any,
     BinaryIO,
     ClassVar,
+    Final,
     Generic,
     TypeVar,
     cast,
@@ -197,6 +198,62 @@ class BaseScraper(Generic[ScraperReturnType]):
     #         return ctx
     ssl_context: ClassVar[ssl.SSLContext | None] = None
 
+    # ------------------------------------------------------------------
+    # HTTP status classification
+    # ------------------------------------------------------------------
+    # DEFAULT_* sets are framework defaults; subclasses should leave them
+    # alone. Scrapers reclassify per-site codes by shadowing any of the
+    # three override sets below. The ``is_transient_error`` /
+    # ``is_persistent_error`` classmethods (see further down) combine
+    # defaults + overrides and expose the result to the request manager.
+
+    DEFAULT_SUCCESSFUL_HTTP_CODES: Final[frozenset[int]] = frozenset(
+        {200, 201, 202, 203, 204, 205, 206, 207, 208, 226, 304}
+    )
+    DEFAULT_TRANSIENT_HTTP_ERROR_CODES: Final[frozenset[int]] = frozenset(
+        {408, 425, 429, 502, 503, 504}
+    )
+    DEFAULT_PERSISTENT_HTTP_ERROR_CODES: Final[frozenset[int]] = frozenset(
+        # All standard 4xx minus the transient 408/425/429.
+        {
+            400,
+            401,
+            402,
+            403,
+            404,
+            405,
+            406,
+            407,
+            409,
+            410,
+            411,
+            412,
+            413,
+            414,
+            415,
+            416,
+            417,
+            418,
+            421,
+            422,
+            423,
+            424,
+            426,
+            428,
+            431,
+            451,
+        }
+        # 5xx codes that aren't gateway-style.
+        | {500, 501, 505, 506, 507, 508, 510, 511}
+    )
+
+    # Subclasses shadow these to reclassify specific codes. A code appearing
+    # in an override wins over a default in the opposite category (see the
+    # active_*_http_* classmethods below).
+    SUCCESSFUL_HTTP_CODES: ClassVar[frozenset[int]] = frozenset()
+    TRANSIENT_HTTP_ERROR_CODES: ClassVar[frozenset[int]] = frozenset()
+    PERSISTENT_HTTP_ERROR_CODES: ClassVar[frozenset[int]] = frozenset()
+
     def __init__(self, params: Any | None = None) -> None:
         """Initialize the scraper with optional search parameters.
 
@@ -257,6 +314,81 @@ class BaseScraper(Generic[ScraperReturnType]):
                 return ctx
         """
         return cls.ssl_context
+
+    # ------------------------------------------------------------------
+    # HTTP status classification helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def active_transient_http_error_codes(cls) -> frozenset[int]:
+        """Codes the scraper treats as transient (retryable).
+
+        Combines the framework default with the scraper-level override,
+        and removes any code that the scraper has reassigned to
+        successful or persistent.
+        """
+        return (
+            (
+                cls.DEFAULT_TRANSIENT_HTTP_ERROR_CODES
+                | cls.TRANSIENT_HTTP_ERROR_CODES
+            )
+            - cls.SUCCESSFUL_HTTP_CODES
+            - cls.PERSISTENT_HTTP_ERROR_CODES
+        )
+
+    @classmethod
+    def active_persistent_http_error_codes(cls) -> frozenset[int]:
+        """Codes the scraper treats as persistent (fail-fast, no retry)."""
+        return (
+            (
+                cls.DEFAULT_PERSISTENT_HTTP_ERROR_CODES
+                | cls.PERSISTENT_HTTP_ERROR_CODES
+            )
+            - cls.SUCCESSFUL_HTTP_CODES
+            - cls.TRANSIENT_HTTP_ERROR_CODES
+        )
+
+    @classmethod
+    def active_successful_http_codes(cls) -> frozenset[int]:
+        """Codes the scraper treats as successful (pass through as Response)."""
+        return (
+            (cls.DEFAULT_SUCCESSFUL_HTTP_CODES | cls.SUCCESSFUL_HTTP_CODES)
+            - cls.TRANSIENT_HTTP_ERROR_CODES
+            - cls.PERSISTENT_HTTP_ERROR_CODES
+        )
+
+    @classmethod
+    def is_transient_error(
+        cls,
+        status_code: int,
+        headers: Mapping[str, str] | None = None,
+        content: bytes | None = None,
+    ) -> bool:
+        """Is ``status_code`` a transient (retryable) error for this scraper?
+
+        The default implementation ignores ``headers`` and ``content`` and
+        returns pure set membership. Override in scrapers with dynamic
+        policy (e.g. "503 with body 'maintenance' is transient, anything
+        else is persistent"). ``headers`` and ``content`` may be ``None``
+        when the caller hasn't observed them (for example, on a streaming
+        response whose body hasn't been consumed); dynamic overrides must
+        tolerate that.
+        """
+        return status_code in cls.active_transient_http_error_codes()
+
+    @classmethod
+    def is_persistent_error(
+        cls,
+        status_code: int,
+        headers: Mapping[str, str] | None = None,
+        content: bytes | None = None,
+    ) -> bool:
+        """Is ``status_code`` a persistent (no-retry) error for this scraper?
+
+        Same semantics for ``headers`` / ``content`` as
+        :meth:`is_transient_error`.
+        """
+        return status_code in cls.active_persistent_http_error_codes()
 
     def get_continuation(
         self, name: str

@@ -1000,4 +1000,16 @@ def create_app() -> web.Application:
     # Same-URL search (GET=form, POST=results) for unroute verification
     app.router.add_get("/same-url-search", handle_same_url_search_get)
     app.router.add_post("/same-url-search", handle_same_url_search_post)
+
+    # Catch-all: any unmatched GET returns 200 with a placeholder body so
+    # tests that hit arbitrary URLs (priority/stop/lifecycle suites) don't
+    # trip the new 4xx-as-persistent classification. Register LAST so it
+    # doesn't shadow specific routes.
+    async def _catch_all(request: web.Request) -> web.Response:
+        return web.Response(
+            text="<html><body>ok</body></html>",
+            content_type="text/html",
+        )
+
+    app.router.add_get("/{tail:.*}", _catch_all)
     return app

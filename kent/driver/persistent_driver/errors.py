@@ -26,6 +26,8 @@ from kent.common.exceptions import (
     DataFormatAssumptionException,
     HTMLResponseAssumptionException,
     HTMLStructuralAssumptionException,
+    PersistentException,
+    PersistentHTTPResponseException,
     RequestTimeoutException,
     ScraperAssumptionException,
     TransientException,
@@ -137,6 +139,8 @@ def classify_error(exc: Exception) -> str:
         return "validation"
     elif isinstance(exc, TransientException):
         return "transient"
+    elif isinstance(exc, PersistentException):
+        return "persistent"
     else:
         return "unknown"
 
@@ -177,7 +181,10 @@ async def store_error(
         if isinstance(exc, ScraperAssumptionException):
             request_url = exc.request_url
         elif isinstance(
-            exc, HTMLResponseAssumptionException | RequestTimeoutException
+            exc,
+            HTMLResponseAssumptionException
+            | PersistentHTTPResponseException
+            | RequestTimeoutException,
         ):
             request_url = exc.url
         else:
@@ -212,7 +219,10 @@ async def store_error(
         validation_errors_json = json.dumps(exc.errors)
         failed_doc_json = json.dumps(exc.failed_doc)
 
-    elif isinstance(exc, HTMLResponseAssumptionException):
+    elif isinstance(
+        exc,
+        HTMLResponseAssumptionException | PersistentHTTPResponseException,
+    ):
         status_code = exc.status_code
 
     elif isinstance(exc, RequestTimeoutException):

@@ -301,6 +301,7 @@ class PersistentDriver(
                 ssl_context=scraper.get_ssl_context(),
                 timeout=timeout,
                 proxy=proxy,
+                scraper=scraper,
             )
 
         driver = cls(

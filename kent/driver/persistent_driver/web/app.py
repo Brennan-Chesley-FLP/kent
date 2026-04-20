@@ -202,6 +202,7 @@ class RunManager:
             # Create driver with SQLManager and request manager
             request_manager = AsyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
+                scraper=scraper,
             )
             driver = PersistentDriver(
                 scraper=scraper,
@@ -281,6 +282,7 @@ class RunManager:
             # Load driver with resume=True and custom archive handler
             request_manager = AsyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
+                scraper=scraper,
             )
             driver = PersistentDriver(
                 scraper=scraper,

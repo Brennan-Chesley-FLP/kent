@@ -7,7 +7,24 @@ Step 8 introduces structural assumption errors for HTML parsing.
 from typing import Any
 
 
-class ScraperAssumptionException(Exception):
+class PersistentException(Exception):
+    """Errors the server or site state will keep producing on retry.
+
+    Covers three flavors of "no point retrying":
+
+    - Our own assumptions about site structure turn out to be wrong
+      (selectors don't match, data doesn't validate) — see
+      :class:`ScraperAssumptionException` and its subclasses.
+    - A resource that the server once advertised has become unavailable.
+    - The server advertising a resource that does not actually exist.
+
+    The worker uses this base class (and the
+    :class:`PersistentHTTPResponseException` subclass) to decide to skip
+    retries and surface the error directly.
+    """
+
+
+class ScraperAssumptionException(PersistentException):
     """Base class for scraper assumption violations.
 
     Scrapers make assumptions about website structure, data formats, and
@@ -251,6 +268,27 @@ class RequestTimeoutException(TransientException):
         self.url = url
         self.timeout_seconds = timeout_seconds
         self.message = f"Request to {url} timed out after {timeout_seconds}s"
+        super().__init__(self.message)
+
+
+class PersistentHTTPResponseException(PersistentException):
+    """HTTP status classified as persistent per scraper policy.
+
+    Raised by the request manager when
+    ``scraper.is_persistent_error(status_code, headers, content)`` is True
+    and no transient branch matched. Does not inherit from
+    :class:`TransientException`; the worker's retry machinery is skipped
+    and the request is marked failed on the first occurrence.
+
+    Attributes:
+        status_code: The HTTP status code received.
+        url: The URL of the request.
+    """
+
+    def __init__(self, status_code: int, url: str) -> None:
+        self.status_code = status_code
+        self.url = url
+        self.message = f"HTTP {status_code} from {url} (persistent)"
         super().__init__(self.message)
 
 

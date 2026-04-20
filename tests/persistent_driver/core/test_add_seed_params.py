@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Generator
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from kent.cli import cli
@@ -49,9 +48,7 @@ class SimpleScraper(BaseScraper[dict]):
         )
 
     @step
-    def parse(
-        self, response: Response
-    ) -> Generator[ScraperYield, None, None]:
+    def parse(self, response: Response) -> Generator[ScraperYield, None, None]:
         yield ParsedData({"url": response.url})
 
 
@@ -102,9 +99,7 @@ class TestAddSeedParams:
         # Only the new entry's URL — the old one was already completed
         assert urls2 == {"https://example.com/cases"}
 
-    async def test_merges_into_stored_seed_params(
-        self, db_path: Path
-    ) -> None:
+    async def test_merges_into_stored_seed_params(self, db_path: Path) -> None:
         """When seed_params was already stored, add_seed_params merges."""
         async with PersistentDriver.open(
             SimpleScraper(),
@@ -204,9 +199,7 @@ class TestCliParamsGuards:
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output
 
-    def test_add_params_rejected_for_sync_driver(
-        self, tmp_path: Path
-    ) -> None:
+    def test_add_params_rejected_for_sync_driver(self, tmp_path: Path) -> None:
         runner = CliRunner()
         result = runner.invoke(
             cli,

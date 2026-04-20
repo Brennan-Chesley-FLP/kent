@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from pyrate_limiter import Limiter
 
 from kent.common.exceptions import (
+    PersistentHTTPResponseException,
     RequestFailedHalt,
     RequestFailedSkip,
     TransientException,
@@ -600,6 +601,37 @@ class WorkerMixin:
                             "reason": "max_backoff_exceeded",
                         },
                     )
+
+            except PersistentHTTPResponseException as e:
+                # Classifier said this status is persistent — don't retry,
+                # don't bury the operator in traceback output.
+                logger.warning(
+                    f"Worker {worker_id} persistent HTTP {e.status_code} on "
+                    f"request {request_id}: {e.url}"
+                )
+                await self._mark_request_failed(request_id, str(e))
+                from kent.driver.persistent_driver.errors import (
+                    store_error,
+                )
+
+                await store_error(
+                    self.db._session_factory,
+                    e,
+                    request_id=request_id,
+                    request_url=e.url,
+                    db_lock=self.db._lock,
+                )
+
+                await self._emit_progress(
+                    "request_failed",
+                    {
+                        "request_id": request_id,
+                        "url": e.url,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "reason": "persistent_http_error",
+                    },
+                )
 
             except Exception as e:
                 # Non-transient error - log full traceback

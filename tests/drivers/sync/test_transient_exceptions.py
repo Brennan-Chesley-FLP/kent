@@ -224,6 +224,9 @@ class TestSyncDriverRaisesHTTPResponseException:
 
         # Create a scraper that requests the error endpoint
         class ErrorEndpointScraper(BaseScraper[dict]):
+            # Keep 500 transient for this legacy "5xx retries" test.
+            TRANSIENT_HTTP_ERROR_CODES = frozenset({500})
+
             def get_entry(self) -> Generator[Request, None, None]:
                 yield Request(
                     request=HTTPRequestParams(
@@ -349,6 +352,8 @@ class TestSyncDriverRaisesHTTPResponseException:
         from tests.utils import collect_results
 
         class ErrorScraper(BaseScraper[dict]):
+            TRANSIENT_HTTP_ERROR_CODES = frozenset({500})
+
             def get_entry(self) -> Generator[Request, None, None]:
                 yield Request(
                     request=HTTPRequestParams(
@@ -404,6 +409,8 @@ class TestTransientExceptionCallback:
 
         # Create a scraper that encounters transient error
         class TransientErrorScraper(BaseScraper[dict]):
+            TRANSIENT_HTTP_ERROR_CODES = frozenset({500})
+
             def get_entry(self) -> Generator[Request, None, None]:
                 yield Request(
                     request=HTTPRequestParams(
@@ -463,6 +470,8 @@ class TestTransientExceptionCallback:
 
         # Create a scraper that yields error request then normal request
         class MixedScraper(BaseScraper[dict]):
+            TRANSIENT_HTTP_ERROR_CODES = frozenset({500})
+
             def get_entry(self) -> Generator[Request, None, None]:
                 yield Request(
                     request=HTTPRequestParams(
@@ -537,6 +546,8 @@ class TestTransientExceptionCallback:
 
         # Create a scraper that encounters transient error
         class ErrorScraper(BaseScraper[dict]):
+            TRANSIENT_HTTP_ERROR_CODES = frozenset({500})
+
             def get_entry(self) -> Generator[Request, None, None]:
                 yield Request(
                     request=HTTPRequestParams(

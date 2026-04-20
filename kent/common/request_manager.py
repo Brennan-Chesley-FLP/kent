@@ -22,15 +22,41 @@ import httpx
 
 from kent.common.exceptions import (
     HTMLResponseAssumptionException,
+    PersistentHTTPResponseException,
     RequestTimeoutException,
 )
-from kent.data_types import BaseRequest, Response
+from kent.data_types import BaseRequest, BaseScraper, Response
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
     from http.cookiejar import CookieJar
 
     from pyrate_limiter import Limiter, Rate
+
+
+def _classify_and_raise(
+    scraper: type[BaseScraper[Any]] | BaseScraper[Any],
+    http_response: httpx.Response,
+    url: str,
+    *,
+    body: bytes | None,
+) -> None:
+    """Consult the scraper's classifier and raise if the status is an error.
+
+    ``body`` is ``None`` on streaming paths where the body hasn't been
+    consumed yet. Successful / unclassified codes return silently; the
+    caller then constructs and returns a :class:`Response`.
+    """
+    code = http_response.status_code
+    hdrs = dict(http_response.headers)
+    if scraper.is_transient_error(code, hdrs, body):
+        raise HTMLResponseAssumptionException(
+            status_code=code,
+            expected_codes=[200],
+            url=url,
+        )
+    if scraper.is_persistent_error(code, hdrs, body):
+        raise PersistentHTTPResponseException(code, url)
 
 
 class SyncStreamingResponse:
@@ -123,6 +149,7 @@ class SyncRequestManager:
         timeout: float | None = None,
         rates: list[Rate] | None = None,
         proxy: str | None = None,
+        scraper: type[BaseScraper[Any]] | BaseScraper[Any] | None = None,
     ) -> None:
         """Initialize the request manager.
 
@@ -135,11 +162,20 @@ class SyncRequestManager:
             proxy: Optional proxy URL (e.g. ``"socks5://user:pass@host:1080"``
                 or ``"http://host:3128"``). SOCKS schemes require the
                 ``httpx[socks]`` extra (installed by default).
+            scraper: Scraper (instance or class) whose
+                ``is_transient_error`` / ``is_persistent_error`` classmethods
+                decide how HTTP status codes are routed. When omitted, the
+                ``BaseScraper`` defaults are used — equivalent to the old
+                hard-coded "5xx raises, everything else returns" policy after
+                the framework defaults were broadened.
         """
         self.timeout = timeout
         self._ssl_context = ssl_context
         self._rates = rates
         self._proxy = proxy
+        self._scraper: type[BaseScraper[Any]] | BaseScraper[Any] = (
+            scraper if scraper is not None else BaseScraper
+        )
         self._limiter: Limiter | None = None
         self._alt_clients: dict[str, httpx.Client] = {}
         self._bypass_client: httpx.Client | None = None
@@ -284,13 +320,12 @@ class SyncRequestManager:
                 url=http_params.url, timeout_seconds=30
             )
 
-        # Check for server errors (5xx status codes)
-        if http_response.status_code >= 500:
-            raise HTMLResponseAssumptionException(
-                status_code=http_response.status_code,
-                expected_codes=[200],
-                url=http_params.url,
-            )
+        _classify_and_raise(
+            self._scraper,
+            http_response,
+            http_params.url,
+            body=http_response.content,
+        )
 
         response = Response(
             status_code=http_response.status_code,
@@ -339,12 +374,12 @@ class SyncRequestManager:
                 if isinstance(http_params.data, dict)
                 else None,
             ) as http_response:
-                if http_response.status_code >= 500:
-                    raise HTMLResponseAssumptionException(
-                        status_code=http_response.status_code,
-                        expected_codes=[200],
-                        url=http_params.url,
-                    )
+                _classify_and_raise(
+                    self._scraper,
+                    http_response,
+                    http_params.url,
+                    body=None,
+                )
                 yield SyncStreamingResponse(http_response, http_params.url)
         except httpx.TimeoutException:
             raise RequestTimeoutException(
@@ -376,6 +411,7 @@ class AsyncRequestManager:
         timeout: float | None = None,
         rates: list[Rate] | None = None,
         proxy: str | None = None,
+        scraper: type[BaseScraper[Any]] | BaseScraper[Any] | None = None,
     ) -> None:
         """Initialize the request manager.
 
@@ -388,11 +424,17 @@ class AsyncRequestManager:
             proxy: Optional proxy URL (e.g. ``"socks5://user:pass@host:1080"``
                 or ``"http://host:3128"``). SOCKS schemes require the
                 ``httpx[socks]`` extra (installed by default).
+            scraper: Scraper (instance or class) whose
+                ``is_transient_error`` / ``is_persistent_error`` classmethods
+                decide how HTTP status codes are routed.
         """
         self.timeout = timeout
         self._ssl_context = ssl_context
         self._rates = rates
         self._proxy = proxy
+        self._scraper: type[BaseScraper[Any]] | BaseScraper[Any] = (
+            scraper if scraper is not None else BaseScraper
+        )
         self._limiter: Limiter | None = None
         self._alt_clients: dict[str, httpx.AsyncClient] = {}
         self._bypass_client: httpx.AsyncClient | None = None
@@ -548,13 +590,12 @@ class AsyncRequestManager:
                 timeout_seconds=30,
             )
 
-        # Check for server errors (5xx status codes)
-        if http_response.status_code >= 500:
-            raise HTMLResponseAssumptionException(
-                status_code=http_response.status_code,
-                expected_codes=[200],
-                url=http_params.url,
-            )
+        _classify_and_raise(
+            self._scraper,
+            http_response,
+            http_params.url,
+            body=http_response.content,
+        )
 
         response = Response(
             status_code=http_response.status_code,
@@ -605,12 +646,12 @@ class AsyncRequestManager:
                 content=content_param,
                 data=data_param,
             ) as http_response:
-                if http_response.status_code >= 500:
-                    raise HTMLResponseAssumptionException(
-                        status_code=http_response.status_code,
-                        expected_codes=[200],
-                        url=http_params.url,
-                    )
+                _classify_and_raise(
+                    self._scraper,
+                    http_response,
+                    http_params.url,
+                    body=None,
+                )
                 yield AsyncStreamingResponse(http_response, http_params.url)
         except httpx.TimeoutException:
             raise RequestTimeoutException(
