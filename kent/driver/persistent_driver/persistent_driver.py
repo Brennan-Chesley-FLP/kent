@@ -22,6 +22,7 @@ from pyrate_limiter import Limiter, Rate
 
 from kent.data_types import (
     BaseScraper,
+    Request,
 )
 from kent.driver.async_driver import AsyncDriver
 from kent.driver.persistent_driver._api import APIMixin, DiagnoseResult
@@ -133,6 +134,7 @@ class PersistentDriver(
         request_manager: Any | None = None,
         enable_monitor: bool = True,
         rates: list[Rate] | None = None,
+        proxy: str | None = None,
     ) -> None:
         """Initialize the driver.
 
@@ -150,6 +152,8 @@ class PersistentDriver(
             enable_monitor: If True (default), start the worker monitor for dynamic scaling.
                 Set to False for tests that need the driver to exit quickly.
             rates: Optional list of pyrate_limiter Rate objects for rate limiting.
+            proxy: Optional proxy URL (e.g. ``"socks5://user:pass@host:1080"``).
+                Ignored when ``request_manager`` is also provided.
         """
         # Initialize parent with the request manager
         super().__init__(
@@ -157,6 +161,7 @@ class PersistentDriver(
             storage_dir=storage_dir,
             num_workers=num_workers,
             request_manager=request_manager,
+            proxy=proxy,
         )
 
         self.resume = resume
@@ -275,6 +280,7 @@ class PersistentDriver(
         timeout = kwargs.pop("timeout", None)
         custom_request_manager = kwargs.pop("request_manager", None)
         seed_params = kwargs.pop("seed_params", None)
+        proxy = kwargs.pop("proxy", None)
 
         engine, sql_manager = await cls._init_db(
             scraper,
@@ -294,6 +300,7 @@ class PersistentDriver(
             request_manager = AsyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
                 timeout=timeout,
+                proxy=proxy,
             )
 
         driver = cls(
@@ -391,6 +398,68 @@ class PersistentDriver(
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
+    # --- Seeding helpers ---
+
+    async def _enqueue_entry_request(self, entry_request: Request) -> None:
+        """Serialize an entry-point :class:`Request` and insert it into the queue."""
+        request_data = self._serialize_request(entry_request)
+        dedup_key = (
+            entry_request.deduplication_key
+            if isinstance(entry_request.deduplication_key, str)
+            else None
+        )
+        await self.db.insert_entry_request(
+            priority=entry_request.priority,
+            method=request_data["method"],
+            url=request_data["url"],
+            headers_json=request_data["headers_json"],
+            cookies_json=request_data["cookies_json"],
+            body=request_data["body"],
+            continuation=request_data["continuation"],
+            current_location=request_data["current_location"],
+            accumulated_data_json=request_data["accumulated_data_json"],
+            permanent_json=request_data["permanent_json"],
+            dedup_key=dedup_key,
+            verify=request_data.get("verify"),
+            bypass_rate_limit=request_data.get("bypass_rate_limit", False),
+            request_type=request_data["request_type"],
+            expected_type=request_data.get("expected_type"),
+        )
+
+    async def add_seed_params(
+        self,
+        params: list[dict[str, dict[str, Any]]],
+    ) -> None:
+        """Run ``params`` through ``initial_seed()`` and enqueue the results.
+
+        Intended for use on already-populated runs — either to kick off
+        additional entries on a resumed DB or to layer new work onto an
+        in-flight run.  Non-speculative entries yield :class:`Request`
+        objects which are inserted via :meth:`_enqueue_entry_request`;
+        speculative entries store templates on the scraper that the main
+        :meth:`run` loop will pick up via ``_discover_speculate_functions``.
+
+        If ``seed_params_json`` is already stored (the run was originally
+        seeded with ``--params``), the new entries are merged into the
+        stored list so the speculation filter inside :meth:`run` keeps
+        templates originating from this call.
+
+        Args:
+            params: List of ``{entry_name: kwargs}`` invocations, identical
+                in shape to the ``--params`` / ``--add-params`` JSON.
+
+        Raises:
+            ValueError: If ``params`` is empty or names an unknown entry —
+                propagated from :meth:`BaseScraper.initial_seed`.
+        """
+        entry_requests = self.scraper.initial_seed(params)
+        for entry_request in entry_requests:
+            await self._enqueue_entry_request(entry_request)
+
+        stored = await self.db.get_seed_params()
+        if stored is not None:
+            await self.db.update_seed_params(stored + params)
+
     # --- Run ---
 
     async def run(self, setup_signal_handlers: bool = True) -> None:
@@ -444,34 +513,7 @@ class PersistentDriver(
                 else:
                     entry_requests = self._get_entry_requests()
                 for entry_request in entry_requests:
-                    request_data = self._serialize_request(entry_request)
-                    dedup_key = (
-                        entry_request.deduplication_key
-                        if isinstance(entry_request.deduplication_key, str)
-                        else None
-                    )
-
-                    await self.db.insert_entry_request(
-                        priority=entry_request.priority,
-                        method=request_data["method"],
-                        url=request_data["url"],
-                        headers_json=request_data["headers_json"],
-                        cookies_json=request_data["cookies_json"],
-                        body=request_data["body"],
-                        continuation=request_data["continuation"],
-                        current_location=request_data["current_location"],
-                        accumulated_data_json=request_data[
-                            "accumulated_data_json"
-                        ],
-                        permanent_json=request_data["permanent_json"],
-                        dedup_key=dedup_key,
-                        verify=request_data.get("verify"),
-                        bypass_rate_limit=request_data.get(
-                            "bypass_rate_limit", False
-                        ),
-                        request_type=request_data["request_type"],
-                        expected_type=request_data.get("expected_type"),
-                    )
+                    await self._enqueue_entry_request(entry_request)
 
             # Discover @speculate functions and seed the queue
             self._speculation_state = self._discover_speculate_functions()

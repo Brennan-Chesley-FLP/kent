@@ -135,6 +135,7 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
         duplicate_check: Callable[[str], Awaitable[bool]] | None = None,
         stop_event: asyncio.Event | None = None,
         num_workers: int = 1,
+        proxy: str | None = None,
     ) -> None:
         """Initialize the driver.
 
@@ -169,6 +170,9 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
             stop_event: Optional asyncio.Event for graceful shutdown. When set, workers
                 will stop processing after completing their current request.
             num_workers: Number of concurrent workers to process requests. Defaults to 1.
+            proxy: Optional proxy URL for HTTP requests (e.g.
+                ``"socks5://user:pass@host:1080"``). Ignored when
+                ``request_manager`` is also provided.
         """
         self.scraper = scraper
         # Use asyncio.PriorityQueue for async-compatible priority queue
@@ -191,6 +195,7 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
             self.request_manager = AsyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
                 rates=scraper.rate_limits,
+                proxy=proxy,
             )
             self._owns_request_manager = True
 

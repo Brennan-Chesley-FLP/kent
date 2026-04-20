@@ -579,7 +579,7 @@ def parse_results(self, page, accumulated_data):
 - [ ] DESIGN.md documents all findings from Phases 1-4
 - [ ] Court mapping table is complete with CourtListener IDs
 - [ ] models.py has all ScrapedData models with typed fields
-- [ ] Models include at least *Docket, *DocketEntry, and *Document (for files, if there are any) 
+- [ ] Models include at least *Docket, *DocketEntry, and *Document (for files, if there are any)
 - [ ] scraper.py has proper class metadata (court_ids, data_types, status, version, rate_limits)
 - [ ] `driver_requirements` set if Playwright needed
 - [ ] Entry points cover all courts (one per court if speculative)

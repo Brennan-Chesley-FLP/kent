@@ -175,6 +175,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         | None = None,
         duplicate_check: Callable[[str], bool] | None = None,
         stop_event: threading.Event | None = None,
+        proxy: str | None = None,
     ) -> None:
         """Initialize the driver.
 
@@ -207,6 +208,9 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
                 skip it. If not provided, all requests are enqueued (no deduplication).
             stop_event: Optional threading.Event for graceful shutdown. When set, the driver
                 will stop processing after completing the current request.
+            proxy: Optional proxy URL for HTTP requests (e.g.
+                ``"socks5://user:pass@host:1080"``). Ignored when
+                ``request_manager`` is also provided.
         """
         self.scraper = scraper
         # Step 15: Use heapq for priority queue (min heap)
@@ -228,6 +232,7 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
             self.request_manager = SyncRequestManager(
                 ssl_context=scraper.get_ssl_context(),
                 rates=scraper.rate_limits,
+                proxy=proxy,
             )
             self._owns_request_manager = True
 

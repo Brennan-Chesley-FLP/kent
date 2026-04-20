@@ -88,6 +88,32 @@ logger = logging.getLogger(__name__)
 ScraperReturnDatatype = TypeVar("ScraperReturnDatatype")
 
 
+def _parse_proxy_for_playwright(proxy_url: str) -> dict[str, str]:
+    """Convert a proxy URL into Playwright's ``proxy=`` dict.
+
+    Playwright expects ``{"server": "<scheme>://<host>:<port>"}`` with
+    credentials in separate ``username`` / ``password`` fields — not
+    embedded in the URL.  Accepts any scheme Playwright supports
+    (``http``, ``https``, ``socks4``, ``socks5``).
+    """
+    from urllib.parse import unquote, urlsplit
+
+    parts = urlsplit(proxy_url)
+    if not parts.scheme or not parts.hostname:
+        raise ValueError(f"Invalid proxy URL: {proxy_url!r}")
+
+    server = f"{parts.scheme}://{parts.hostname}"
+    if parts.port is not None:
+        server += f":{parts.port}"
+
+    result: dict[str, str] = {"server": server}
+    if parts.username:
+        result["username"] = unquote(parts.username)
+    if parts.password:
+        result["password"] = unquote(parts.password)
+    return result
+
+
 def _resolve_user_data_dir(
     scraper: BaseScraper[Any],
     profile_name: str,
@@ -115,6 +141,7 @@ async def _launch_persistent(
     scraper: BaseScraper[Any],
     profile: BrowserProfile,
     headless: bool,
+    proxy: str | None = None,
 ) -> BrowserContext:
     """Launch a persistent browser context from a :class:`BrowserProfile`.
 
@@ -142,6 +169,8 @@ async def _launch_persistent(
     persistent_kwargs["headless"] = headless
     if profile.channel:
         persistent_kwargs["channel"] = profile.channel
+    if proxy:
+        persistent_kwargs["proxy"] = _parse_proxy_for_playwright(proxy)
 
     context = await browser_launcher.launch_persistent_context(
         str(user_data_dir),
@@ -447,6 +476,7 @@ class PlaywrightDriver(
         locale: str = "en-US",
         timezone_id: str = "America/New_York",
         browser_profile: BrowserProfile | None = None,
+        proxy: str | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[PlaywrightDriver[ScraperReturnDatatype]]:
         """Open Playwright driver as async context manager.
@@ -465,6 +495,11 @@ class PlaywrightDriver(
             browser_profile: Optional :class:`BrowserProfile` loaded from a
                 profile directory.  When provided, overrides browser_type,
                 channel, viewport, and launch strategy.
+            proxy: Optional proxy URL for the browser (e.g.
+                ``"socks5://user:pass@host:1080"``).  Forwarded to
+                Playwright's ``launch(proxy=...)``.  If the supplied
+                :class:`BrowserProfile` already configures a proxy, this
+                kwarg overrides it.
             **kwargs: Additional arguments passed to __init__.
 
         Yields:
@@ -568,7 +603,11 @@ class PlaywrightDriver(
             ):
                 # === Persistent context path (for Cloudflare bypass, etc.) ===
                 browser_context = await _launch_persistent(
-                    playwright, scraper, browser_profile, headless
+                    playwright,
+                    scraper,
+                    browser_profile,
+                    headless,
+                    proxy=proxy,
                 )
             else:
                 # === Standard path (existing behavior) ===
@@ -584,6 +623,8 @@ class PlaywrightDriver(
                     launch_kwargs.update(browser_profile.launch_options)
                     if browser_profile.channel:
                         launch_kwargs["channel"] = browser_profile.channel
+                if proxy:
+                    launch_kwargs["proxy"] = _parse_proxy_for_playwright(proxy)
 
                 browser_obj = await browser_launcher.launch(**launch_kwargs)
 

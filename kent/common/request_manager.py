@@ -122,6 +122,7 @@ class SyncRequestManager:
         ssl_context: ssl.SSLContext | None = None,
         timeout: float | None = None,
         rates: list[Rate] | None = None,
+        proxy: str | None = None,
     ) -> None:
         """Initialize the request manager.
 
@@ -131,10 +132,14 @@ class SyncRequestManager:
             timeout: Request timeout in seconds. None means no timeout (default).
             rates: Optional list of pyrate_limiter Rate objects. When provided,
                 requests are throttled at the httpx transport layer.
+            proxy: Optional proxy URL (e.g. ``"socks5://user:pass@host:1080"``
+                or ``"http://host:3128"``). SOCKS schemes require the
+                ``httpx[socks]`` extra (installed by default).
         """
         self.timeout = timeout
         self._ssl_context = ssl_context
         self._rates = rates
+        self._proxy = proxy
         self._limiter: Limiter | None = None
         self._alt_clients: dict[str, httpx.Client] = {}
         self._bypass_client: httpx.Client | None = None
@@ -150,14 +155,18 @@ class SyncRequestManager:
             transport_kwargs: dict[str, Any] = {}
             if ssl_context:
                 transport_kwargs["verify"] = ssl_context
+            if proxy:
+                transport_kwargs["proxy"] = proxy
             transport = RateLimiterTransport(
                 limiter=self._limiter, **transport_kwargs
             )
             self._client = httpx.Client(transport=transport, timeout=timeout)
         elif ssl_context:
-            self._client = httpx.Client(verify=ssl_context, timeout=timeout)
+            self._client = httpx.Client(
+                verify=ssl_context, timeout=timeout, proxy=proxy
+            )
         else:
-            self._client = httpx.Client(timeout=timeout)
+            self._client = httpx.Client(timeout=timeout, proxy=proxy)
 
     def _make_client(self, verify: bool | str) -> httpx.Client:
         """Create a new httpx.Client with the given verify setting.
@@ -171,11 +180,15 @@ class SyncRequestManager:
             )
 
             transport_kwargs: dict[str, Any] = {"verify": verify}
+            if self._proxy:
+                transport_kwargs["proxy"] = self._proxy
             transport = RateLimiterTransport(
                 limiter=self._limiter, **transport_kwargs
             )
             return httpx.Client(transport=transport, timeout=self.timeout)
-        return httpx.Client(verify=verify, timeout=self.timeout)
+        return httpx.Client(
+            verify=verify, timeout=self.timeout, proxy=self._proxy
+        )
 
     def _client_for(self, verify: bool | str) -> httpx.Client:
         """Return the appropriate httpx.Client for the given verify value.
@@ -197,16 +210,20 @@ class SyncRequestManager:
             key = f"bypass_{verify}"
             if key not in self._alt_clients:
                 self._alt_clients[key] = httpx.Client(
-                    verify=verify, timeout=self.timeout
+                    verify=verify, timeout=self.timeout, proxy=self._proxy
                 )
             return self._alt_clients[key]
         if self._bypass_client is None:
             if self._ssl_context:
                 self._bypass_client = httpx.Client(
-                    verify=self._ssl_context, timeout=self.timeout
+                    verify=self._ssl_context,
+                    timeout=self.timeout,
+                    proxy=self._proxy,
                 )
             else:
-                self._bypass_client = httpx.Client(timeout=self.timeout)
+                self._bypass_client = httpx.Client(
+                    timeout=self.timeout, proxy=self._proxy
+                )
         return self._bypass_client
 
     def close(self) -> None:
@@ -358,6 +375,7 @@ class AsyncRequestManager:
         ssl_context: ssl.SSLContext | None = None,
         timeout: float | None = None,
         rates: list[Rate] | None = None,
+        proxy: str | None = None,
     ) -> None:
         """Initialize the request manager.
 
@@ -367,10 +385,14 @@ class AsyncRequestManager:
             timeout: Request timeout in seconds. None means no timeout (default).
             rates: Optional list of pyrate_limiter Rate objects. When provided,
                 requests are throttled at the httpx transport layer.
+            proxy: Optional proxy URL (e.g. ``"socks5://user:pass@host:1080"``
+                or ``"http://host:3128"``). SOCKS schemes require the
+                ``httpx[socks]`` extra (installed by default).
         """
         self.timeout = timeout
         self._ssl_context = ssl_context
         self._rates = rates
+        self._proxy = proxy
         self._limiter: Limiter | None = None
         self._alt_clients: dict[str, httpx.AsyncClient] = {}
         self._bypass_client: httpx.AsyncClient | None = None
@@ -386,6 +408,8 @@ class AsyncRequestManager:
             transport_kwargs: dict[str, Any] = {}
             if ssl_context:
                 transport_kwargs["verify"] = ssl_context
+            if proxy:
+                transport_kwargs["proxy"] = proxy
             transport = AsyncRateLimiterTransport(
                 limiter=self._limiter, **transport_kwargs
             )
@@ -394,10 +418,10 @@ class AsyncRequestManager:
             )
         elif ssl_context:
             self._client = httpx.AsyncClient(
-                verify=ssl_context, timeout=timeout
+                verify=ssl_context, timeout=timeout, proxy=proxy
             )
         else:
-            self._client = httpx.AsyncClient(timeout=timeout)
+            self._client = httpx.AsyncClient(timeout=timeout, proxy=proxy)
 
     def _make_client(self, verify: bool | str) -> httpx.AsyncClient:
         """Create a new httpx.AsyncClient with the given verify setting.
@@ -411,11 +435,15 @@ class AsyncRequestManager:
             )
 
             transport_kwargs: dict[str, Any] = {"verify": verify}
+            if self._proxy:
+                transport_kwargs["proxy"] = self._proxy
             transport = AsyncRateLimiterTransport(
                 limiter=self._limiter, **transport_kwargs
             )
             return httpx.AsyncClient(transport=transport, timeout=self.timeout)
-        return httpx.AsyncClient(verify=verify, timeout=self.timeout)
+        return httpx.AsyncClient(
+            verify=verify, timeout=self.timeout, proxy=self._proxy
+        )
 
     def _client_for(self, verify: bool | str) -> httpx.AsyncClient:
         """Return the appropriate httpx.AsyncClient for the given verify value.
@@ -436,16 +464,20 @@ class AsyncRequestManager:
             key = f"bypass_{verify}"
             if key not in self._alt_clients:
                 self._alt_clients[key] = httpx.AsyncClient(
-                    verify=verify, timeout=self.timeout
+                    verify=verify, timeout=self.timeout, proxy=self._proxy
                 )
             return self._alt_clients[key]
         if self._bypass_client is None:
             if self._ssl_context:
                 self._bypass_client = httpx.AsyncClient(
-                    verify=self._ssl_context, timeout=self.timeout
+                    verify=self._ssl_context,
+                    timeout=self.timeout,
+                    proxy=self._proxy,
                 )
             else:
-                self._bypass_client = httpx.AsyncClient(timeout=self.timeout)
+                self._bypass_client = httpx.AsyncClient(
+                    timeout=self.timeout, proxy=self._proxy
+                )
         return self._bypass_client
 
     async def close(self) -> None:

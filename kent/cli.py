@@ -417,7 +417,20 @@ def serve(runs_dir: str, host: str, port: int, verbose: bool) -> None:
     help=(
         "JSON list of seed parameters for initial_seed(). "
         "Example: '[{\"get_oral_arguments\": {}}]'. "
-        "Use ``kent inspect --seed-params`` to generate a template."
+        "Use ``kent inspect --seed-params`` to generate a template. "
+        "Rejected if the database already has a run; use --add-params "
+        "to layer entries onto an existing run."
+    ),
+)
+@click.option(
+    "--add-params",
+    "add_params_json",
+    default=None,
+    help=(
+        "JSON list of seed parameters to add to an existing run. "
+        "Runs initial_seed() with these params and enqueues the resulting "
+        "requests before continuing the run. Mutually exclusive with "
+        "--params."
     ),
 )
 @click.option(
@@ -441,6 +454,17 @@ def serve(runs_dir: str, host: str, port: int, verbose: bool) -> None:
     is_flag=True,
     help="Skip archive requests; local_filepath will be 'skipped'.",
 )
+@click.option(
+    "--proxy",
+    default=None,
+    metavar="URL",
+    help=(
+        "Route requests through a proxy. Accepts http://, https://, "
+        "socks4://, or socks5:// URLs, with optional credentials "
+        "(e.g. socks5://user:pass@host:1080). Applied to HTTP drivers "
+        "and the Playwright browser alike."
+    ),
+)
 @click.option("-v", "--verbose", is_flag=True, help="Verbose logging.")
 def run(
     scraper: str,
@@ -451,9 +475,11 @@ def run(
     storage: str | None,
     no_resume: bool,
     params_json: str | None,
+    add_params_json: str | None,
     headed: bool,
     browser_profile_path: str | None,
     skip_archive: bool,
+    proxy: str | None,
     verbose: bool,
 ) -> None:
     """Run a scraper with the chosen driver.
@@ -490,6 +516,12 @@ def run(
     if storage_dir:
         storage_dir.mkdir(parents=True, exist_ok=True)
 
+    if params_json is not None and add_params_json is not None:
+        raise click.UsageError(
+            "--params and --add-params are mutually exclusive. "
+            "Use --params on a fresh database, --add-params on an existing one."
+        )
+
     seed_params: list[dict[str, dict[str, Any]]] | None = None
     if params_json is not None:
         try:
@@ -498,6 +530,19 @@ def run(
             raise click.BadParameter(f"Invalid JSON for --params: {e}") from e
         if not isinstance(seed_params, list):
             raise click.BadParameter("--params must be a JSON list")
+
+    add_seed_params: list[dict[str, dict[str, Any]]] | None = None
+    if add_params_json is not None:
+        try:
+            add_seed_params = json.loads(add_params_json)
+        except json.JSONDecodeError as e:
+            raise click.BadParameter(
+                f"Invalid JSON for --add-params: {e}"
+            ) from e
+        if not isinstance(add_seed_params, list) or not add_seed_params:
+            raise click.BadParameter(
+                "--add-params must be a non-empty JSON list"
+            )
 
     # --- Driver auto-selection from scraper requirements ---
     reqs = getattr(scraper_class, "driver_requirements", [])
@@ -561,6 +606,15 @@ def run(
             "--browser-profile is only supported with --driver playwright"
         )
 
+    if add_seed_params is not None and driver_name not in (
+        "persistent",
+        "playwright",
+    ):
+        raise click.UsageError(
+            "--add-params is only supported with the persistent and "
+            "playwright drivers (it requires a request database)."
+        )
+
     click.echo(f"Scraper: {scraper_name}")
     click.echo(f"Driver:  {driver_name}")
 
@@ -570,6 +624,7 @@ def run(
             storage_dir,
             seed_params,
             skip_archive=skip_archive,
+            proxy=proxy,
         )
     elif driver_name == "async":
         _run_async(
@@ -578,6 +633,7 @@ def run(
             workers,
             seed_params,
             skip_archive=skip_archive,
+            proxy=proxy,
         )
     elif driver_name == "persistent":
         _run_persistent(
@@ -590,6 +646,8 @@ def run(
             seed_params,
             max_workers=max_workers,
             skip_archive=skip_archive,
+            proxy=proxy,
+            add_seed_params=add_seed_params,
         )
     elif driver_name == "playwright":
         _run_playwright(
@@ -604,6 +662,8 @@ def run(
             browser_profile_path=browser_profile_path,
             max_workers=max_workers,
             skip_archive=skip_archive,
+            proxy=proxy,
+            add_seed_params=add_seed_params,
         )
 
 
@@ -618,6 +678,7 @@ def _run_sync(
     seed_params: list[dict[str, dict[str, Any]]] | None,
     *,
     skip_archive: bool = False,
+    proxy: str | None = None,
 ) -> None:
     from kent.driver.archive_handler import NoDownloadsSyncArchiveHandler
     from kent.driver.sync_driver import SyncDriver
@@ -627,6 +688,7 @@ def _run_sync(
         scraper=scraper,
         storage_dir=storage_dir,
         archive_handler=archive_handler,
+        proxy=proxy,
     )
     driver.seed_params = seed_params
     driver.run()
@@ -640,6 +702,7 @@ def _run_async(
     seed_params: list[dict[str, dict[str, Any]]] | None,
     *,
     skip_archive: bool = False,
+    proxy: str | None = None,
 ) -> None:
     from kent.driver.archive_handler import NoDownloadsAsyncArchiveHandler
     from kent.driver.async_driver import AsyncDriver
@@ -654,12 +717,35 @@ def _run_async(
             storage_dir=storage_dir,
             num_workers=workers,
             archive_handler=archive_handler,
+            proxy=proxy,
         )
         driver.seed_params = seed_params
         await driver.run()
 
     asyncio.run(_go())
     click.echo("Done.")
+
+
+async def _reject_params_on_existing_db(db_path: Path) -> None:
+    """Raise if ``db_path`` is a database that already has a run.
+
+    Called when the user passes ``--params`` so they don't silently
+    clobber or be ignored by an existing run.  ``--add-params`` is the
+    intended path for layering entries onto an existing database.
+    """
+    if not db_path.exists():
+        return
+    from kent.driver.persistent_driver.sql_manager import SQLManager
+
+    async with SQLManager.open(db_path) as sql:
+        existing = await sql.get_run_metadata()
+    if existing is not None:
+        raise click.ClickException(
+            f"Database {db_path} already has a run for scraper "
+            f"'{existing.get('scraper_name')}'. --params is only valid on "
+            "a fresh database; use --add-params to add entries to an "
+            "existing run, or delete the database to start over."
+        )
 
 
 def _run_persistent(
@@ -673,6 +759,8 @@ def _run_persistent(
     *,
     max_workers: int | None = None,
     skip_archive: bool = False,
+    proxy: str | None = None,
+    add_seed_params: list[dict[str, dict[str, Any]]] | None = None,
 ) -> None:
     try:
         from kent.driver.persistent_driver import PersistentDriver
@@ -687,6 +775,8 @@ def _run_persistent(
     click.echo(f"Database: {resolved_db}")
 
     async def _go() -> None:
+        if seed_params is not None:
+            await _reject_params_on_existing_db(resolved_db)
         open_kwargs: dict[str, Any] = {
             "scraper": scraper,
             "db_path": resolved_db,
@@ -697,6 +787,8 @@ def _run_persistent(
         }
         if max_workers is not None:
             open_kwargs["max_workers"] = max_workers
+        if proxy is not None:
+            open_kwargs["proxy"] = proxy
         async with PersistentDriver.open(**open_kwargs) as driver:
             if skip_archive:
                 from kent.driver.archive_handler import (
@@ -704,6 +796,8 @@ def _run_persistent(
                 )
 
                 driver.archive_handler = NoDownloadsAsyncArchiveHandler()
+            if add_seed_params is not None:
+                await driver.add_seed_params(add_seed_params)
             await driver.run()
 
     asyncio.run(_go())
@@ -723,6 +817,8 @@ def _run_playwright(
     browser_profile_path: str | None = None,
     max_workers: int | None = None,
     skip_archive: bool = False,
+    proxy: str | None = None,
+    add_seed_params: list[dict[str, dict[str, Any]]] | None = None,
 ) -> None:
     try:
         from kent.driver.playwright_driver import PlaywrightDriver
@@ -750,6 +846,8 @@ def _run_playwright(
     click.echo(f"Database: {resolved_db}")
 
     async def _go() -> None:
+        if seed_params is not None:
+            await _reject_params_on_existing_db(resolved_db)
         open_kwargs: dict[str, Any] = {
             "scraper": scraper,
             "db_path": resolved_db,
@@ -762,6 +860,8 @@ def _run_playwright(
         }
         if max_workers is not None:
             open_kwargs["max_workers"] = max_workers
+        if proxy is not None:
+            open_kwargs["proxy"] = proxy
         async with PlaywrightDriver.open(**open_kwargs) as driver:
             if skip_archive:
                 from kent.driver.archive_handler import (
@@ -769,6 +869,8 @@ def _run_playwright(
                 )
 
                 driver.archive_handler = NoDownloadsAsyncArchiveHandler()
+            if add_seed_params is not None:
+                await driver.add_seed_params(add_seed_params)
             await driver.run()
 
     asyncio.run(_go())

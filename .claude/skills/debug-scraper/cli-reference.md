@@ -110,7 +110,14 @@ Options:
                                   initial_seed(). Example:
                                   '[{"get_oral_arguments": {}}]'. Use ``kent
                                   inspect --seed-params`` to generate a
-                                  template.
+                                  template. Rejected if the database already
+                                  has a run; use --add-params to layer entries
+                                  onto an existing run.
+  --add-params TEXT               JSON list of seed parameters to add to an
+                                  existing run. Runs initial_seed() with these
+                                  params and enqueues the resulting requests
+                                  before continuing the run. Mutually
+                                  exclusive with --params.
   --headed                        Show the browser window (playwright driver
                                   only).
   --browser-profile DIRECTORY     Path to a browser profile directory
@@ -119,6 +126,12 @@ Options:
                                   supported with --driver playwright.
   --skip-archive                  Skip archive requests; local_filepath will
                                   be 'skipped'.
+  --proxy URL                     Route requests through a proxy. Accepts
+                                  http://, https://, socks4://, or socks5://
+                                  URLs, with optional credentials (e.g.
+                                  socks5://user:pass@host:1080). Applied to
+                                  HTTP drivers and the Playwright browser
+                                  alike.
   -v, --verbose                   Verbose logging.
   --help                          Show this message and exit.
 ```

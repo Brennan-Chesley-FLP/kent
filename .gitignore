@@ -24,3 +24,5 @@ wheels/
 uv.lock
 .coverage
 .hypothesis
+.claude/settings.json
+.playwright-mcp

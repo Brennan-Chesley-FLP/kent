@@ -138,6 +138,24 @@ class RunMetadataMixin:
             )
             await session.commit()
 
+    async def update_seed_params(
+        self,
+        seed_params: list[dict[str, dict[str, Any]]],
+    ) -> None:
+        """Overwrite the stored ``seed_params_json`` in run metadata.
+
+        Used by ``--add-params`` to keep the stored intent in sync so that
+        speculation filtering during ``run()`` doesn't drop templates added
+        to an existing run.
+        """
+        async with self._lock, self._session_factory() as session:
+            await session.execute(
+                update(RunMetadata)
+                .where(RunMetadata.id == 1)
+                .values(seed_params_json=json.dumps(seed_params))
+            )
+            await session.commit()
+
     async def restore_queue(self) -> int:
         """Restore pending requests from database on startup.
 
