@@ -407,7 +407,7 @@ the parameter type — no decorator argument needed.
 @entry({Docket})
 def fetch_{court_prefix}_docket(self, rid: SpeculativeRange) -> Request:
     """Speculative docket fetcher for {Court Name}."""
-    docket_id = f"{PREFIX}{rid.number:06d}"  # Format to match site pattern
+    docket_id = f"{PREFIX}{rid.min:06d}"  # Format to match site pattern
     return Request(
         request=HTTPRequestParams(
             method=HttpMethod.POST,
@@ -420,7 +420,8 @@ def fetch_{court_prefix}_docket(self, rid: SpeculativeRange) -> Request:
 ```
 
 For year-partitioned numbers use `YearlySpeculativeRange` as the parameter
-type (provides `.year` and `.number`).
+type (provides `.year` and `.min`). Seed params use `min`, optional
+`soft_max`, `should_advance`, and `gap`.
 
 **Oral arguments (if discovered):**
 ```python

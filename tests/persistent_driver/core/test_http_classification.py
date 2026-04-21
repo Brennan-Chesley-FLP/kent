@@ -42,9 +42,7 @@ from kent.driver.persistent_driver.errors import classify_error
 from kent.driver.persistent_driver.persistent_driver import PersistentDriver
 from kent.driver.persistent_driver.testing import (
     MockRequestManager,
-    create_html_response,
 )
-
 
 # ---------------------------------------------------------------------------
 # 1. Active-set algebra (pure unit tests — no HTTP)
@@ -237,9 +235,7 @@ class _PersistentScraper(BaseScraper[dict]):
             continuation="parse",
         )
 
-    def parse(
-        self, response: Response
-    ) -> Generator[ScraperYield, None, None]:
+    def parse(self, response: Response) -> Generator[ScraperYield, None, None]:
         yield ParsedData({"url": response.url})
 
 
@@ -248,24 +244,6 @@ class TestWorkerBranch:
         self, db_path: Path
     ) -> None:
         manager = MockRequestManager()
-        # Register a 500 response for the target URL.
-        manager.add_response(
-            "https://example.com/missing",
-            Response(
-                status_code=500,
-                headers={},
-                content=b"oops",
-                text="oops",
-                url="https://example.com/missing",
-                request=BaseRequest(
-                    request=HTTPRequestParams(
-                        method=HttpMethod.GET,
-                        url="https://example.com/missing",
-                    ),
-                    continuation="parse",
-                ),
-            ),
-        )
         # MockRequestManager returns a Response directly; to exercise the
         # worker's `except PersistentHTTPResponseException` branch we wrap
         # resolve_request to raise instead.
@@ -292,16 +270,12 @@ class TestWorkerBranch:
             async with driver.db._session_factory() as session:
                 req_rows = (
                     await session.execute(
-                        sa.text(
-                            "SELECT status, retry_count FROM requests"
-                        )
+                        sa.text("SELECT status, retry_count FROM requests")
                     )
                 ).all()
                 err_rows = (
                     await session.execute(
-                        sa.text(
-                            "SELECT error_type, status_code FROM errors"
-                        )
+                        sa.text("SELECT error_type, status_code FROM errors")
                     )
                 ).all()
 

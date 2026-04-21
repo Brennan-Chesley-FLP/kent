@@ -146,30 +146,38 @@ Speculation enables content discovery by probing sequential IDs. The system
 has three components:
 
 1. **The Speculative Protocol** (``kent/common/speculative.py``): A
-   runtime-checkable Protocol that parameter models implement. Five methods:
-   ``should_speculate()``, ``to_int()``, ``from_int(n)``,
-   ``check_success()``, ``max_gap()``.
+   runtime-checkable Protocol that parameter models implement. One
+   attribute (``should_advance: bool``) plus three methods:
+   ``seed_range() -> range``, ``from_int(n)``, ``max_gap() -> int``.
 
 2. **Detection**: When ``@entry`` decorates a method, it checks if any
-   parameter's type implements ``Speculative``. If so, it records the
-   ``speculative_param`` name in ``EntryMetadata``.
+   parameter's type structurally implements ``Speculative``. If so, it
+   records the ``speculative_param`` name in ``EntryMetadata``.
 
-3. **Driver Execution**: The driver's speculation loop has two phases:
+3. **Driver Execution**: The driver's speculation loop has two steps.
+   Every request it enqueues is flagged ``is_speculative=True`` with a
+   populated ``speculation_id``:
 
-   **Phase 1 (Non-speculative)**: Starting from ``to_int()``, seed upward
-   while ``check_success()`` returns ``False``. These requests are
-   unconditional.
+   **Seed range**: Enqueue every ID in ``template.seed_range()`` as a
+   speculative request. This is the explicit "fetch these IDs" list.
 
-   **Phase 2 (Speculative)**: Once ``check_success()`` returns ``True``,
-   seed ``max_gap()`` speculative requests. Track success/failure:
+   **Advance window**: If ``template.should_advance`` is ``True`` and
+   ``max_gap() > 0``, enqueue an initial advance window of ``max_gap()``
+   probes past the end of ``seed_range()``. Successes extend the ceiling;
+   ``max_gap()`` consecutive failures past the highest success stop the
+   probe.
 
-   - On success: update ``highest_successful_id``, reset ``consecutive_failures``,
-     extend the window if needed
-   - On failure: increment ``consecutive_failures``
-   - When ``consecutive_failures >= max_gap()``: stop speculation for this template
+   - On success: update ``highest_successful_id``, reset
+     ``consecutive_failures``, extend the window if needed.
+   - On failure: increment ``consecutive_failures``.
+   - When ``consecutive_failures >= max_gap()``: stop speculation for
+     this template.
 
    ``fails_successfully()`` on the scraper detects soft-404 responses
-   (HTTP 200 with error content).
+   (HTTP 200 with error content). A persistent HTTP error
+   (``is_persistent_error``) on a speculative request is treated as a
+   speculation failure rather than an error row — see
+   ``SpeculationHTTPFailure``.
 
 **SpeculationState** tracks per-template state:
 

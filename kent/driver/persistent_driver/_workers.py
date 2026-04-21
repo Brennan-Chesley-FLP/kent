@@ -12,6 +12,7 @@ from kent.common.exceptions import (
     PersistentHTTPResponseException,
     RequestFailedHalt,
     RequestFailedSkip,
+    SpeculationHTTPFailure,
     TransientException,
 )
 from kent.data_types import (
@@ -601,6 +602,37 @@ class WorkerMixin:
                             "reason": "max_backoff_exceeded",
                         },
                     )
+
+            except SpeculationHTTPFailure as e:
+                # Persistent HTTP on a speculative probe — record as a
+                # speculation outcome, not an error. No retries, no
+                # continuation, no errors-table row.
+                from kent.data_types import Response as _Response
+
+                logger.info(
+                    f"Worker {worker_id} speculation probe returned "
+                    f"HTTP {e.status_code} on request {request_id}: {e.url}"
+                )
+                synthetic = _Response(
+                    status_code=e.status_code,
+                    headers={},
+                    content=b"",
+                    text="",
+                    url=e.url,
+                    request=request,
+                )
+                if request.is_speculative and self._speculation_state:
+                    await self._track_speculation_outcome(request, synthetic)
+                await self._mark_request_completed(request_id)
+                await self._emit_progress(
+                    "request_completed",
+                    {
+                        "request_id": request_id,
+                        "url": e.url,
+                        "reason": "speculation_failure",
+                        "status_code": e.status_code,
+                    },
+                )
 
             except PersistentHTTPResponseException as e:
                 # Classifier said this status is persistent — don't retry,

@@ -282,54 +282,52 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
     def _seed_speculative_queue(self) -> None:
         """Seed the queue with requests from speculative templates.
 
-        Seeding starts at ``template.to_int()`` and goes upward:
-
-        **Phase 1** (non-speculative): while ``check_success()`` is False,
-        seed unconditional requests. These are IDs we know we want.
-
-        **Phase 2** (speculative): once ``check_success()`` is True, seed
-        ``max_gap()`` speculative requests for the gap-based tracking window.
-        Skipped if ``should_speculate()`` is False or ``max_gap() == 0``.
+        Every enqueued request is speculative (``is_speculative=True`` +
+        populated ``speculation_id``). First seeds ``template.seed_range()``
+        (the explicitly-requested IDs), then — when
+        ``template.should_advance`` is True and ``template.max_gap() > 0`` —
+        an initial advance window of ``max_gap()`` probes past
+        ``seed_range.stop``.
         """
         for state_key, spec_state in self._speculation_state.items():
             func = getattr(self.scraper, spec_state.base_func_name)
             template = spec_state.template
-            speculative_param = None
+            speculative_param: str | None = None
             for entry_info in self.scraper.list_speculative_entries():
                 if entry_info.name == spec_state.base_func_name:
                     speculative_param = entry_info.speculative_param
                     break
             assert speculative_param is not None
 
-            n = template.to_int()
+            seed_ids = template.seed_range()
+            # Advance floor: one past the last seed id. When seed_range is
+            # empty (soft_max <= min), fall back to the template's floor
+            # (seed_ids.start == min) so the advance window starts there.
+            advance_floor = max(seed_ids.start, seed_ids.stop)
+            window = (
+                range(advance_floor, advance_floor + template.max_gap())
+                if template.should_advance and template.max_gap() > 0
+                else range(0)
+            )
 
-            # Phase 1: non-speculative while check_success is False
-            while not template.from_int(n).check_success():
-                request = func(**{speculative_param: template.from_int(n)})
+            for n in list(seed_ids) + list(window):
+                concrete = template.from_int(n)
+                request = func(**{speculative_param: concrete})
+                request = request.speculative(
+                    state_key, spec_state.param_index, n
+                )
                 heapq.heappush(
                     self.request_queue,
                     (request.priority, self._queue_counter, request),
                 )
                 self._queue_counter += 1
-                n += 1
 
-            # Phase 2: speculative window
-            if template.should_speculate() and template.max_gap() > 0:
-                gap = template.max_gap()
-                for spec_n in range(n, n + gap):
-                    concrete = template.from_int(spec_n)
-                    request = func(**{speculative_param: concrete})
-                    request = request.speculative(
-                        state_key, spec_state.param_index, spec_n
-                    )
-                    heapq.heappush(
-                        self.request_queue,
-                        (request.priority, self._queue_counter, request),
-                    )
-                    self._queue_counter += 1
-                spec_state.current_ceiling = n + gap - 1
+            if window:
+                spec_state.current_ceiling = (
+                    advance_floor + template.max_gap() - 1
+                )
             else:
-                spec_state.current_ceiling = max(n - 1, template.to_int())
+                spec_state.current_ceiling = advance_floor - 1
                 spec_state.stopped = True
 
     def _extend_speculation(self, state_key: str) -> None:

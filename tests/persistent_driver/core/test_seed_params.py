@@ -45,26 +45,20 @@ class CaseId(BaseModel):
     """Speculative parameter for testing."""
 
     case_id: int
-    speculate: bool = True
-    threshold: int = 0
+    soft_max: int = 0
+    should_advance: bool = True
     gap: int = 2
 
-    def should_speculate(self) -> bool:
-        return self.speculate
-
-    def to_int(self) -> int:
-        return self.case_id
+    def seed_range(self) -> range:
+        return range(self.case_id, self.soft_max)
 
     def from_int(self, n: int) -> CaseId:
         return CaseId(
             case_id=n,
-            speculate=self.speculate,
-            threshold=self.threshold,
+            soft_max=self.soft_max,
+            should_advance=self.should_advance,
             gap=self.gap,
         )
-
-    def check_success(self) -> bool:
-        return self.case_id >= self.threshold
 
     def max_gap(self) -> int:
         return self.gap

@@ -23,26 +23,20 @@ class ItemId(BaseModel):
     """Speculative parameter model for testing seed_speculative_requests."""
 
     item_id: int
-    speculate: bool = True
-    threshold: int = 0
+    soft_max: int = 0
+    should_advance: bool = True
     gap: int = 10
 
-    def should_speculate(self) -> bool:
-        return self.speculate
-
-    def to_int(self) -> int:
-        return self.item_id
+    def seed_range(self) -> range:
+        return range(self.item_id, self.soft_max)
 
     def from_int(self, n: int) -> ItemId:
         return ItemId(
             item_id=n,
-            speculate=self.speculate,
-            threshold=self.threshold,
+            soft_max=self.soft_max,
+            should_advance=self.should_advance,
             gap=self.gap,
         )
-
-    def check_success(self) -> bool:
-        return self.item_id >= self.threshold
 
     def max_gap(self) -> int:
         return self.gap

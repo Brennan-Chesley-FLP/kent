@@ -42,7 +42,6 @@ from kent.common.checked_html import CheckedHtmlElement
 from kent.common.exceptions import (
     ScraperAssumptionException,
 )
-from kent.common.speculative import Speculative
 from kent.data_types import (
     ArchiveResponse,
     BaseRequest,
@@ -670,6 +669,27 @@ class EntryMetadata:
         return validated
 
 
+def _implements_speculative(cls: type) -> bool:
+    """Return True if ``cls`` structurally satisfies the Speculative protocol.
+
+    Used instead of ``issubclass(cls, Speculative)`` because the Protocol
+    has a non-method member (``should_advance``), which makes the runtime
+    ``issubclass`` check raise at import time. We check attribute presence
+    on the class and its annotations — Pydantic fields show up in
+    ``model_fields``, methods show up on the class itself.
+    """
+    for method_name in ("seed_range", "from_int", "max_gap"):
+        if not callable(getattr(cls, method_name, None)):
+            return False
+    # ``should_advance`` may be a Pydantic field (visible on the class via
+    # model_fields for BaseModel subclasses), a class attribute, or a
+    # property. Any of the three satisfies the Protocol attribute.
+    if hasattr(cls, "should_advance"):
+        return True
+    model_fields = getattr(cls, "model_fields", None)
+    return isinstance(model_fields, dict) and "should_advance" in model_fields
+
+
 def entry(
     return_type: type | Any,
 ) -> Callable[..., Any]:
@@ -762,10 +782,11 @@ def entry(
             if isinstance(param_type, type) and issubclass(
                 param_type, BaseModel
             ):
-                # Check if this BaseModel implements Speculative
-                if isinstance(param_type, type) and issubclass(
-                    param_type, Speculative
-                ):
+                # Check if this BaseModel implements Speculative. Structural
+                # check (not ``issubclass(param_type, Speculative)``) because
+                # the Protocol now has a non-method member (``should_advance``),
+                # which ``issubclass`` refuses for @runtime_checkable Protocols.
+                if _implements_speculative(param_type):
                     if speculative_param is not None:
                         raise TypeError(
                             f"Entry function '{fn.__name__}' has multiple "

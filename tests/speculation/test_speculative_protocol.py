@@ -39,26 +39,20 @@ class CaseId(BaseModel):
     """Simple speculative parameter model for testing."""
 
     case_id: int
-    speculate: bool = True
-    threshold: int = 0
+    soft_max: int = 0
+    should_advance: bool = True
     gap: int = 2
 
-    def should_speculate(self) -> bool:
-        return self.speculate
-
-    def to_int(self) -> int:
-        return self.case_id
+    def seed_range(self) -> range:
+        return range(self.case_id, self.soft_max)
 
     def from_int(self, n: int) -> "CaseId":
         return CaseId(
             case_id=n,
-            speculate=self.speculate,
-            threshold=self.threshold,
+            soft_max=self.soft_max,
+            should_advance=self.should_advance,
             gap=self.gap,
         )
-
-    def check_success(self) -> bool:
-        return self.case_id >= self.threshold
 
     def max_gap(self) -> int:
         return self.gap
@@ -69,27 +63,21 @@ class DocketId(BaseModel):
 
     year: int
     number: int
-    speculate: bool = True
-    threshold: int = 0
+    soft_max: int = 0
+    should_advance: bool = True
     gap: int = 2
 
-    def should_speculate(self) -> bool:
-        return self.speculate
-
-    def to_int(self) -> int:
-        return self.number
+    def seed_range(self) -> range:
+        return range(self.number, self.soft_max)
 
     def from_int(self, n: int) -> "DocketId":
         return DocketId(
             year=self.year,
             number=n,
-            speculate=self.speculate,
-            threshold=self.threshold,
+            soft_max=self.soft_max,
+            should_advance=self.should_advance,
             gap=self.gap,
         )
-
-    def check_success(self) -> bool:
-        return self.number >= self.threshold
 
     def max_gap(self) -> int:
         return self.gap
@@ -133,9 +121,10 @@ class SpeculationTestScraper(BaseScraper[dict]):
 
 
 class TestSpeculativeProtocol:
-    def test_issubclass_with_pydantic_model(self):
-        assert issubclass(CaseId, Speculative)
-        assert issubclass(DocketId, Speculative)
+    # Note: ``issubclass(X, Speculative)`` no longer works because the
+    # Protocol has a non-method attribute (``should_advance``). The
+    # ``@entry`` decorator uses a structural helper instead; user-facing
+    # code relies on ``isinstance(instance, Speculative)``.
 
     def test_isinstance_with_pydantic_instance(self):
         assert isinstance(CaseId(case_id=1), Speculative)
@@ -145,7 +134,7 @@ class TestSpeculativeProtocol:
         class PlainModel(BaseModel):
             name: str
 
-        assert not issubclass(PlainModel, Speculative)
+        assert not isinstance(PlainModel(name="x"), Speculative)
 
     def test_entry_auto_detects_speculative_param(self):
         meta = get_entry_metadata(SpeculationTestScraper.fetch_case)
@@ -208,7 +197,7 @@ class TestSyncDriverSpeculationDiscovery:
         state = driver._discover_speculate_functions()
 
         assert "fetch_case:0" in state
-        assert state["fetch_case:0"].template.to_int() == 5
+        assert state["fetch_case:0"].template.case_id == 5
         assert state["fetch_case:0"].param_index == 0
 
     def test_no_templates_no_state(self):
@@ -232,8 +221,8 @@ class TestSyncDriverSpeculationDiscovery:
 
         assert "fetch_case:0" in state
         assert "fetch_case:1" in state
-        assert state["fetch_case:0"].template.to_int() == 10
-        assert state["fetch_case:1"].template.to_int() == 20
+        assert state["fetch_case:0"].template.case_id == 10
+        assert state["fetch_case:1"].template.case_id == 20
         assert state["fetch_case:0"].param_index == 0
         assert state["fetch_case:1"].param_index == 1
 
@@ -251,15 +240,14 @@ class TestSyncDriverSpeculationSeeding:
         driver._speculation_state = driver._discover_speculate_functions()
         driver._seed_speculative_queue()
 
-        # threshold=0 → check_success(5) True immediately → no phase 1
-        # Phase 2: seed 5, 6, 7 (gap=3)
+        # seed_range(5, 0) is empty; advance window of 3 starts at 5 → [5,6,7].
         assert len(driver.request_queue) == 3
         urls = {req.request.url for _p, _c, req in driver.request_queue}
         expected = {f"https://example.com/case/{i}" for i in range(5, 8)}
         assert urls == expected
 
-    def test_all_seeded_are_speculative_when_check_success_true(self):
-        """All requests are speculative when threshold=0 (check_success always True)."""
+    def test_empty_seed_range_only_advance_window(self):
+        """Empty seed_range + should_advance=True seeds only the window."""
         scraper = SpeculationTestScraper()
         list(
             scraper.initial_seed(
@@ -270,20 +258,20 @@ class TestSyncDriverSpeculationSeeding:
         driver._speculation_state = driver._discover_speculate_functions()
         driver._seed_speculative_queue()
 
-        # Phase 1: 0 (check_success(3)=True). Phase 2: 3, 4.
+        # seed_range(3, 0) is empty; window of 2 starts at window_start = 3.
         assert len(driver.request_queue) == 2
         for _p, _c, req in driver.request_queue:
             assert req.is_speculative is True
 
-    def test_check_success_split(self):
-        """IDs below threshold seeded non-speculative, then speculative window."""
+    def test_seed_range_plus_window_all_speculative(self):
+        """seed_range yields speculative IDs and the advance window adds more."""
         scraper = SpeculationTestScraper()
         list(
             scraper.initial_seed(
                 [
                     {
                         "fetch_case": {
-                            "cid": {"case_id": 1, "gap": 2, "threshold": 3}
+                            "cid": {"case_id": 1, "gap": 2, "soft_max": 3}
                         }
                     }
                 ]
@@ -293,26 +281,21 @@ class TestSyncDriverSpeculationSeeding:
         driver._speculation_state = driver._discover_speculate_functions()
         driver._seed_speculative_queue()
 
-        non_speculative_count = sum(
-            1 for _p, _c, req in driver.request_queue if not req.is_speculative
-        )
-        speculative_count = sum(
-            1 for _p, _c, req in driver.request_queue if req.is_speculative
-        )
-        # Phase 1: to_int()=1, IDs 1,2 non-speculative (check_success False)
-        # Phase 2: IDs 3,4 speculative (gap=2)
-        assert non_speculative_count == 2
-        assert speculative_count == 2
+        # seed_range(1, 3) = [1, 2] (2 speculative)
+        # Phase 2 window starts at 3, gap=2 → [3, 4] (2 speculative)
+        assert len(driver.request_queue) == 4
+        for _p, _c, req in driver.request_queue:
+            assert req.is_speculative is True
 
-    def test_frozen_seeds_non_speculative_range(self):
-        """gap=0 with to_int < threshold seeds non-speculative range, then stops."""
+    def test_frozen_seeds_range_then_stops(self):
+        """gap=0 seeds seed_range as speculative, then stops without advancing."""
         scraper = SpeculationTestScraper()
         list(
             scraper.initial_seed(
                 [
                     {
                         "fetch_case": {
-                            "cid": {"case_id": 1, "threshold": 5, "gap": 0}
+                            "cid": {"case_id": 1, "soft_max": 5, "gap": 0}
                         }
                     }
                 ]
@@ -324,20 +307,20 @@ class TestSyncDriverSpeculationSeeding:
 
         state = driver._speculation_state["fetch_case:0"]
         assert state.stopped is True
-        # Phase 1: IDs 1,2,3,4 (check_success False). Phase 2: skipped (gap=0).
+        # seed_range(1, 5) = [1, 2, 3, 4]; window skipped (gap=0).
         assert len(driver.request_queue) == 4
         for _p, _c, req in driver.request_queue:
-            assert req.is_speculative is False
+            assert req.is_speculative is True
 
-    def test_frozen_nothing_when_already_past_threshold(self):
-        """gap=0 with to_int >= threshold seeds nothing."""
+    def test_empty_seed_range_and_no_advance_seeds_nothing(self):
+        """Empty seed_range with gap=0 seeds nothing."""
         scraper = SpeculationTestScraper()
         list(
             scraper.initial_seed(
                 [
                     {
                         "fetch_case": {
-                            "cid": {"case_id": 5, "threshold": 3, "gap": 0}
+                            "cid": {"case_id": 5, "soft_max": 3, "gap": 0}
                         }
                     }
                 ]
@@ -351,8 +334,8 @@ class TestSyncDriverSpeculationSeeding:
         assert state.stopped is True
         assert len(driver.request_queue) == 0
 
-    def test_should_speculate_false_seeds_non_speculative_only(self):
-        """should_speculate()=False: seed non-speculative phase only."""
+    def test_should_advance_false_seeds_range_only(self):
+        """should_advance=False seeds seed_range only, no advance window."""
         scraper = SpeculationTestScraper()
         list(
             scraper.initial_seed(
@@ -361,9 +344,9 @@ class TestSyncDriverSpeculationSeeding:
                         "fetch_case": {
                             "cid": {
                                 "case_id": 1,
-                                "threshold": 4,
+                                "soft_max": 4,
                                 "gap": 5,
-                                "speculate": False,
+                                "should_advance": False,
                             }
                         }
                     }
@@ -376,17 +359,17 @@ class TestSyncDriverSpeculationSeeding:
 
         state = driver._speculation_state["fetch_case:0"]
         assert state.stopped is True
-        # Phase 1: IDs 1,2,3 (check_success False). Phase 2: skipped.
+        # seed_range(1, 4) = [1, 2, 3]; advance window skipped.
         assert len(driver.request_queue) == 3
         for _p, _c, req in driver.request_queue:
-            assert req.is_speculative is False
+            assert req.is_speculative is True
 
 
 # ── Tracking ───────────────────────────────────────────────────────
 
 
 class TestSyncDriverSpeculationTracking:
-    def _make_driver(self, case_id=5, gap=2, threshold=0):
+    def _make_driver(self, case_id=5, gap=2, soft_max=0):
         scraper = SpeculationTestScraper()
         list(
             scraper.initial_seed(
@@ -396,7 +379,7 @@ class TestSyncDriverSpeculationTracking:
                             "cid": {
                                 "case_id": case_id,
                                 "gap": gap,
-                                "threshold": threshold,
+                                "soft_max": soft_max,
                             }
                         }
                     }
@@ -719,7 +702,8 @@ class TestSyncDriverEndToEnd:
     def test_stops_after_consecutive_failures(self):
         """End-to-end: driver stops extending after max_gap consecutive 404s."""
         scraper = EndToEndScraper()
-        # Start at 1, gap=2, threshold=0 → seeds 1,2 speculative
+        # case_id=1 (floor), gap=2, default soft_max=0 → seed_range empty;
+        # advance window [1, 2] enqueued speculative.
         seed = [{"fetch_case": {"cid": {"case_id": 1, "gap": 2}}}]
 
         # IDs 1-3 succeed, 4+ fail
@@ -758,7 +742,8 @@ class TestSyncDriverEndToEnd:
     def test_resets_failure_count_on_success(self):
         """Interleaved successes reset the failure counter."""
         scraper = EndToEndScraper()
-        # Start at 1, gap=3, threshold=0 → seeds 1,2,3 speculative
+        # case_id=1, gap=3, default soft_max=0 → seed_range empty;
+        # advance window [1, 2, 3] enqueued speculative.
         seed = [{"fetch_case": {"cid": {"case_id": 1, "gap": 3}}}]
 
         # IDs 1,2,4,5,7,8 succeed; 3,6 fail (but never 3 consecutive)

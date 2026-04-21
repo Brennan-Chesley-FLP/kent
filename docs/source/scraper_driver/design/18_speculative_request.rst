@@ -26,19 +26,15 @@ handles seeding, tracking, extension, and stopping:
 
     class CaseId(BaseModel):
         case_id: int
-        speculate: bool = True
-        threshold: int = 0
+        soft_max: int = 0
+        should_advance: bool = True
         gap: int = 20
 
-        def should_speculate(self) -> bool:
-            return self.speculate
-        def to_int(self) -> int:
-            return self.case_id
+        def seed_range(self) -> range:
+            return range(self.case_id, self.soft_max)
         def from_int(self, n: int) -> "CaseId":
-            return CaseId(case_id=n, speculate=self.speculate,
-                          threshold=self.threshold, gap=self.gap)
-        def check_success(self) -> bool:
-            return self.case_id >= self.threshold
+            return CaseId(case_id=n, soft_max=self.soft_max,
+                          should_advance=self.should_advance, gap=self.gap)
         def max_gap(self) -> int:
             return self.gap
 
@@ -55,8 +51,9 @@ handles seeding, tracking, extension, and stopping:
             yield ParsedData(data=CaseData(...))
 
 The scraper defines an ``@entry`` whose parameter implements ``Speculative``.
-The driver handles the rest — calling the function with sequential IDs, making requests,
-and deciding when to stop based on response patterns.
+The driver handles the rest — enqueueing the template's ``seed_range()``,
+optionally opening an adaptive advance window, and deciding when to stop
+based on response patterns.
 
 
 The Speculative Protocol
@@ -66,32 +63,30 @@ The Speculative Protocol
 
     @runtime_checkable
     class Speculative(Protocol[T]):
-        def should_speculate(self) -> bool: ...
-        def to_int(self) -> int: ...
+        should_advance: bool
+
+        def seed_range(self) -> range: ...
         def from_int(self, n: int) -> T: ...
-        def check_success(self) -> bool: ...
         def max_gap(self) -> int: ...
 
-**Methods:**
+**Members:**
 
-- ``should_speculate()`` — Whether the driver should run the adaptive
-  speculation loop (extension + gap-based stopping).  When ``False`` the
-  driver still seeds ``1..to_int()`` but does not track or extend.
-  Controllable externally via params.
+- ``should_advance`` — Attribute (Pydantic field or ``@property``). When
+  ``True``, the driver opens an adaptive advance window past
+  ``seed_range().stop`` and keeps probing until ``max_gap()`` consecutive
+  failures accrue. When ``False``, only ``seed_range()`` is enqueued.
 
-- ``to_int()`` — The integer representation of this instance.  On the
-  template, this is the initial upper bound for seeding.
+- ``seed_range()`` — Returns a ``range`` of IDs to enqueue immediately as
+  speculative requests. ``range.stop`` is exclusive (standard Python
+  ``range`` semantics) and doubles as the floor of the advance window.
+  Returning an empty range is valid — e.g. for pure adaptive probing.
 
-- ``from_int(n)`` — Creates a new instance for integer ID *n*, preserving
-  all other fields (year, config, etc.) from the template.
+- ``from_int(n)`` — Creates a new template instance for integer ID *n*,
+  preserving all other fields.
 
-- ``check_success()`` — Whether this ID should be evaluated for
-  success/failure.  When ``False``, the request is seeded as non-speculative
-  (unconditional — we know we want this data).  When ``True``, the driver
-  checks status codes and ``fails_successfully()`` to determine outcome.
-
-- ``max_gap()`` — Maximum consecutive failures to tolerate before stopping.
-  Return ``0`` for frozen ranges (seed only, no extension).
+- ``max_gap()`` — Maximum consecutive failures past the highest observed
+  success before stopping. Also the initial advance-window size. Return
+  ``0`` to disable the advance window entirely.
 
 
 How It Works
@@ -99,32 +94,40 @@ How It Works
 
 The flow is:
 
-1. **Detection**: The ``@entry`` decorator inspects parameter types.  If a parameter's
-   type implements ``Speculative`` (checked via ``issubclass``), the entry is automatically
-   marked speculative.  No extra decorator kwargs needed.
+1. **Detection**: The ``@entry`` decorator inspects parameter types.  If a
+   parameter's type structurally implements ``Speculative`` (``seed_range``,
+   ``from_int``, ``max_gap`` plus the ``should_advance`` attribute), the
+   entry is automatically marked speculative.  No extra decorator kwargs
+   needed.
 
-2. **Template Storage**: When ``initial_seed()`` is called with params, the validated
-   ``Speculative`` model instance is stored as a *template* on the scraper
-   (``_speculation_templates``).
+2. **Template Storage**: When ``initial_seed()`` is called with params, the
+   validated ``Speculative`` model instance is stored as a *template* on
+   the scraper (``_speculation_templates``).
 
-3. **Discovery**: The driver calls ``_discover_speculate_functions()`` which finds
-   templates from step 2 and creates a ``SpeculationState`` per template.
+3. **Discovery**: The driver calls ``_discover_speculate_functions()``
+   which finds templates from step 2 and creates a ``SpeculationState``
+   per template.
 
-4. **Seeding**: For each template, the driver iterates ``1..to_int()`` and for each *n*:
+4. **Seeding**: For each template, the driver enqueues
+   ``template.seed_range()`` as speculative requests. If
+   ``template.should_advance`` is ``True`` and ``max_gap() > 0``, it also
+   enqueues an initial advance window of ``max_gap()`` probes starting at
+   ``seed_range().stop``.
 
-   - Calls ``template.from_int(n)`` to get a concrete instance
-   - If ``check_success()`` is **False**: seeds as a non-speculative request
-   - If ``check_success()`` is **True**: seeds as a speculative request
+5. **Tracking**: After each speculative response, the driver checks
+   ``status_code`` and ``fails_successfully()`` to determine success or
+   failure, updating ``highest_successful_id`` and ``consecutive_failures``.
+   A persistent HTTP code (see ``BaseScraper.is_persistent_error``) on a
+   speculative request is routed via ``SpeculationHTTPFailure`` to the
+   same tracker — it does **not** land in the errors table.
 
-5. **Tracking**: After each speculative response, the driver checks ``status_code`` and
-   ``fails_successfully()`` to determine success or failure, updating
-   ``highest_successful_id`` and ``consecutive_failures``.
+6. **Extension**: When ``highest_successful_id`` approaches
+   ``current_ceiling``, the driver seeds additional IDs
+   (``current_ceiling + 1 .. current_ceiling + max_gap()``).
 
-6. **Extension**: When ``highest_successful_id`` approaches ``current_ceiling``, the
-   driver seeds additional IDs (``current_ceiling + 1 .. current_ceiling + max_gap()``).
-
-7. **Stopping**: When ``consecutive_failures >= max_gap()``, speculation stops.
-   For ``max_gap() == 0`` (frozen), the driver stops immediately after seeding.
+7. **Stopping**: When ``consecutive_failures >= max_gap()``, speculation
+   stops.  For ``max_gap() == 0`` or ``should_advance=False``, the driver
+   stops immediately after enqueueing ``seed_range()``.
 
 
 Year-Partitioned Probing
@@ -138,20 +141,17 @@ the Pydantic model encapsulates the year:
     class DocketId(BaseModel):
         year: int
         number: int
-        speculate: bool = True
-        threshold: int = 0
+        soft_max: int = 0
+        should_advance: bool = True
         gap: int = 15
 
-        def should_speculate(self) -> bool:
-            return self.speculate
-        def to_int(self) -> int:
-            return self.number
+        def seed_range(self) -> range:
+            return range(self.number, self.soft_max)
         def from_int(self, n: int) -> "DocketId":
             return DocketId(year=self.year, number=n,
-                            speculate=self.speculate,
-                            threshold=self.threshold, gap=self.gap)
-        def check_success(self) -> bool:
-            return self.number >= self.threshold
+                            soft_max=self.soft_max,
+                            should_advance=self.should_advance,
+                            gap=self.gap)
         def max_gap(self) -> int:
             return self.gap
 
@@ -170,9 +170,9 @@ Multiple year partitions are supplied via ``seed_params``:
 .. code-block:: python
 
     seed_params = [
-        {"fetch_case": {"case_id": {"year": 2024, "number": 4000, "gap": 0}}},
-        {"fetch_case": {"case_id": {"year": 2025, "number": 4000, "gap": 0}}},
-        {"fetch_case": {"case_id": {"year": 2026, "number": 2000, "gap": 15}}},
+        {"fetch_case": {"case_id": {"year": 2024, "number": 1, "soft_max": 4000, "gap": 0}}},
+        {"fetch_case": {"case_id": {"year": 2025, "number": 1, "soft_max": 4000, "gap": 0}}},
+        {"fetch_case": {"case_id": {"year": 2026, "number": 1, "soft_max": 2000, "gap": 15}}},
     ]
 
 Each invocation creates a separate template, tracked independently via
@@ -216,19 +216,15 @@ tracks:
 - ``current_ceiling``: Highest ID seeded so far
 - ``stopped``: Whether speculation has stopped
 
-The ``check_success()`` Split
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Unified ``is_speculative`` Flag
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-When seeding, each ID is classified:
-
-- ``check_success() == False``: Seeded as a **non-speculative** request.
-  The driver will fetch it unconditionally without tracking.  This is useful
-  for IDs below a threshold that are known to exist.
-
-- ``check_success() == True``: Seeded as a **speculative** request.
-  The driver tracks success/failure and uses it for gap-based stopping.
-
-This split happens regardless of ``should_speculate()``.
+Every request born from a speculative template — whether it came from
+``seed_range()`` or the adaptive advance window — is enqueued with
+``is_speculative=True`` and a populated ``speculation_id`` tuple
+``(state_key, param_index, integer_id)``.  Downstream (network layer,
+worker, DB) can key off that single flag without caring which phase the
+request came from.
 
 Behavior
 ^^^^^^^^
@@ -236,9 +232,17 @@ Behavior
 The driver determines success/failure based on HTTP response status codes and
 the scraper's ``fails_successfully()`` method:
 
-- **2xx response**: Calls continuation with response. If a ``fails_successfully()`` handler is present, it is checked to detect soft-404 pages.
-- **Non-2xx response**: Failure, skips continuation, increments failure counter
-- **Deduplicated**: Treated as failure (prevents infinite loops)
+- **2xx response**: Calls continuation with response. If a
+  ``fails_successfully()`` handler is present, it is checked to detect
+  soft-404 pages.
+- **Non-2xx / non-classified response**: Failure, skips continuation,
+  increments failure counter.
+- **Persistent HTTP code** (per ``BaseScraper.is_persistent_error``, e.g.
+  500): the request manager raises ``SpeculationHTTPFailure`` (not
+  ``PersistentHTTPResponseException``). The worker catches it, records a
+  synthetic failure in ``speculation_tracking``, and does **not** write an
+  errors-table row.  Retries are skipped.
+- **Deduplicated**: Treated as failure (prevents infinite loops).
 
 
 Implementation Details
@@ -271,12 +275,16 @@ Basic Sequential ID Probing
 
     class RecordId(BaseModel):
         record_id: int
+        soft_max: int = 0
+        should_advance: bool = True
         gap: int = 100
-        def should_speculate(self) -> bool: return True
-        def to_int(self) -> int: return self.record_id
+        def seed_range(self) -> range:
+            return range(self.record_id, self.soft_max)
         def from_int(self, n: int) -> "RecordId":
-            return RecordId(record_id=n, gap=self.gap)
-        def check_success(self) -> bool: return True
+            return RecordId(
+                record_id=n, soft_max=self.soft_max,
+                should_advance=self.should_advance, gap=self.gap,
+            )
         def max_gap(self) -> int: return self.gap
 
     class CaseScraper(BaseScraper[CaseData]):
@@ -307,14 +315,17 @@ Design Decisions
 **Protocol-based**: Speculation semantics live in scraper-owned Pydantic models
 that implement the ``Speculative`` protocol.  This makes the system open to
 extension without framework changes — scraper authors define their own models
-with whatever fields they need (year, court, threshold, etc.).
+with whatever fields they need (year, court, soft_max, etc.).
 
-**Auto-detection**: The ``@entry`` decorator checks ``issubclass(T, Speculative)``
-at import time.  No explicit ``speculative=`` kwarg needed.
+**Auto-detection**: The ``@entry`` decorator structurally checks the
+parameter type for ``Speculative``'s members at import time.  No explicit
+``speculative=`` kwarg needed.
 
-**check_success split**: IDs below a threshold can be seeded as unconditional
-(non-speculative) requests.  This handles the common pattern where a scraper
-knows the first N records exist and only needs to speculate past that point.
+**seed_range + advance window**: Explicit IDs land via ``seed_range()``;
+adaptive probing past that floor is gated on ``should_advance``.  This
+handles the common pattern where a scraper knows the first N records
+exist and only needs to speculate past that point — set
+``soft_max`` past the known-good range and ``should_advance=True``.
 
 **max_gap for frozen**: Returning ``max_gap() == 0`` gives frozen-range behavior
 (seed once, no extension).  This replaces the old ``frozen=True`` flag on

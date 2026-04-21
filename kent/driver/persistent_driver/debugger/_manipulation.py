@@ -270,14 +270,14 @@ class ManipulationMixin:
                 f"template_json is required for speculative seeding of '{step_name}'"
             )
 
-        # Seed requests for the range
+        # Seed requests for the range. Under the unified speculation
+        # semantics every request born from a speculative template is
+        # flagged speculative, so the old check_success() gate is gone.
         seeded_count = 0
         for id_value in range(from_id, to_id + 1):
             concrete = template.from_int(id_value)
             request = func(**{entry_meta.speculative_param: concrete})
-
-            if concrete.check_success():
-                request = request.speculative(step_name, 0, id_value)
+            request = request.speculative(step_name, 0, id_value)
 
             http_request = request.request
 

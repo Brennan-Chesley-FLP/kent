@@ -248,8 +248,10 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
     async def _seed_speculative_queue(self) -> None:
         """Seed the queue with requests from speculative templates.
 
-        Seeding starts at ``template.to_int()`` and goes upward.
-        See SyncDriver._seed_speculative_queue for full semantics.
+        See :meth:`SyncDriver._seed_speculative_queue` for full semantics:
+        every enqueued request is speculative, ``seed_range`` seeds
+        immediately, and ``should_advance`` gates the initial advance
+        window.
         """
         for state_key, spec_state in self._speculation_state.items():
             func = getattr(self.scraper, spec_state.base_func_name)
@@ -261,34 +263,34 @@ class AsyncDriver(Generic[ScraperReturnDatatype]):
                     break
             assert speculative_param is not None
 
-            n = template.to_int()
+            seed_ids = template.seed_range()
+            # Advance floor: one past the last seed id (or the floor
+            # itself if seed_range is empty).
+            advance_floor = max(seed_ids.start, seed_ids.stop)
+            window = (
+                range(advance_floor, advance_floor + template.max_gap())
+                if template.should_advance and template.max_gap() > 0
+                else range(0)
+            )
 
             async with self._queue_lock:
-                # Phase 1: non-speculative while check_success is False
-                while not template.from_int(n).check_success():
-                    request = func(**{speculative_param: template.from_int(n)})
+                for n in list(seed_ids) + list(window):
+                    concrete = template.from_int(n)
+                    request = func(**{speculative_param: concrete})
+                    request = request.speculative(
+                        state_key, spec_state.param_index, n
+                    )
                     await self.request_queue.put(
                         (request.priority, self._queue_counter, request)
                     )
                     self._queue_counter += 1
-                    n += 1
 
-                # Phase 2: speculative window
-                if template.should_speculate() and template.max_gap() > 0:
-                    gap = template.max_gap()
-                    for spec_n in range(n, n + gap):
-                        concrete = template.from_int(spec_n)
-                        request = func(**{speculative_param: concrete})
-                        request = request.speculative(
-                            state_key, spec_state.param_index, spec_n
-                        )
-                        await self.request_queue.put(
-                            (request.priority, self._queue_counter, request)
-                        )
-                        self._queue_counter += 1
-                    spec_state.current_ceiling = n + gap - 1
+                if window:
+                    spec_state.current_ceiling = (
+                        advance_floor + template.max_gap() - 1
+                    )
                 else:
-                    spec_state.current_ceiling = max(n - 1, template.to_int())
+                    spec_state.current_ceiling = advance_floor - 1
                     spec_state.stopped = True
 
     async def _extend_speculation(self, state_key: str) -> None:

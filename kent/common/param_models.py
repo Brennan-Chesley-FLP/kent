@@ -13,7 +13,7 @@ Example::
 
     @entry(Docket)
     def fetch_by_id(self, rid: SpeculativeRange) -> Request:
-        return Request(url=f"/docket/{rid.number}", ...)
+        return Request(url=f"/docket/{rid.min}", ...)
 """
 
 from __future__ import annotations
@@ -44,53 +44,51 @@ class SpeculativeRange(BaseModel):
     Implements the ``Speculative`` protocol.  Use as a parameter type
     on an ``@entry`` function to enable automatic speculation.
 
-    Seeding starts at ``number`` and goes upward.  IDs below
-    ``threshold`` are seeded unconditionally (non-speculative);
-    IDs at or above ``threshold`` enter the gap-based tracking window.
+    ``seed_range()`` returns ``range(min, soft_max)`` — those IDs are
+    enqueued immediately as speculative requests. If ``should_advance``
+    is True, the driver continues opening new probes beyond ``soft_max``
+    until ``gap`` consecutive failures accrue.
 
     Attributes:
-        number: Starting integer ID (the floor for seeding).
-        speculate: Whether to run adaptive extension/tracking.
-            Set False to seed the non-speculative range only.
-        threshold: IDs >= threshold are evaluated for success/failure.
-            IDs below threshold are seeded unconditionally.
-        gap: Max consecutive failures before stopping.
-            Also the size of the initial speculative window.
-            Set 0 for frozen ranges (no speculative seeding).
+        min: Starting integer ID (the floor, inclusive).
+        soft_max: Exclusive upper bound of the initial seed range. IDs
+            ``[min, soft_max)`` are always enqueued. Beyond that, probing
+            only continues if ``should_advance`` is True.
+        should_advance: Whether to push the speculation ceiling past
+            ``soft_max`` on success. Set False for backfills of a known
+            finite set of IDs.
+        gap: Max consecutive failures beyond the highest success before
+            speculation stops. Also the size of the initial advance
+            window enqueued when ``should_advance`` is True. Set 0 to
+            disable the advance window entirely.
 
     Example::
 
         @entry(CaseData)
         def fetch_case(self, rid: SpeculativeRange) -> Request:
             return Request(
-                request=HTTPRequestParams(url=f"/case/{rid.number}"),
+                request=HTTPRequestParams(url=f"/case/{rid.min}"),
                 continuation=self.parse_case,
             )
 
-        # seed_params: [{"fetch_case": {"rid": {"number": 1, "gap": 20}}}]
+        # seed_params: [{"fetch_case": {"rid": {"min": 1, "soft_max": 1, "gap": 20}}}]
     """
 
-    number: int
-    speculate: bool = True
-    threshold: int = 0
+    min: int
+    soft_max: int = 0
+    should_advance: bool = True
     gap: int = 10
 
-    def should_speculate(self) -> bool:
-        return self.speculate
-
-    def to_int(self) -> int:
-        return self.number
+    def seed_range(self) -> range:
+        return range(self.min, self.soft_max)
 
     def from_int(self, n: int) -> SpeculativeRange:
         return SpeculativeRange(
-            number=n,
-            speculate=self.speculate,
-            threshold=self.threshold,
+            min=n,
+            soft_max=self.soft_max,
+            should_advance=self.should_advance,
             gap=self.gap,
         )
-
-    def check_success(self) -> bool:
-        return self.number >= self.threshold
 
     def max_gap(self) -> int:
         return self.gap
@@ -103,14 +101,14 @@ class YearlySpeculativeRange(BaseModel):
     but includes a ``year`` field for scrapers that partition IDs by year
     (e.g. docket numbers of the form ``2025-00123``).
 
-    Seeding starts at ``number`` and goes upward.  Supply one template
-    per year via ``seed_params``.
+    Supply one template per year via ``seed_params``.
 
     Attributes:
         year: The calendar year for this partition.
-        number: Starting integer ID (the floor for seeding).
-        speculate: Whether to run adaptive extension/tracking.
-        threshold: IDs >= threshold are evaluated for success/failure.
+        min: Starting integer ID (the floor, inclusive).
+        soft_max: Exclusive upper bound of the initial seed range.
+        should_advance: Whether to push the speculation ceiling past
+            ``soft_max`` on success.
         gap: Max consecutive failures before stopping.
 
     Example::
@@ -119,40 +117,34 @@ class YearlySpeculativeRange(BaseModel):
         def fetch_case(self, case_id: YearlySpeculativeRange) -> Request:
             return Request(
                 request=HTTPRequestParams(
-                    url=f"/cases/{case_id.year}/{case_id.number}"
+                    url=f"/cases/{case_id.year}/{case_id.min}"
                 ),
                 continuation=self.parse_case,
             )
 
         # seed_params: [
-        #     {"fetch_case": {"case_id": {"year": 2024, "number": 1, "gap": 0, "threshold": 4000}}},
-        #     {"fetch_case": {"case_id": {"year": 2025, "number": 1, "gap": 15}}},
+        #     {"fetch_case": {"case_id": {"year": 2024, "min": 1, "soft_max": 4000, "gap": 0}}},
+        #     {"fetch_case": {"case_id": {"year": 2025, "min": 1, "soft_max": 1, "gap": 15}}},
         # ]
     """
 
     year: int
-    number: int
-    speculate: bool = True
-    threshold: int = 0
+    min: int
+    soft_max: int = 0
+    should_advance: bool = True
     gap: int = 10
 
-    def should_speculate(self) -> bool:
-        return self.speculate
-
-    def to_int(self) -> int:
-        return self.number
+    def seed_range(self) -> range:
+        return range(self.min, self.soft_max)
 
     def from_int(self, n: int) -> YearlySpeculativeRange:
         return YearlySpeculativeRange(
             year=self.year,
-            number=n,
-            speculate=self.speculate,
-            threshold=self.threshold,
+            min=n,
+            soft_max=self.soft_max,
+            should_advance=self.should_advance,
             gap=self.gap,
         )
-
-    def check_success(self) -> bool:
-        return self.number >= self.threshold
 
     def max_gap(self) -> int:
         return self.gap

@@ -67,12 +67,12 @@ class BugCourtDemoScraper(BaseScraper[DemoData]):
         so the driver automatically detects this entry as speculative.
         Templates are supplied via ``seed_params`` at run time, e.g.::
 
-            [{"fetch_case": {"case_id": {"year": 2026, "number": 1, "gap": 3}}}]
+            [{"fetch_case": {"case_id": {"year": 2026, "min": 1, "gap": 3}}}]
         """
         return Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
-                url=f"{self.court_url}/cases/{case_id.year}/{case_id.number}",
+                url=f"{self.court_url}/cases/{case_id.year}/{case_id.min}",
             ),
             continuation=self.parse_case_detail,
         )

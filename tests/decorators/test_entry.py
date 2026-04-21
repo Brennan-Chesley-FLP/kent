@@ -48,26 +48,20 @@ class RecordId(BaseModel):
     """Speculative parameter model for testing."""
 
     record_id: int
-    speculate: bool = True
-    threshold: int = 0
+    soft_max: int = 0
+    should_advance: bool = True
     gap: int = 20
 
-    def should_speculate(self) -> bool:
-        return self.speculate
-
-    def to_int(self) -> int:
-        return self.record_id
+    def seed_range(self) -> range:
+        return range(self.record_id, self.soft_max)
 
     def from_int(self, n: int) -> "RecordId":
         return RecordId(
             record_id=n,
-            speculate=self.speculate,
-            threshold=self.threshold,
+            soft_max=self.soft_max,
+            should_advance=self.should_advance,
             gap=self.gap,
         )
-
-    def check_success(self) -> bool:
-        return self.record_id >= self.threshold
 
     def max_gap(self) -> int:
         return self.gap
@@ -175,27 +169,29 @@ class TestEntryMetadata:
         assert meta.param_types == {"filters": OpinionFilters}
 
     def test_speculative_protocol_detected(self):
-        """issubclass(RecordId, Speculative) works with Pydantic BaseModel."""
-        assert issubclass(RecordId, Speculative)
-        assert not issubclass(OpinionFilters, Speculative)
+        """Pydantic BaseModel instances satisfy the Speculative protocol."""
+        # ``issubclass(X, Speculative)`` is no longer usable because the
+        # Protocol has a non-method attribute (``should_advance``); use
+        # isinstance on an instance instead.
+        assert isinstance(RecordId(record_id=1), Speculative)
+        assert not isinstance(
+            OpinionFilters(court_id="x", year=2024), Speculative
+        )
 
     def test_multiple_speculative_params_rejected(self):
         """Only one Speculative param per entry is allowed."""
 
         class AnotherSpecParam(BaseModel):
             x: int = 1
+            should_advance: bool = True
 
-            def should_speculate(self) -> bool:
-                return True
-
-            def to_int(self) -> int:
-                return self.x
+            def seed_range(self) -> range:
+                return range(self.x, self.x)
 
             def from_int(self, n: int) -> "AnotherSpecParam":
-                return AnotherSpecParam(x=n)
-
-            def check_success(self) -> bool:
-                return True
+                return AnotherSpecParam(
+                    x=n, should_advance=self.should_advance
+                )
 
             def max_gap(self) -> int:
                 return 5

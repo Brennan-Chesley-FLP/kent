@@ -292,6 +292,36 @@ class PersistentHTTPResponseException(PersistentException):
         super().__init__(self.message)
 
 
+class SpeculationHTTPFailure(Exception):
+    """A persistent HTTP code came back for a speculative request.
+
+    Raised by the request manager as an alternative to
+    :class:`PersistentHTTPResponseException` when ``request.is_speculative``
+    is True. The worker converts this into a speculation-failure outcome
+    (bumps ``consecutive_failures``, marks the request completed, skips
+    the continuation, and does NOT write to the ``errors`` table) — the
+    "this speculative probe turned up nothing" signal, not an error.
+
+    Deliberately does not inherit from :class:`PersistentException` or
+    :class:`TransientException`: neither bucket fits (it's neither an
+    error to log nor something to retry), and keeping it separate lets
+    the worker dispatch on it without catching it in the general
+    persistent / transient branches.
+
+    Attributes:
+        status_code: The HTTP status code received.
+        url: The URL of the speculative request.
+    """
+
+    def __init__(self, status_code: int, url: str) -> None:
+        self.status_code = status_code
+        self.url = url
+        self.message = (
+            f"HTTP {status_code} from {url} (speculation probe failed)"
+        )
+        super().__init__(self.message)
+
+
 class RequestFailedHalt(Exception):
     pass
 

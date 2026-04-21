@@ -24,6 +24,7 @@ from kent.common.exceptions import (
     HTMLResponseAssumptionException,
     PersistentHTTPResponseException,
     RequestTimeoutException,
+    SpeculationHTTPFailure,
 )
 from kent.data_types import BaseRequest, BaseScraper, Response
 
@@ -38,6 +39,7 @@ def _classify_and_raise(
     scraper: type[BaseScraper[Any]] | BaseScraper[Any],
     http_response: httpx.Response,
     url: str,
+    request: BaseRequest,
     *,
     body: bytes | None,
 ) -> None:
@@ -46,6 +48,10 @@ def _classify_and_raise(
     ``body`` is ``None`` on streaming paths where the body hasn't been
     consumed yet. Successful / unclassified codes return silently; the
     caller then constructs and returns a :class:`Response`.
+
+    For persistent-classified codes, speculative requests raise the
+    narrower :class:`SpeculationHTTPFailure` so the worker can record the
+    failure as a speculation outcome instead of an error row.
     """
     code = http_response.status_code
     hdrs = dict(http_response.headers)
@@ -56,6 +62,8 @@ def _classify_and_raise(
             url=url,
         )
     if scraper.is_persistent_error(code, hdrs, body):
+        if getattr(request, "is_speculative", False):
+            raise SpeculationHTTPFailure(code, url)
         raise PersistentHTTPResponseException(code, url)
 
 
@@ -324,6 +332,7 @@ class SyncRequestManager:
             self._scraper,
             http_response,
             http_params.url,
+            request,
             body=http_response.content,
         )
 
@@ -378,6 +387,7 @@ class SyncRequestManager:
                     self._scraper,
                     http_response,
                     http_params.url,
+                    request,
                     body=None,
                 )
                 yield SyncStreamingResponse(http_response, http_params.url)
@@ -594,6 +604,7 @@ class AsyncRequestManager:
             self._scraper,
             http_response,
             http_params.url,
+            request,
             body=http_response.content,
         )
 
@@ -650,6 +661,7 @@ class AsyncRequestManager:
                     self._scraper,
                     http_response,
                     http_params.url,
+                    request,
                     body=None,
                 )
                 yield AsyncStreamingResponse(http_response, http_params.url)

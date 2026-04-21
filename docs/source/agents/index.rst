@@ -473,14 +473,19 @@ Seed params at runtime:
 
 .. code-block:: json
 
-    [{"fetch_case": {"case_id": {"year": 2025, "number": 1, "gap": 15}}}]
+    [{"fetch_case": {"case_id": {"year": 2025, "min": 1, "gap": 15}}}]
 
-- ``gap``: max consecutive failures before stopping; ``0`` = frozen (no speculation)
-- ``threshold``: IDs below this are seeded unconditionally
+- ``min``: starting integer ID (inclusive floor).
+- ``soft_max``: exclusive upper bound of the seed range
+  (``range(min, soft_max)``); omit for pure adaptive probing.
+- ``should_advance`` (default ``True``): whether the driver pushes past
+  ``soft_max``. Set ``False`` for backfills.
+- ``gap``: max consecutive failures before stopping; also the initial
+  advance-window size. ``0`` disables the window.
 
 For patterns beyond integer/year+int, implement the ``Speculative`` protocol
-on a custom Pydantic ``BaseModel`` (five methods: ``should_speculate``,
-``to_int``, ``from_int``, ``check_success``, ``max_gap``).
+on a custom Pydantic ``BaseModel`` (one ``should_advance: bool`` field plus
+three methods: ``seed_range``, ``from_int``, ``max_gap``).
 
 Soft-404 Detection
 ------------------

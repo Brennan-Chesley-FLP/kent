@@ -639,7 +639,7 @@ To use speculation, make your ``@entry`` parameter implement the
         return Request(
             request=HTTPRequestParams(
                 method=HttpMethod.GET,
-                url=f"{self.court_url}/cases/{case_id.year}/{case_id.number}",
+                url=f"{self.court_url}/cases/{case_id.year}/{case_id.min}",
             ),
             continuation=self.parse_case_detail,
         )
@@ -649,12 +649,19 @@ At run time, supply seed parameters:
 .. code-block:: json
 
     [
-        {"fetch_case": {"case_id": {"year": 2025, "number": 1, "gap": 15}}},
-        {"fetch_case": {"case_id": {"year": 2024, "number": 1, "gap": 0, "threshold": 4000}}}
+        {"fetch_case": {"case_id": {"year": 2025, "min": 1, "gap": 15}}},
+        {"fetch_case": {"case_id": {"year": 2024, "min": 1, "soft_max": 4000, "gap": 0}}}
     ]
 
-- ``gap``: Max consecutive failures before stopping speculation. Also the size of the initial speculative window. Set ``0`` for frozen ranges (no speculation).
-- ``threshold``: IDs below this are seeded unconditionally; IDs at or above enter gap-based tracking.
+- ``min``: Starting integer ID (inclusive floor).
+- ``soft_max``: Exclusive upper bound of the explicit seed range
+  (``range(min, soft_max)``). IDs past it are reached only if
+  ``should_advance`` is ``True``.
+- ``should_advance`` (default ``True``): When ``True`` the driver opens an
+  adaptive advance window past ``soft_max``. Set ``False`` for a pure
+  backfill of the explicit range.
+- ``gap``: Max consecutive failures before stopping speculation. Also the
+  size of the initial advance window. Set ``0`` to disable the window.
 
 When speculating, pair it with ``fails_successfully()`` to handle soft-404 responses.
 
@@ -672,28 +679,28 @@ other patterns by implementing the ``Speculative`` protocol:
     class AlphanumericDocketRange(BaseModel):
         prefix: str
         number: int
+        soft_max: int = 0
+        should_advance: bool = True
         gap: int = 10
 
-        def should_speculate(self) -> bool:
-            return True
-
-        def to_int(self) -> int:
-            return self.number
+        def seed_range(self) -> range:
+            return range(self.number, self.soft_max)
 
         def from_int(self, n: int) -> AlphanumericDocketRange:
             return AlphanumericDocketRange(
-                prefix=self.prefix, number=n, gap=self.gap,
+                prefix=self.prefix, number=n,
+                soft_max=self.soft_max,
+                should_advance=self.should_advance,
+                gap=self.gap,
             )
-
-        def check_success(self) -> bool:
-            return True
 
         def max_gap(self) -> int:
             return self.gap
 
-Any Pydantic ``BaseModel`` implementing these five methods will be
-automatically detected by the ``@entry`` decorator and the driver will run
-the speculation loop for it.
+Any Pydantic ``BaseModel`` that structurally implements the protocol (one
+``should_advance: bool`` field plus the three methods above) is
+automatically detected by the ``@entry`` decorator and the driver will
+run the speculation loop for it.
 
 Soft 404 Detection
 ------------------

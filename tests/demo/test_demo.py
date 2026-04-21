@@ -186,9 +186,9 @@ class TestDemoScraper:
         )
         # Supply speculative templates via seed_params
         driver.seed_params = [
-            {"fetch_case": {"case_id": {"year": 2024, "number": 1, "gap": 3}}},
-            {"fetch_case": {"case_id": {"year": 2025, "number": 1, "gap": 3}}},
-            {"fetch_case": {"case_id": {"year": 2026, "number": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2024, "min": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2025, "min": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2026, "min": 1, "gap": 3}}},
         ]
         driver.run()
 
@@ -270,9 +270,9 @@ class TestDemoScraper:
             on_data=callback,
         )
         driver.seed_params = [
-            {"fetch_case": {"case_id": {"year": 2024, "number": 1, "gap": 3}}},
-            {"fetch_case": {"case_id": {"year": 2025, "number": 1, "gap": 3}}},
-            {"fetch_case": {"case_id": {"year": 2026, "number": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2024, "min": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2025, "min": 1, "gap": 3}}},
+            {"fetch_case": {"case_id": {"year": 2026, "min": 1, "gap": 3}}},
         ]
         driver.run()
 

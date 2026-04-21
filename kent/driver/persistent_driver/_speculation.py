@@ -142,10 +142,14 @@ class SpeculationMixin:
     async def _seed_speculative_queue(self) -> None:
         """Seed the queue with requests from speculative templates.
 
-        Seeding starts at ``template.to_int()`` and goes upward.
-        See SyncDriver._seed_speculative_queue for full semantics.
+        Every enqueued request is speculative (``is_speculative=True`` +
+        populated ``speculation_id``). Seeding is split into two passes:
+        first ``template.seed_range()`` (the explicitly-requested IDs),
+        then — when ``template.should_advance`` is True and
+        ``template.max_gap() > 0`` — an initial advance window of
+        ``max_gap()`` probes past ``seed_range.stop``.
 
-        When resuming, skips IDs that have already been processed.
+        When resuming, skips IDs at or below ``current_ceiling``.
         """
         for state_key, spec_state in self._speculation_state.items():
             if spec_state.stopped:
@@ -160,15 +164,31 @@ class SpeculationMixin:
                     break
             assert speculative_param is not None
 
-            n = template.to_int()
+            seed_ids = template.seed_range()
+            # When resuming, skip anything at or below current_ceiling.
+            resume_floor = (
+                spec_state.current_ceiling + 1
+                if spec_state.current_ceiling > 0
+                else seed_ids.start
+            )
+            seed_ids_to_run = [n for n in seed_ids if n >= resume_floor]
 
-            # If resuming, start from current_ceiling + 1
-            if spec_state.current_ceiling > 0:
-                n = max(n, spec_state.current_ceiling + 1)
+            # Advance floor: one past the last seed id, falling back to
+            # the template's floor when seed_range is empty. Resume bias
+            # wins when we're past that point already.
+            advance_floor = max(seed_ids.start, seed_ids.stop, resume_floor)
+            window = (
+                range(advance_floor, advance_floor + template.max_gap())
+                if template.should_advance and template.max_gap() > 0
+                else range(0)
+            )
 
-            # Phase 1: non-speculative while check_success is False
-            while not template.from_int(n).check_success():
-                request = func(**{speculative_param: template.from_int(n)})
+            for n in seed_ids_to_run + list(window):
+                concrete = template.from_int(n)
+                request = func(**{speculative_param: concrete})
+                request = request.speculative(
+                    state_key, spec_state.param_index, n
+                )
                 request_data = self._serialize_request(request)
                 await self.db.insert_request(
                     priority=request.priority,
@@ -187,46 +207,17 @@ class SpeculationMixin:
                     expected_type=request_data["expected_type"],
                     dedup_key=None,
                     parent_id=None,
-                    is_speculative=False,
-                    speculation_id=None,
+                    is_speculative=request_data["is_speculative"],
+                    speculation_id=request_data["speculation_id"],
                     verify=request_data.get("verify"),
                 )
-                n += 1
 
-            # Phase 2: speculative window
-            if template.should_speculate() and template.max_gap() > 0:
-                gap = template.max_gap()
-                for spec_n in range(n, n + gap):
-                    concrete = template.from_int(spec_n)
-                    request = func(**{speculative_param: concrete})
-                    request = request.speculative(
-                        state_key, spec_state.param_index, spec_n
-                    )
-                    request_data = self._serialize_request(request)
-                    await self.db.insert_request(
-                        priority=request.priority,
-                        request_type=request_data["request_type"],
-                        method=request_data["method"],
-                        url=request_data["url"],
-                        headers_json=request_data["headers_json"],
-                        cookies_json=request_data["cookies_json"],
-                        body=request_data["body"],
-                        continuation=request_data["continuation"],
-                        current_location=request_data["current_location"],
-                        accumulated_data_json=request_data[
-                            "accumulated_data_json"
-                        ],
-                        permanent_json=request_data["permanent_json"],
-                        expected_type=request_data["expected_type"],
-                        dedup_key=None,
-                        parent_id=None,
-                        is_speculative=request_data["is_speculative"],
-                        speculation_id=request_data["speculation_id"],
-                        verify=request_data.get("verify"),
-                    )
-                spec_state.current_ceiling = n + gap - 1
+            if window:
+                spec_state.current_ceiling = (
+                    advance_floor + template.max_gap() - 1
+                )
             else:
-                spec_state.current_ceiling = max(n - 1, template.to_int())
+                spec_state.current_ceiling = advance_floor - 1
                 spec_state.stopped = True
 
     # --- Dynamic Extension ---
