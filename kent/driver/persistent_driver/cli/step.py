@@ -14,18 +14,16 @@ from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
 )
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+)
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
 @cli.group()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def step(ctx: click.Context, db_path: str | None) -> None:
     """Step-level development and debugging tools."""
@@ -142,13 +140,6 @@ async def _resolve_scraper_and_requests(
 
 
 @step.command("re-evaluate")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("step_name")
 @click.option(
     "--request-id", type=int, help="Compare specific request ID only"
@@ -157,16 +148,6 @@ async def _resolve_scraper_and_requests(
     "--sample",
     type=int,
     help="Sample N requests and follow their entire request trees",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
 )
 @click.option(
     "-v",
@@ -187,6 +168,8 @@ async def _resolve_scraper_and_requests(
     "--scraper-class",
     help="Scraper class path (e.g., juriscraper.opinions.united_states.federal_appellate.ca1.Site)",
 )
+@db_option
+@format_options
 @click.pass_context
 def re_evaluate(
     ctx: click.Context,
@@ -484,13 +467,6 @@ def _collect_queries_flat(
 
 
 @step.command("xpath-stats")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("step_name")
 @click.option(
     "--request-id", type=int, help="Run for a specific request ID only"
@@ -508,16 +484,6 @@ def _collect_queries_flat(
     help="Scraper class path (e.g., juriscraper.opinions.united_states.federal_appellate.ca1.Site)",
 )
 @click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
-@click.option(
     "--xpath-name",
     help="Filter output to selectors whose description matches this name",
 )
@@ -526,6 +492,8 @@ def _collect_queries_flat(
     is_flag=True,
     help="Include request IDs where the selector matched zero elements",
 )
+@db_option
+@format_options
 @click.pass_context
 def xpath_stats(
     ctx: click.Context,

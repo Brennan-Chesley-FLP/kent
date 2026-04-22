@@ -11,6 +11,10 @@ from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
 )
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+)
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
@@ -20,13 +24,7 @@ from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
 @cli.group()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def compression(ctx: click.Context, db_path: str | None) -> None:
     """Inspect and manipulate compression."""
@@ -36,23 +34,8 @@ def compression(ctx: click.Context, db_path: str | None) -> None:
 
 
 @compression.command("stats")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def compression_stats(
     ctx: click.Context,
@@ -84,17 +67,11 @@ def compression_stats(
 
 
 @compression.command("train")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("continuation")
 @click.option(
     "--samples", default=1000, help="Number of samples to use for training"
 )
+@db_option
 @click.pass_context
 def compression_train(
     ctx: click.Context, db_path: str | None, continuation: str, samples: int
@@ -127,17 +104,11 @@ def compression_train(
 
 
 @compression.command("recompress")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("continuation")
 @click.option(
     "--dict-id", type=int, help="Compression dictionary ID (default: latest)"
 )
+@db_option
 @click.pass_context
 def compression_recompress(
     ctx: click.Context,

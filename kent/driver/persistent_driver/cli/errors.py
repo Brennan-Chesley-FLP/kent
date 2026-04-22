@@ -11,6 +11,11 @@ from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
 )
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+    pagination_options,
+)
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
@@ -20,13 +25,7 @@ from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
 @cli.group()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def errors(ctx: click.Context, db_path: str | None) -> None:
     """Inspect and manipulate errors."""
@@ -36,13 +35,6 @@ def errors(ctx: click.Context, db_path: str | None) -> None:
 
 
 @errors.command("list")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.option("--type", "error_type", help="Filter by error type")
 @click.option(
     "--resolved/--unresolved",
@@ -50,18 +42,9 @@ def errors(ctx: click.Context, db_path: str | None) -> None:
     help="Filter by resolution status",
 )
 @click.option("--step", help="Filter by step name")
-@click.option("--limit", default=100, help="Maximum number of results")
-@click.option("--offset", default=0, help="Number of results to skip")
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
+@pagination_options
 @click.pass_context
 def errors_list(
     ctx: click.Context,
@@ -113,24 +96,9 @@ def errors_list(
 
 
 @errors.command("show")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("error_id", type=int)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def errors_show(
     ctx: click.Context,
@@ -167,23 +135,8 @@ def errors_show(
 
 
 @errors.command("summary")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def errors_summary(
     ctx: click.Context,
@@ -215,15 +168,9 @@ def errors_summary(
 
 
 @errors.command("resolve")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("error_id", type=int)
 @click.option("--notes", help="Resolution notes")
+@db_option
 @click.pass_context
 def errors_resolve(
     ctx: click.Context, db_path: str | None, error_id: int, notes: str | None
@@ -260,24 +207,9 @@ def errors_resolve(
 
 
 @errors.command("diagnose")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("error_id", type=int)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def errors_diagnose(
     ctx: click.Context,

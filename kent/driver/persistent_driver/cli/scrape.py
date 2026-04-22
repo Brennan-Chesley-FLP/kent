@@ -10,18 +10,16 @@ from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
 )
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+)
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
 @cli.group()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def scrape(ctx: click.Context, db_path: str | None) -> None:
     """Scrape-level health checks and diagnostics."""
@@ -31,23 +29,8 @@ def scrape(ctx: click.Context, db_path: str | None) -> None:
 
 
 @scrape.command("health")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def scrape_health(
     ctx: click.Context,
@@ -95,27 +78,12 @@ def scrape_health(
 
 @scrape.command("estimates")
 @click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
     "--failures-only",
     is_flag=True,
     help="Only show failed estimates",
 )
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def scrape_estimates(
     ctx: click.Context,

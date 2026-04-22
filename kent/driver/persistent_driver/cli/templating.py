@@ -28,9 +28,6 @@ BUILTIN_TEMPLATES_DIR = Path(__file__).parent / "templates"
 # User-local overrides
 USER_TEMPLATES_DIR = Path.home() / ".config" / "kent" / "templates"
 
-# Aliases for backwards compatibility with old --format values
-_FORMAT_ALIASES = {"summary": "default", "table": "default"}
-
 
 def _create_jinja_env() -> jinja2.Environment:
     loaders: list[jinja2.BaseLoader] = []
@@ -125,14 +122,11 @@ def render_output(
         template_name: Template file stem.  Defaults to ``"default"``.
             Overridden by ``--template`` on the CLI.
     """
-    # Resolve old format names
-    effective = _FORMAT_ALIASES.get(format_type, format_type)
-
-    if effective == "json":
+    if format_type == "json":
         click.echo(json.dumps(data, indent=2, default=str))
         return
 
-    if effective == "jsonl":
+    if format_type == "jsonl":
         items = data
         if isinstance(data, dict) and "items" in data:
             items = data["items"]

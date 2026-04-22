@@ -10,6 +10,10 @@ from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
 )
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+)
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
@@ -19,13 +23,7 @@ from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
 @cli.group(invoke_without_command=True)
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def doctor(ctx: click.Context, db_path: str | None) -> None:
     """Run health checks on database.
@@ -45,23 +43,8 @@ def doctor(ctx: click.Context, db_path: str | None) -> None:
 
 
 @doctor.command("health")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def doctor_health(
     ctx: click.Context,
@@ -108,23 +91,8 @@ def doctor_health(
 
 
 @doctor.command("orphans")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def doctor_orphans(
     ctx: click.Context,
@@ -156,24 +124,9 @@ def doctor_orphans(
 
 
 @doctor.command("pending")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
 @click.option("--limit", default=100, help="Maximum number of results")
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def doctor_pending(
     ctx: click.Context,
@@ -224,24 +177,9 @@ def doctor_pending(
 
 
 @doctor.command("ghosts")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
 @click.option("--continuation", help="Filter by continuation (step name)")
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def doctor_ghosts(
     ctx: click.Context,
@@ -316,27 +254,12 @@ def doctor_ghosts(
 
 @doctor.command("estimates")
 @click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
     "--failures-only",
     is_flag=True,
     help="Only show failed estimates",
 )
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def doctor_estimates(
     ctx: click.Context,
@@ -383,20 +306,6 @@ def doctor_estimates(
 
 @doctor.command("structure")
 @click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
     "--step", "step_name", default=None, help="Filter to a specific step name"
 )
 @click.option(
@@ -418,9 +327,8 @@ def doctor_estimates(
     default=None,
     help="Show detailed validation for a specific response",
 )
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def doctor_structure(
     ctx: click.Context,

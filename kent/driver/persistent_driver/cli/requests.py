@@ -11,7 +11,12 @@ import click
 from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
-    format_output,
+)
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+    pagination_options,
+    search_options,
 )
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
@@ -22,13 +27,7 @@ from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
 @cli.group()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def requests(ctx: click.Context, db_path: str | None) -> None:
     """Inspect and manipulate requests."""
@@ -39,28 +38,12 @@ def requests(ctx: click.Context, db_path: str | None) -> None:
 
 @requests.command("list")
 @click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
     "--status", help="Filter by status (pending, completed, failed, held)"
 )
 @click.option("--step", help="Filter by step name")
-@click.option("--limit", default=100, help="Maximum number of results")
-@click.option("--offset", default=0, help="Number of results to skip")
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
+@pagination_options
 @click.pass_context
 def requests_list(
     ctx: click.Context,
@@ -121,24 +104,9 @@ def requests_list(
 
 
 @requests.command("show")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("request_id", type=int)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def requests_show(
     ctx: click.Context,
@@ -188,24 +156,9 @@ def requests_show(
 
 
 @requests.command("parents")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("request_id", type=int)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def requests_parents(
     ctx: click.Context,
@@ -249,23 +202,8 @@ def requests_parents(
 
 
 @requests.command("summary")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def requests_summary(
     ctx: click.Context,
@@ -300,15 +238,9 @@ def requests_summary(
 
 
 @requests.command("content")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("request_id", type=int)
 @click.option("--output", "-o", help="Output file path (default: stdout)")
+@db_option
 @click.pass_context
 def requests_content(
     ctx: click.Context,
@@ -350,27 +282,10 @@ def requests_content(
 
 
 @requests.command("search")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option("--text", "text_pattern", help="Plain text to search for")
-@click.option("--regex", "regex_pattern", help="Regular expression pattern")
-@click.option("--xpath", "xpath_expr", help="XPath expression to evaluate")
 @click.option("--step", help="Filter by step name")
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
+@search_options
 @click.pass_context
 def requests_search(
     ctx: click.Context,
@@ -436,14 +351,8 @@ def requests_search(
 
 
 @requests.command("cancel")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("request_id", type=int)
+@db_option
 @click.pass_context
 def requests_cancel(
     ctx: click.Context, db_path: str | None, request_id: int
@@ -475,14 +384,8 @@ def requests_cancel(
 
 
 @requests.command("cancel-all")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("step")
+@db_option
 @click.pass_context
 def requests_cancel_all(
     ctx: click.Context, db_path: str | None, step: str
@@ -505,187 +408,10 @@ def requests_cancel_all(
     asyncio.run(run())
 
 
-# =========================================================================
-# Compression Subgroup
-# =========================================================================
-
-
-@requests.group()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.pass_context
-def compression(ctx: click.Context, db_path: str | None) -> None:
-    """Inspect and manipulate compression."""
-    ctx.ensure_object(dict)
-    if db_path:
-        ctx.obj["db_path"] = db_path
-
-
-@compression.command("stats")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["summary", "json", "jsonl"]),
-    default="summary",
-    help="Output format",
-)
-@click.pass_context
-def compression_stats(
-    ctx: click.Context, db_path: str | None, format_type: str
-) -> None:
-    """Show compression statistics.
-
-    \b
-    Examples:
-        pdd requests compression stats --db run.db
-        pdd requests compression stats --db run.db --format json
-    """
-    db_path = _resolve_db_path(ctx, db_path)
-
-    async def run() -> None:
-        async with LocalDevDriverDebugger.open(db_path) as debugger:
-            stats = await debugger.get_compression_stats()
-
-            if format_type == "summary":
-                click.echo("=== Compression Statistics ===")
-                click.echo(f"Total Responses: {stats['total']}")
-                click.echo(
-                    f"Total Original Size: {stats['total_original']} bytes"
-                )
-                click.echo(
-                    f"Total Compressed Size: {stats['total_compressed']} bytes"
-                )
-                click.echo(f"With Dict: {stats['with_dict']}")
-                click.echo(f"No Dict: {stats['no_dict']}")
-                click.echo(
-                    f"Compression Ratio: {stats['compression_ratio']:.2f}x"
-                )
-            else:
-                format_output(stats, format_type)
-
-    asyncio.run(run())
-
-
-@compression.command("train")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.argument("step")
-@click.option(
-    "--sample", default=1000, help="Number of samples to use for training"
-)
-@click.pass_context
-def compression_train(
-    ctx: click.Context, db_path: str | None, step: str, sample: int
-) -> None:
-    """Train a new compression dictionary for a step.
-
-    \b
-    Examples:
-        pdd requests compression train --db run.db step1
-        pdd requests compression train --db run.db step1 --sample 500
-    """
-    db_path = _resolve_db_path(ctx, db_path)
-
-    async def run() -> None:
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=False
-        ) as debugger:
-            try:
-                dict_id = await debugger.train_compression_dict(
-                    step, sample_count=sample
-                )
-                click.echo(
-                    f"Trained compression dictionary {dict_id} for {step}"
-                )
-            except ValueError as e:
-                click.echo(str(e), err=True)
-                sys.exit(1)
-
-    asyncio.run(run())
-
-
-@compression.command("recompress")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.argument("step")
-@click.option(
-    "--dict-id", type=int, help="Compression dictionary ID (default: latest)"
-)
-@click.pass_context
-def compression_recompress(
-    ctx: click.Context,
-    db_path: str | None,
-    step: str,
-    dict_id: int | None,
-) -> None:
-    """Recompress responses with a compression dictionary.
-
-    \b
-    Examples:
-        pdd requests compression recompress --db run.db step1
-        pdd requests compression recompress --db run.db step1 --dict-id 5
-    """
-
-    db_path = _resolve_db_path(ctx, db_path)
-
-    async def run() -> None:
-        async with LocalDevDriverDebugger.open(
-            db_path, read_only=False
-        ) as debugger:
-            try:
-                stats = await debugger.recompress_responses(step, dict_id)
-                click.echo(f"Recompressed {stats['total']} responses")
-                click.echo(f"Size before: {stats['size_before']} bytes")
-                click.echo(f"Size after: {stats['size_after']} bytes")
-                click.echo(f"Savings: {stats['savings']} bytes")
-            except ValueError as e:
-                click.echo(str(e), err=True)
-                sys.exit(1)
-
-    asyncio.run(run())
-
-
 @requests.command("pending")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
 @click.option("--limit", default=100, help="Maximum number of results")
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def requests_pending(
     ctx: click.Context,
@@ -736,24 +462,9 @@ def requests_pending(
 
 
 @requests.command("ghosts")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
 @click.option("--step", help="Filter by step name")
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def requests_ghosts(
     ctx: click.Context,
@@ -819,23 +530,8 @@ def requests_ghosts(
 
 
 @requests.command("orphans")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def requests_orphans(
     ctx: click.Context,

@@ -12,6 +12,12 @@ from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
 )
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+    pagination_options,
+    search_options,
+)
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
@@ -21,13 +27,7 @@ from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
 @cli.group()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def responses(ctx: click.Context, db_path: str | None) -> None:
     """Inspect responses."""
@@ -37,26 +37,10 @@ def responses(ctx: click.Context, db_path: str | None) -> None:
 
 
 @responses.command("list")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.option("--continuation", help="Filter by continuation (step name)")
-@click.option("--limit", default=100, help="Maximum number of results")
-@click.option("--offset", default=0, help="Number of results to skip")
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
+@pagination_options
 @click.pass_context
 def responses_list(
     ctx: click.Context,
@@ -112,24 +96,9 @@ def responses_list(
 
 
 @responses.command("show")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("request_id", type=int)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def responses_show(
     ctx: click.Context,
@@ -178,15 +147,9 @@ def responses_show(
 
 
 @responses.command("content")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("request_id", type=int)
 @click.option("--output", "-o", help="Output file path (default: stdout)")
+@db_option
 @click.pass_context
 def responses_content(
     ctx: click.Context,
@@ -228,27 +191,10 @@ def responses_content(
 
 
 @responses.command("search")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option("--text", "text_pattern", help="Plain text to search for")
-@click.option("--regex", "regex_pattern", help="Regular expression pattern")
-@click.option("--xpath", "xpath_expr", help="XPath expression to evaluate")
 @click.option("--continuation", help="Filter by continuation (step name)")
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
+@search_options
 @click.pass_context
 def responses_search(
     ctx: click.Context,

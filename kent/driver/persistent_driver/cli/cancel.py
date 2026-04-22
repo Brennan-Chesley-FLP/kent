@@ -11,17 +11,12 @@ from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
 )
+from kent.driver.persistent_driver.cli._options import db_option
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
 @cli.group()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def cancel(ctx: click.Context, db_path: str | None) -> None:
     """Cancel pending or held requests."""
@@ -31,14 +26,8 @@ def cancel(ctx: click.Context, db_path: str | None) -> None:
 
 
 @cancel.command("request")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("request_id", type=int)
+@db_option
 @click.pass_context
 def cancel_request(
     ctx: click.Context, db_path: str | None, request_id: int
@@ -70,14 +59,8 @@ def cancel_request(
 
 
 @cancel.command("continuation")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("continuation")
+@db_option
 @click.pass_context
 def cancel_continuation(
     ctx: click.Context, db_path: str | None, continuation: str

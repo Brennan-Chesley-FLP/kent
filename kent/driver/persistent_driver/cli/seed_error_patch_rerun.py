@@ -24,6 +24,10 @@ import click
 import sqlalchemy as sa
 
 from kent.driver.persistent_driver.cli import _resolve_db_path, cli
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+)
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.database import init_database
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
@@ -32,13 +36,6 @@ from kent.driver.persistent_driver.sql_manager import SQLManager
 
 
 @cli.command("seed-error-patch-rerun")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the source database file (the one with errors).",
-)
 @click.option(
     "--output-db",
     "output_db_path",
@@ -68,16 +65,8 @@ from kent.driver.persistent_driver.sql_manager import SQLManager
         "modify the source DB."
     ),
 )
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "table", "json", "jsonl"]),
-    default="default",
-    help="Output format.",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name."
-)
+@db_option
+@format_options
 @click.pass_context
 def seed_error_patch_rerun(
     ctx: click.Context,

@@ -11,6 +11,11 @@ from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
     cli,
 )
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+    pagination_options,
+)
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
@@ -20,13 +25,7 @@ from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
 
 @cli.group()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def results(ctx: click.Context, db_path: str | None) -> None:
     """Inspect and export results."""
@@ -36,29 +35,13 @@ def results(ctx: click.Context, db_path: str | None) -> None:
 
 
 @results.command("list")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.option("--type", "result_type", help="Filter by result type")
 @click.option(
     "--valid/--invalid", default=None, help="Filter by validation status"
 )
-@click.option("--limit", default=100, help="Maximum number of results")
-@click.option("--offset", default=0, help="Number of results to skip")
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
+@pagination_options
 @click.pass_context
 def results_list(
     ctx: click.Context,
@@ -117,24 +100,9 @@ def results_list(
 
 
 @results.command("show")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("result_id", type=int)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def results_show(
     ctx: click.Context,
@@ -180,23 +148,8 @@ def results_show(
 
 
 @results.command("summary")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def results_summary(
     ctx: click.Context,
@@ -228,18 +181,12 @@ def results_summary(
 
 
 @results.command("export")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
 @click.argument("output_path", type=click.Path())
 @click.option("--type", "result_type", help="Filter by result type")
 @click.option(
     "--valid/--invalid", default=None, help="Filter by validation status"
 )
+@db_option
 @click.pass_context
 def results_export(
     ctx: click.Context,
@@ -270,23 +217,6 @@ def results_export(
 
 @results.command("validate")
 @click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
-@click.option(
     "--step", "step_name", default=None, help="Filter to a specific step name"
 )
 @click.option(
@@ -308,6 +238,8 @@ def results_export(
     default=None,
     help="Show detailed validation for a specific response",
 )
+@db_option
+@format_options
 @click.pass_context
 def results_validate(
     ctx: click.Context,

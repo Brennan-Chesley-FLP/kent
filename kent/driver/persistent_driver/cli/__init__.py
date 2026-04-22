@@ -9,7 +9,7 @@ Usage:
     pdd --db run.db requests show <id>          # Show request details
     pdd --db run.db requests search <query>     # Search response content
     pdd --db run.db requests cancel <id>        # Cancel a pending request
-    pdd --db run.db requests compression stats  # Compression statistics
+    pdd --db run.db compression stats           # Compression statistics
     pdd --db run.db errors list                 # List errors
     pdd --db run.db errors diagnose <id>        # Diagnose an error
     pdd --db run.db results list                # List results
@@ -32,81 +32,18 @@ All commands support:
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
 
 import click
 
+from kent.driver.persistent_driver.cli._options import (
+    db_option,
+    format_options,
+)
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import (
     LocalDevDriverDebugger,
 )
-
-# =========================================================================
-# Output Formatting
-# =========================================================================
-
-
-def format_output(
-    data: Any, format_type: str = "summary", headers: list[str] | None = None
-) -> None:
-    """Format and print output based on format type.
-
-    Args:
-        data: Data to format (dict, list of dicts, or list of objects)
-        format_type: Output format ('summary', 'json', 'jsonl')
-        headers: Column headers for summary format
-    """
-    if format_type == "json":
-        click.echo(json.dumps(data, indent=2))
-    elif format_type == "jsonl":
-        if isinstance(data, list):
-            for item in data:
-                click.echo(json.dumps(item))
-        else:
-            click.echo(json.dumps(data))
-    elif format_type == "summary":
-        if isinstance(data, dict):
-            # Single record - display as key-value pairs
-            for key, value in data.items():
-                click.echo(f"{key}: {value}")
-        elif isinstance(data, list) and data:
-            # Multiple records - display as table
-            if headers is None:
-                # Auto-detect headers from first item
-                first = data[0]
-                if hasattr(first, "__dict__"):
-                    headers = list(vars(first).keys())
-                elif isinstance(first, dict):
-                    headers = list(first.keys())
-                else:
-                    headers = []
-
-            if headers:
-                # Print header
-                click.echo("  ".join(str(h).ljust(15) for h in headers))
-                click.echo("-" * (len(headers) * 17))
-
-                # Print rows
-                for item in data:
-                    if hasattr(item, "__dict__"):
-                        row = [str(getattr(item, h, ""))[:15] for h in headers]
-                    elif isinstance(item, dict):
-                        row = [str(item.get(h, ""))[:15] for h in headers]
-                    else:
-                        row = [str(item)[:15]]
-                    click.echo("  ".join(v.ljust(15) for v in row))
-            else:
-                # Just print items
-                for item in data:
-                    click.echo(item)
-        elif not data:
-            click.echo("No results")
-        else:
-            click.echo(str(data))
-    else:
-        raise ValueError(f"Unknown format: {format_type}")
-
 
 # =========================================================================
 # Data Diff Formatting
@@ -308,13 +245,7 @@ def _truncate_repr(value: Any, max_len: int = 60) -> str:
 
 @click.group()
 @click.version_option()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
+@db_option
 @click.pass_context
 def cli(ctx: click.Context, db_path: str | None) -> None:
     """LocalDevDriver Debugger - Inspect and manipulate scraper run databases."""
@@ -359,23 +290,8 @@ def _resolve_db_path(ctx: click.Context, db_path: str | None) -> str:
 
 
 @cli.command()
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.option(
-    "--format",
-    "format_type",
-    type=click.Choice(["default", "summary", "json", "jsonl"]),
-    default="default",
-    help="Output format",
-)
-@click.option(
-    "--template", "template_name", default=None, help="Template name"
-)
+@db_option
+@format_options
 @click.pass_context
 def info(
     ctx: click.Context,
