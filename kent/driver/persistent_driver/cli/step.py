@@ -85,6 +85,57 @@ def _load_scraper_class(
         sys.exit(1)
 
 
+async def _resolve_scraper_and_requests(
+    debugger: LocalDevDriverDebugger,
+    step_name: str,
+    scraper_class: str | None,
+    request_id: int | None,
+    sample: int | None,
+    limit: int | None,
+) -> tuple[type, list[int]]:
+    """Load the scraper class and resolve which request IDs to process.
+
+    Selects by --request-id, --sample, or all completed requests for the step.
+    Exits with a user-facing message on empty results or sampling errors.
+    """
+    metadata = await debugger.get_run_metadata() if not scraper_class else None
+    scraper_cls = _load_scraper_class(scraper_class, metadata)
+
+    if request_id is not None:
+        request_ids = [request_id]
+    elif sample is not None:
+        try:
+            request_ids = await debugger.sample_requests(step_name, sample)
+            if not request_ids:
+                click.echo(
+                    f"No completed requests found for step '{step_name}'",
+                    err=True,
+                )
+                sys.exit(1)
+        except Exception as e:
+            click.echo(f"Error sampling requests: {e}", err=True)
+            sys.exit(1)
+    else:
+        page = await debugger.list_requests(
+            status="completed",
+            continuation=step_name,
+            limit=limit or 10000,
+            offset=0,
+        )
+        request_ids = [r.id for r in page.items]
+        if not request_ids:
+            click.echo(
+                f"No completed requests found for step '{step_name}'",
+                err=True,
+            )
+            sys.exit(1)
+
+    if limit is not None and len(request_ids) > limit:
+        request_ids = request_ids[:limit]
+
+    return scraper_cls, request_ids
+
+
 # =========================================================================
 # Re-evaluate Command
 # =========================================================================
@@ -189,52 +240,14 @@ def re_evaluate(
         )
 
         async with LocalDevDriverDebugger.open(db_path) as debugger:
-            metadata = (
-                await debugger.get_run_metadata()
-                if not scraper_class
-                else None
+            scraper_cls, request_ids = await _resolve_scraper_and_requests(
+                debugger,
+                step_name,
+                scraper_class,
+                request_id,
+                sample,
+                limit,
             )
-            scraper_cls = _load_scraper_class(scraper_class, metadata)
-
-            # Determine which requests to compare
-            if request_id is not None:
-                # Single request
-                request_ids = [request_id]
-            elif sample is not None:
-                # Sample requests (all completed, since we follow the tree)
-                try:
-                    request_ids = await debugger.sample_requests(
-                        step_name, sample
-                    )
-                    if not request_ids:
-                        click.echo(
-                            f"No completed requests found for step '{step_name}'",
-                            err=True,
-                        )
-                        sys.exit(1)
-                except Exception as e:
-                    click.echo(f"Error sampling requests: {e}", err=True)
-                    sys.exit(1)
-            else:
-                # All completed requests for step
-                page = await debugger.list_requests(
-                    status="completed",
-                    continuation=step_name,
-                    limit=limit or 10000,
-                    offset=0,
-                )
-                request_ids = [r.id for r in page.items]
-
-                if not request_ids:
-                    click.echo(
-                        f"No completed requests found for step '{step_name}'",
-                        err=True,
-                    )
-                    sys.exit(1)
-
-            # Apply limit if specified
-            if limit is not None and len(request_ids) > limit:
-                request_ids = request_ids[:limit]
 
             # Perform comparisons - follow entire request tree
             results: list[ComparisonResult] = []
@@ -557,50 +570,14 @@ def xpath_stats(
 
     async def run() -> None:
         async with LocalDevDriverDebugger.open(db_path) as debugger:
-            # Load scraper class
-            metadata = (
-                await debugger.get_run_metadata()
-                if not scraper_class
-                else None
+            scraper_cls, request_ids = await _resolve_scraper_and_requests(
+                debugger,
+                step_name,
+                scraper_class,
+                request_id,
+                sample,
+                limit,
             )
-            scraper_cls = _load_scraper_class(scraper_class, metadata)
-
-            # Determine which requests to process
-            if request_id is not None:
-                request_ids = [request_id]
-            elif sample is not None:
-                try:
-                    request_ids = await debugger.sample_requests(
-                        step_name, sample
-                    )
-                    if not request_ids:
-                        click.echo(
-                            f"No completed requests found for step '{step_name}'",
-                            err=True,
-                        )
-                        sys.exit(1)
-                except Exception as e:
-                    click.echo(f"Error sampling requests: {e}", err=True)
-                    sys.exit(1)
-            else:
-                page = await debugger.list_requests(
-                    status="completed",
-                    continuation=step_name,
-                    limit=limit or 10000,
-                    offset=0,
-                )
-                request_ids = [r.id for r in page.items]
-
-                if not request_ids:
-                    click.echo(
-                        f"No completed requests found for step '{step_name}'",
-                        err=True,
-                    )
-                    sys.exit(1)
-
-            # Apply limit
-            if limit is not None and len(request_ids) > limit:
-                request_ids = request_ids[:limit]
 
             # Run each request with selector observer
             all_observations: list[tuple[int, list[dict[str, Any]]]] = []
