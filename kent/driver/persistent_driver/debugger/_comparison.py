@@ -277,7 +277,6 @@ class ComparisonMixin:
                     Request.compression_dict_id,
                     Request.continuation,
                     Request.response_created_at,
-                    Request.warc_record_id,
                     Request.speculation_outcome,
                 ).where(
                     Request.id == request_id,
@@ -300,8 +299,7 @@ class ComparisonMixin:
             "compression_dict_id": response_row[7],
             "continuation": response_row[8],
             "created_at": response_row[9],
-            "warc_record_id": response_row[10],
-            "speculation_outcome": response_row[11],
+            "speculation_outcome": response_row[10],
         }
 
         # Get decompressed content

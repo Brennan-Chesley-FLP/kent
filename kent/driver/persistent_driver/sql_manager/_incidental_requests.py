@@ -219,7 +219,7 @@ class IncidentalRequestStorageMixin:
     async def get_incidental_request_storage(
         self, storage_id: int
     ) -> dict[str, Any] | None:
-        """Get raw storage row for decompression / WARC export."""
+        """Get raw storage row for decompression."""
         async with self._session_factory() as session:
             result = await session.execute(
                 select(IncidentalRequestStorage).where(

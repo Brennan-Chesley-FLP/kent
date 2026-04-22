@@ -234,8 +234,6 @@ class TestGetterMethods:
 
     async def test_get_response_found(self, db_path: Path) -> None:
         """Test get_response returns response when found."""
-        import uuid
-
         from kent.data_types import (
             BaseScraper,
             HttpMethod,
@@ -278,7 +276,6 @@ class TestGetterMethods:
                 )
                 content = b"Test content"
                 compressed = compress(content)
-                warc_id = str(uuid.uuid4())
                 await session.execute(
                     sa.text("""
                     UPDATE requests SET
@@ -287,15 +284,13 @@ class TestGetterMethods:
                         response_url = 'https://example.com/test',
                         content_compressed = :content_compressed,
                         content_size_original = :content_size_original,
-                        content_size_compressed = :content_size_compressed,
-                        warc_record_id = :warc_record_id
+                        content_size_compressed = :content_size_compressed
                     WHERE id = 1
                     """),
                     {
                         "content_compressed": compressed,
                         "content_size_original": len(content),
                         "content_size_compressed": len(compressed),
-                        "warc_record_id": warc_id,
                     },
                 )
                 await session.commit()

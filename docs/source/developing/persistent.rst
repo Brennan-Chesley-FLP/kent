@@ -337,7 +337,7 @@ stored response, capturing all yields and selector queries via
 a human-readable selector tree, and JSON for UI highlighting.
 
 **Listing and export:** Paginated queries for requests, responses, results,
-and errors. WARC export for captured traffic.
+and errors. JSONL export for validated results.
 
 
 Async Coordination Patterns

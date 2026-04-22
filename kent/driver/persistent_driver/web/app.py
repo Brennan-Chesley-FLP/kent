@@ -806,7 +806,6 @@ def create_app(
         compression_router,
         debug_router,
         errors_router,
-        export_router,
         rate_limiter_router,
         requests_router,
         responses_router,
@@ -843,7 +842,6 @@ def create_app(
     app.include_router(results_router)
     app.include_router(errors_router)
     app.include_router(compression_router)
-    app.include_router(export_router)
     app.include_router(debug_router)
     app.include_router(archived_files_router)
     app.include_router(rate_limiter_router)

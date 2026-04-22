@@ -168,7 +168,6 @@ Commands:
   compression             Inspect and manipulate compression.
   doctor                  Run health checks on database.
   errors                  Inspect and manipulate errors.
-  export                  Export results and responses.
   help-all                Show help for all commands and subcommands.
   incidental              Inspect incidental requests (browser-initiated...
   info                    Show run metadata and statistics.
@@ -583,58 +582,6 @@ Options:
   --help                          Show this message and exit.
 ```
 
-## pdd export
-
-```
-Usage: pdd export [OPTIONS] COMMAND [ARGS]...
-
-  Export results and responses.
-
-Options:
-  --db PATH  Path to the database file
-  --help     Show this message and exit.
-
-Commands:
-  jsonl  Export results to JSONL (newline-delimited JSON) file.
-  warc   Export responses to WARC (Web ARChive) format.
-```
-
-### pdd export jsonl
-
-```
-Usage: pdd export jsonl [OPTIONS] OUTPUT_PATH
-
-  Export results to JSONL (newline-delimited JSON) file.
-
-  Examples:
-      ldd-debug export jsonl run.db results.jsonl
-      ldd-debug export jsonl run.db opinions.jsonl --type CourtOpinion --valid
-
-Options:
-  --db PATH            Path to the database file
-  --type TEXT          Filter by result type
-  --valid / --invalid  Filter by validation status
-  --help               Show this message and exit.
-```
-
-### pdd export warc
-
-```
-Usage: pdd export warc [OPTIONS] OUTPUT_PATH
-
-  Export responses to WARC (Web ARChive) format.
-
-  Examples:
-      ldd-debug export warc run.db archive.warc.gz
-      ldd-debug export warc run.db step1.warc --no-compress --continuation step1
-
-Options:
-  --db PATH                   Path to the database file
-  --compress / --no-compress  Gzip-compress the WARC file
-  --continuation TEXT         Filter by continuation (step name)
-  --help                      Show this message and exit.
-```
-
 ## pdd help-all
 
 ```
@@ -762,7 +709,6 @@ Commands:
   cancel-all   Cancel all pending/held requests for a step.
   compression  Inspect and manipulate compression.
   content      Get decompressed response content for a request.
-  export       Export responses to WARC (Web ARChive) format.
   ghosts       List ghost requests grouped by step.
   list         List requests with optional filtering.
   orphans      List orphaned requests and responses with details.
@@ -835,24 +781,6 @@ Options:
   --db PATH          Path to the database file
   -o, --output TEXT  Output file path (default: stdout)
   --help             Show this message and exit.
-```
-
-### pdd requests export
-
-```
-Usage: pdd requests export [OPTIONS] OUTPUT_PATH
-
-  Export responses to WARC (Web ARChive) format.
-
-  Examples:
-      pdd requests export --db run.db archive.warc.gz
-      pdd requests export --db run.db step1.warc --no-compress --step step1
-
-Options:
-  --db PATH                   Path to the database file
-  --compress / --no-compress  Gzip-compress the WARC file
-  --step TEXT                 Filter by step name
-  --help                      Show this message and exit.
 ```
 
 ### pdd requests ghosts

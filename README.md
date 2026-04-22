@@ -62,7 +62,6 @@ pdd --db run.db responses search     # Search stored responses
 pdd --db run.db results list         # View parsed results
 pdd --db run.db errors diagnose      # Structured error diagnosis
 pdd --db run.db compression stats    # Compression statistics
-pdd --db run.db export warc          # Export to WARC format
 pdd --db run.db doctor health        # Run health checks
 ```
 

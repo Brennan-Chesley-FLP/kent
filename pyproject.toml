@@ -32,7 +32,6 @@ persistent-driver = [
     "sqlalchemy[asyncio]>=2.0",
     "alembic>=1.13",
     "zstandard>=0.25.0",
-    "warcio>=1.7.5",
 ]
 web = [
     "fastapi>=0.128.0",

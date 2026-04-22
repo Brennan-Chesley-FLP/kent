@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from pathlib import Path
 
 import pytest
@@ -145,7 +144,6 @@ async def populated_db(initialized_db):
             content_size_compressed=len(compressed_content),
             dict_id=None,
             continuation=continuation,
-            warc_record_id=str(uuid.uuid4()),
             speculation_outcome=None,
         )
         response_ids.append(response_id)

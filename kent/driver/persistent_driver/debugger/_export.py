@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import sqlalchemy as sa
 from sqlmodel import select
 
 from kent.driver.persistent_driver.models import (
@@ -21,7 +20,7 @@ from kent.driver.persistent_driver.sql_manager import (
 
 
 class ExportSearchMixin:
-    """Export (JSONL, WARC), response search, and error diagnosis."""
+    """Export (JSONL), response search, and error diagnosis."""
 
     sql: SQLManager
     _session_factory: ScopedSessionFactory
@@ -223,86 +222,6 @@ class ExportSearchMixin:
                 count += 1
 
         return count
-
-    async def export_warc(
-        self,
-        output_path: Path | str,
-        compress: bool = True,
-        continuation: str | None = None,
-    ) -> int:
-        """Export responses to WARC (Web ARChive) format.
-
-        Args:
-            output_path: Path for the output WARC file.
-            compress: Whether to gzip-compress the WARC file (default True).
-            continuation: Optional filter by continuation (step name).
-
-        Returns:
-            Number of responses exported.
-
-        Raises:
-            ValueError: If no responses to export.
-        """
-        from kent.driver.persistent_driver.warc_export import (
-            export_warc as do_export,
-        )
-
-        if isinstance(output_path, str):
-            output_path = Path(output_path)
-
-        count = await do_export(
-            self._session_factory,
-            output_path,
-            compress=compress,
-            continuation=continuation,
-        )
-
-        if count == 0:
-            raise ValueError("No responses to export")
-
-        return count
-
-    async def preview_warc_export(
-        self, continuation: str | None = None
-    ) -> dict[str, Any]:
-        """Preview WARC export without creating the file.
-
-        Args:
-            continuation: Optional filter by continuation.
-
-        Returns:
-            Dictionary with record_count and estimated_size.
-        """
-        async with self._session_factory() as session:
-            query = (
-                select(
-                    sa.func.count(),
-                    sa.func.coalesce(
-                        sa.func.sum(Request.content_size_original), 0
-                    ),
-                )
-                .select_from(Request)
-                .where(
-                    Request.response_status_code.isnot(None),  # type: ignore[union-attr]
-                )
-            )
-
-            if continuation:
-                query = query.where(Request.continuation == continuation)
-
-            result = await session.execute(query)
-            row = result.first()
-            if row:
-                count = row[0] or 0
-                total_size = row[1] or 0
-            else:
-                count = 0
-                total_size = 0
-
-        return {
-            "record_count": count,
-            "estimated_size": total_size,
-        }
 
     # =========================================================================
     # Response Search Methods

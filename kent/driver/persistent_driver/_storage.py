@@ -119,8 +119,6 @@ class StorageMixin:
         Returns:
             The database ID of the stored response.
         """
-        import uuid
-
         from kent.data_types import (
             ArchiveResponse,
             Request,
@@ -164,9 +162,6 @@ class StorageMixin:
                 dict_id = None
                 content_size_compressed = 0
 
-        # Generate WARC record ID for later export
-        warc_record_id = str(uuid.uuid4())
-
         await self.db.store_response(
             request_id=request_id,
             status_code=response.status_code,
@@ -177,7 +172,6 @@ class StorageMixin:
             content_size_compressed=content_size_compressed,
             dict_id=dict_id,
             continuation=continuation,
-            warc_record_id=warc_record_id,
             speculation_outcome=speculation_outcome,
         )
 

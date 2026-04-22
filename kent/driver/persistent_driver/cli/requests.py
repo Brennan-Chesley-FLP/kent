@@ -505,53 +505,6 @@ def requests_cancel_all(
     asyncio.run(run())
 
 
-@requests.command("export")
-@click.option(
-    "--db",
-    "db_path",
-    type=click.Path(exists=True),
-    default=None,
-    help="Path to the database file",
-)
-@click.argument("output_path", type=click.Path())
-@click.option(
-    "--compress/--no-compress",
-    default=True,
-    help="Gzip-compress the WARC file",
-)
-@click.option("--step", help="Filter by step name")
-@click.pass_context
-def requests_export(
-    ctx: click.Context,
-    db_path: str | None,
-    output_path: str,
-    compress: bool,
-    step: str | None,
-) -> None:
-    """Export responses to WARC (Web ARChive) format.
-
-    \b
-    Examples:
-        pdd requests export --db run.db archive.warc.gz
-        pdd requests export --db run.db step1.warc --no-compress --step step1
-    """
-
-    db_path = _resolve_db_path(ctx, db_path)
-
-    async def run() -> None:
-        async with LocalDevDriverDebugger.open(db_path) as debugger:
-            try:
-                count = await debugger.export_warc(
-                    output_path, compress=compress, continuation=step
-                )
-                click.echo(f"Exported {count} responses to {output_path}")
-            except ValueError as e:
-                click.echo(str(e), err=True)
-                sys.exit(1)
-
-    asyncio.run(run())
-
-
 # =========================================================================
 # Compression Subgroup
 # =========================================================================

@@ -167,9 +167,6 @@ class Request(SQLModel, table=True):  # type: ignore[call-arg]
     # Response timestamps
     response_created_at: str | None = None
 
-    # WARC export metadata
-    warc_record_id: str | None = None
-
     # Speculative request outcome tracking
     speculation_outcome: str | None = None
 

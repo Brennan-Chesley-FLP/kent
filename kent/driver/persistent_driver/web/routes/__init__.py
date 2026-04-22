@@ -8,7 +8,6 @@ This package contains all API route modules:
 - results: Result listing and data access
 - errors: Error tracking endpoints
 - compression: Dictionary training and recompression
-- export: WARC export endpoints
 - debug: Response diagnosis with XPath observation
 - archived_files: Archived file metadata and content
 - rate_limiter: Rate limiter state monitoring
@@ -26,9 +25,6 @@ from kent.driver.persistent_driver.web.routes.debug import (
 )
 from kent.driver.persistent_driver.web.routes.errors import (
     router as errors_router,
-)
-from kent.driver.persistent_driver.web.routes.export import (
-    router as export_router,
 )
 from kent.driver.persistent_driver.web.routes.rate_limiter import (
     router as rate_limiter_router,
@@ -60,7 +56,6 @@ __all__ = [
     "compression_router",
     "debug_router",
     "errors_router",
-    "export_router",
     "rate_limiter_router",
     "requests_router",
     "responses_router",

@@ -4,7 +4,6 @@ This package provides a development driver that extends AsyncDriver with:
 - Persistent request queue in SQLite
 - Response archival with zstd compression
 - Resumability from graceful shutdown
-- WARC export capability
 - Web interface integration via callbacks
 """
 
@@ -76,10 +75,6 @@ from kent.driver.persistent_driver.stats import (
     get_stats,
     get_throughput_stats,
 )
-from kent.driver.persistent_driver.warc_export import (
-    export_warc,
-    export_warc_for_continuation,
-)
 
 __all__ = [
     # Main driver
@@ -128,9 +123,6 @@ __all__ = [
     "get_result_stats",
     "get_stats",
     "get_throughput_stats",
-    # WARC export
-    "export_warc",
-    "export_warc_for_continuation",
     # Dry run driver
     "CapturedData",
     "CapturedError",

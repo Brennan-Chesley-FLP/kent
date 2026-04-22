@@ -731,7 +731,6 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_resolve_error` — Resolves an error with notes
 - `test_export_results_jsonl` — Exports results to JSONL format
 - `test_export_results_jsonl_filtered` — Exports filtered (valid-only) results to JSONL
-- `test_preview_warc_export` — Previews WARC export with record count and estimated size
 - `test_diagnose_error` — Diagnoses error (raises ValueError when response missing)
 - `test_diagnose_error_not_found` — Diagnoses non-existent error (raises ValueError)
 - `test_search_text_match` — Text search finds matching responses
@@ -857,7 +856,6 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_queue_stats` — Queue statistics counts by status and continuation
 - `test_compression_stats` — Compression statistics calculates ratios and totals
 - `test_stats_json_serialization` — Stats serialize to JSON with all sections
-- `test_warc_export` — Exports responses to WARC file with request/response records
 - `test_train_compression_dict` — Trains compression dictionary from stored responses
 - `test_recompress_responses` — Recompresses responses with trained dictionary for better ratios
 - `test_train_dict_no_responses_raises` — Training with no responses raises ValueError
@@ -1009,12 +1007,6 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_validate_json_responses_malformed_json` — Validation catches malformed JSON content
 - `test_validate_json_responses_empty_content` — Validation skips responses with empty/null content
 
-### `sql_manager/test_warc_export.py`
-- `test_export_warc_basic` — Basic WARC export writes a file with one record
-- `test_export_warc_by_continuation` — WARC export filters records by continuation name
-- `test_export_warc_empty` — WARC export with no matching responses returns count 0
-- `test_export_warc_headers_only` — WARC export handles headers-only responses (no body)
-
 ### `web/test_app.py`
 - `test_scan_runs_empty_dir` — Scanning empty runs directory returns empty list
 - `test_scan_runs_creates_missing_dir` — scan_runs creates directory if it doesn't exist
@@ -1127,8 +1119,6 @@ Living index of organized test files. Updated as files are moved out of `tests/u
 - `test_diagnose_error_not_found` — Diagnose command fails for non-existent error ID
 - `test_export_jsonl` — Results export produces valid JSONL with expected fields
 - `test_export_jsonl_filtered` — Results export with --valid filter returns only valid results
-- `test_export_warc` — Requests export produces a compressed WARC file
-- `test_export_warc_no_compress` — Requests export with --no-compress produces uncompressed WARC
 
 ### `cli/test_doctor.py`
 - `test_scrape_health_table_format` — Scrape health outputs table with status, integrity, errors, ghosts sections

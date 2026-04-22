@@ -161,8 +161,7 @@ class TestListingMethods:
                     response_url = :url,
                     content_compressed = :compressed,
                     content_size_original = :original_size,
-                    content_size_compressed = :compressed_size,
-                    warc_record_id = 'uuid1'
+                    content_size_compressed = :compressed_size
                 WHERE id = 1
                 """),
                 {
@@ -179,11 +178,11 @@ class TestListingMethods:
                                       continuation, current_location,
                                       response_status_code, response_url,
                                       content_compressed, content_size_original,
-                                      content_size_compressed, warc_record_id)
+                                      content_size_compressed)
                 VALUES (2, 'completed', 9, 2, 'GET', 'https://example.com/2',
                         'process', '',
                         200, 'https://example.com/2',
-                        :compressed, :original_size, :compressed_size, 'uuid2')
+                        :compressed, :original_size, :compressed_size)
                 """),
                 {
                     "compressed": compressed,
@@ -626,8 +625,6 @@ class TestResponsesAndResultsListing:
 
     async def test_list_responses_filtering(self, db_path: Path) -> None:
         """Test list_responses with continuation filter."""
-        import uuid
-
         from kent.data_types import (
             BaseScraper,
             HttpMethod,
@@ -688,8 +685,7 @@ class TestResponsesAndResultsListing:
                             response_url = :url,
                             content_compressed = :content_compressed,
                             content_size_original = :content_size_original,
-                            content_size_compressed = :content_size_compressed,
-                            warc_record_id = :warc_record_id
+                            content_size_compressed = :content_size_compressed
                         WHERE id = :request_id
                         """),
                         {
@@ -698,7 +694,6 @@ class TestResponsesAndResultsListing:
                             "content_compressed": compressed,
                             "content_size_original": len(content),
                             "content_size_compressed": len(compressed),
-                            "warc_record_id": str(uuid.uuid4()),
                         },
                     )
                 await session.commit()
@@ -724,8 +719,6 @@ class TestResponsesAndResultsListing:
 
     async def test_list_responses_pagination(self, db_path: Path) -> None:
         """Test list_responses pagination."""
-        import uuid
-
         from kent.data_types import (
             BaseScraper,
             HttpMethod,
@@ -781,8 +774,7 @@ class TestResponsesAndResultsListing:
                             response_url = :url,
                             content_compressed = :content_compressed,
                             content_size_original = :content_size_original,
-                            content_size_compressed = :content_size_compressed,
-                            warc_record_id = :warc_record_id
+                            content_size_compressed = :content_size_compressed
                         WHERE id = :request_id
                         """),
                         {
@@ -791,7 +783,6 @@ class TestResponsesAndResultsListing:
                             "content_compressed": compressed,
                             "content_size_original": len(content),
                             "content_size_compressed": len(compressed),
-                            "warc_record_id": str(uuid.uuid4()),
                         },
                     )
                 await session.commit()

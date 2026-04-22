@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 
 from kent.driver.persistent_driver.compression import compress
 from kent.driver.persistent_driver.sql_manager import SQLManager
@@ -195,7 +194,6 @@ class TestListingOperations:
             content_size_compressed=len(compressed),
             dict_id=None,
             continuation="parse_listing",
-            warc_record_id=str(uuid.uuid4()),
         )
         await sql_manager.store_response(
             request_id=req2,
@@ -207,7 +205,6 @@ class TestListingOperations:
             content_size_compressed=len(compressed),
             dict_id=None,
             continuation="parse_detail",
-            warc_record_id=str(uuid.uuid4()),
         )
 
         # Filter by continuation
@@ -341,7 +338,6 @@ class TestGetterMethods:
             content_size_compressed=len(compressed),
             dict_id=None,
             continuation="parse",
-            warc_record_id=str(uuid.uuid4()),
         )
 
         response = await sql_manager.get_response(response_id)

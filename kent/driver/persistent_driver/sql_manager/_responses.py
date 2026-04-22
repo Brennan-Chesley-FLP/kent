@@ -39,7 +39,6 @@ class ResponseStorageMixin:
         content_size_compressed: int,
         dict_id: int | None,
         continuation: str,
-        warc_record_id: str,
         speculation_outcome: str | None = None,
     ) -> int:
         """Store an HTTP response by updating the request row.
@@ -54,7 +53,6 @@ class ResponseStorageMixin:
             content_size_compressed: Compressed content size.
             dict_id: Compression dictionary ID if used.
             continuation: Continuation method name (unused, kept for API compat).
-            warc_record_id: UUID for WARC export.
             speculation_outcome: For speculative requests: 'success', 'stopped', 'skipped'.
 
         Returns:
@@ -74,7 +72,6 @@ class ResponseStorageMixin:
                     content_size_original=content_size_original,
                     content_size_compressed=content_size_compressed,
                     compression_dict_id=dict_id,
-                    warc_record_id=warc_record_id,
                     speculation_outcome=speculation_outcome,
                     response_created_at=func.current_timestamp(),
                 )

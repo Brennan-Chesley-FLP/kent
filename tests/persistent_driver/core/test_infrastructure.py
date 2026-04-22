@@ -125,8 +125,7 @@ class TestStatistics:
                     content_compressed = x'1234',
                     content_size_original = 1000,
                     content_size_compressed = 100,
-                    compression_dict_id = NULL,
-                    warc_record_id = 'uuid1'
+                    compression_dict_id = NULL
                 WHERE id = 1
                 """)
             )
@@ -167,74 +166,6 @@ class TestStatistics:
         assert "results" in parsed
         assert "errors" in parsed
         assert parsed["scraper_name"] == "TestScraper"
-
-
-class TestWarcExport:
-    """Tests for WARC export module."""
-
-    async def test_warc_export(self, initialized_db, tmp_path: Path) -> None:
-        """Test exporting responses to WARC file."""
-        from kent.driver.persistent_driver.compression import (
-            compress,
-        )
-        from kent.driver.persistent_driver.warc_export import (
-            export_warc,
-        )
-
-        engine, session_factory = initialized_db
-        # Create request
-        async with session_factory() as session:
-            await session.execute(
-                sa.text("""
-                INSERT INTO requests (id, status, priority, queue_counter, method, url,
-                                      headers_json, continuation, current_location)
-                VALUES (1, 'completed', 9, 1, 'GET', 'https://example.com/page1',
-                        '{"User-Agent": "Test"}', 'parse', '')
-                """)
-            )
-
-            # Create response with compressed content
-            content = b"<html><body>Test page</body></html>"
-            compressed = compress(content)
-
-            await session.execute(
-                sa.text("""
-                UPDATE requests SET
-                    response_status_code = 200,
-                    response_headers_json = '{"Content-Type": "text/html"}',
-                    response_url = 'https://example.com/page1',
-                    content_compressed = :compressed,
-                    content_size_original = :original_size,
-                    content_size_compressed = :compressed_size,
-                    warc_record_id = 'uuid-1'
-                WHERE id = 1
-                """),
-                {
-                    "compressed": compressed,
-                    "original_size": len(content),
-                    "compressed_size": len(compressed),
-                },
-            )
-            await session.commit()
-
-        # Export to WARC
-        warc_path = tmp_path / "export.warc"
-        count = await export_warc(session_factory, warc_path, compress=False)
-
-        assert count == 1
-        assert warc_path.exists()
-
-        # Verify WARC content
-        from warcio.archiveiterator import ArchiveIterator
-
-        records = []
-        with warc_path.open("rb") as f:
-            for record in ArchiveIterator(f):
-                records.append(record.rec_type)
-
-        # Should have response and request records
-        assert "response" in records
-        assert "request" in records
 
 
 class TestDictionaryTraining:
@@ -291,10 +222,9 @@ class TestDictionaryTraining:
                                           continuation, current_location,
                                           response_status_code, response_url,
                                           content_compressed, content_size_original,
-                                          content_size_compressed, compression_dict_id,
-                                          warc_record_id)
+                                          content_size_compressed, compression_dict_id)
                     VALUES ('completed', 9, :qc, 'GET', :url, 'parse', '',
-                            200, :url, :compressed, :original_size, :compressed_size, NULL, :warc_id)
+                            200, :url, :compressed, :original_size, :compressed_size, NULL)
                     """),
                     {
                         "qc": i + 10,
@@ -302,7 +232,6 @@ class TestDictionaryTraining:
                         "compressed": compressed,
                         "original_size": len(content),
                         "compressed_size": len(compressed),
-                        "warc_id": f"uuid-{i}",
                     },
                 )
 
@@ -377,10 +306,9 @@ class TestDictionaryTraining:
                                           continuation, current_location,
                                           response_status_code, response_url,
                                           content_compressed, content_size_original,
-                                          content_size_compressed, compression_dict_id,
-                                          warc_record_id)
+                                          content_size_compressed, compression_dict_id)
                     VALUES ('completed', 9, :qc, 'GET', :url, 'parse', '',
-                            200, :url, :compressed, :original_size, :compressed_size, NULL, :warc_id)
+                            200, :url, :compressed, :original_size, :compressed_size, NULL)
                     """),
                     {
                         "qc": i + 10,
@@ -388,7 +316,6 @@ class TestDictionaryTraining:
                         "compressed": compressed,
                         "original_size": len(content),
                         "compressed_size": len(compressed),
-                        "warc_id": f"uuid-{i}",
                     },
                 )
 

@@ -210,20 +210,6 @@ class TestExportMethods:
             assert count == 1
             assert output_path.exists()
 
-    async def test_preview_warc_export(
-        self, db_path: Path, populated_db
-    ) -> None:
-        """Test previewing WARC export."""
-        engine, _ = populated_db
-        await engine.dispose()
-
-        async with LocalDevDriverDebugger.open(db_path) as debugger:
-            preview = await debugger.preview_warc_export()
-
-            assert "record_count" in preview
-            assert "estimated_size" in preview
-            assert preview["record_count"] == 2  # Two responses
-
 
 class TestDiagnoseMethods:
     """Tests for diagnosis methods."""

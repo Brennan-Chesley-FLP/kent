@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 
 from kent.driver.persistent_driver.compression import compress
 from kent.driver.persistent_driver.sql_manager import SQLManager
@@ -45,7 +44,6 @@ class TestResponseStorage:
             content_size_compressed=len(compressed),
             dict_id=None,
             continuation="parse",
-            warc_record_id=str(uuid.uuid4()),
         )
 
         assert response_id == request_id
@@ -97,7 +95,6 @@ class TestResponseStorage:
             content_size_compressed=len(compressed),
             dict_id=None,
             continuation="parse",
-            warc_record_id=str(uuid.uuid4()),
         )
 
         # Retrieve content
@@ -138,7 +135,6 @@ class TestResponseStorage:
             content_size_compressed=0,
             dict_id=None,
             continuation="parse",
-            warc_record_id=str(uuid.uuid4()),
         )
 
         # Retrieve content

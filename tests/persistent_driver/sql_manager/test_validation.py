@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 
 from kent.driver.persistent_driver.compression import compress
 from kent.driver.persistent_driver.sql_manager import SQLManager
@@ -55,7 +54,6 @@ class TestValidateJSONResponses:
                 content_size_compressed=len(compressed),
                 dict_id=None,
                 continuation="parse_api",
-                warc_record_id=str(uuid.uuid4()),
             )
 
         # Validate - should return empty list (all valid)
@@ -105,7 +103,6 @@ class TestValidateJSONResponses:
             content_size_compressed=len(compressed_valid),
             dict_id=None,
             continuation="parse_api",
-            warc_record_id=str(uuid.uuid4()),
         )
 
         # Create invalid response (missing required field)
@@ -141,7 +138,6 @@ class TestValidateJSONResponses:
             content_size_compressed=len(compressed_invalid),
             dict_id=None,
             continuation="parse_api",
-            warc_record_id=str(uuid.uuid4()),
         )
 
         # Validate - should return request_id_2
@@ -205,7 +201,6 @@ class TestValidateJSONResponses:
             content_size_compressed=len(compressed),
             dict_id=None,
             continuation="parse_api",
-            warc_record_id=str(uuid.uuid4()),
         )
 
         # Validate - should return request_id due to JSON parse error
@@ -251,7 +246,6 @@ class TestValidateJSONResponses:
             content_size_compressed=0,
             dict_id=None,
             continuation="parse_api",
-            warc_record_id=str(uuid.uuid4()),
         )
 
         # Validate - should skip empty content (return empty list)

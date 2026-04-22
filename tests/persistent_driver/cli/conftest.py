@@ -100,8 +100,6 @@ async def populated_db(initialized_db, db_path: Path) -> Path:
                 await session.commit()
 
     # Insert responses for completed requests
-    import uuid
-
     response_data = [
         (
             request_ids[1],
@@ -132,7 +130,6 @@ async def populated_db(initialized_db, db_path: Path) -> Path:
             content_size_compressed=len(compressed_content),
             dict_id=None,
             continuation=continuation,
-            warc_record_id=str(uuid.uuid4()),
             speculation_outcome=None,
         )
         response_ids.append(response_id)

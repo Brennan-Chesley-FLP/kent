@@ -9,7 +9,6 @@ Usage:
     pdd --db run.db requests show <id>          # Show request details
     pdd --db run.db requests search <query>     # Search response content
     pdd --db run.db requests cancel <id>        # Cancel a pending request
-    pdd --db run.db requests export <output>    # Export to WARC
     pdd --db run.db requests compression stats  # Compression statistics
     pdd --db run.db errors list                 # List errors
     pdd --db run.db errors diagnose <id>        # Diagnose an error
@@ -460,9 +459,6 @@ from kent.driver.persistent_driver.cli import (
 )
 from kent.driver.persistent_driver.cli import (
     errors as _errors_mod,
-)
-from kent.driver.persistent_driver.cli import (
-    export as _export_mod,
 )
 from kent.driver.persistent_driver.cli import (
     incidental as _incidental_mod,

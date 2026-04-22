@@ -6,7 +6,6 @@ get_results_for_request, and sample_terminal_requests.
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 import pytest
@@ -298,7 +297,6 @@ class TestComparisonMethods:
             content_size_compressed=len(compressed_content),
             dict_id=None,
             continuation="parse_index",
-            warc_record_id=str(uuid.uuid4()),
             speculation_outcome=None,
         )
 
@@ -391,7 +389,6 @@ class TestComparisonMethods:
             content_size_compressed=len(compressed_content),
             dict_id=None,
             continuation="parse_index",
-            warc_record_id=str(uuid.uuid4()),
             speculation_outcome=None,
         )
 
@@ -499,7 +496,6 @@ class TestComparisonMethods:
             content_size_compressed=len(compressed_content),
             dict_id=None,
             continuation="parse_index",
-            warc_record_id=str(uuid.uuid4()),
             speculation_outcome=None,
         )
 
@@ -612,7 +608,6 @@ class TestComparisonMethods:
             content_size_compressed=len(compressed_content),
             dict_id=None,
             continuation="parse_index",
-            warc_record_id=str(uuid.uuid4()),
             speculation_outcome=None,
         )
 

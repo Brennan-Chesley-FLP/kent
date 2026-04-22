@@ -26,10 +26,6 @@ Usage:
     python -m kent.driver.persistent_driver.run \\
         --db scraper.db --stats
 
-    # Export to WARC
-    python -m kent.driver.persistent_driver.run \\
-        --db scraper.db --export-warc export.warc.gz
-
     # List errors
     python -m kent.driver.persistent_driver.run \\
         --db scraper.db --errors
@@ -204,23 +200,6 @@ async def cmd_stats(args: argparse.Namespace) -> int:
         print(f"  Total:      {stats.errors.total}")
         print(f"  Unresolved: {stats.errors.unresolved}")
         print(f"  Resolved:   {stats.errors.resolved}")
-
-    await engine.dispose()
-    return 0
-
-
-async def cmd_export_warc(args: argparse.Namespace) -> int:
-    """Export responses to WARC file."""
-    from kent.driver.persistent_driver.database import init_database
-    from kent.driver.persistent_driver.warc_export import (
-        export_warc,
-    )
-
-    engine, session_factory = await init_database(Path(args.db))
-    output_path = Path(args.export_warc)
-
-    count = await export_warc(session_factory, output_path, compress=True)
-    print(f"Exported {count} responses to {output_path}")
 
     await engine.dispose()
     return 0
@@ -405,11 +384,6 @@ def create_parser() -> argparse.ArgumentParser:
         help="Show detailed statistics",
     )
     parser.add_argument(
-        "--export-warc",
-        metavar="PATH",
-        help="Export responses to WARC file",
-    )
-    parser.add_argument(
         "--errors",
         action="store_true",
         help="List errors",
@@ -462,8 +436,6 @@ async def main_async(args: argparse.Namespace) -> int:
         return await cmd_status(args)
     elif args.stats:
         return await cmd_stats(args)
-    elif args.export_warc:
-        return await cmd_export_warc(args)
     elif args.errors:
         return await cmd_errors(args)
     elif args.resolve_error:
