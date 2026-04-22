@@ -182,8 +182,8 @@ class APIMixin:
         """Re-run a continuation against a stored response with XPath observation.
 
         This method retrieves a stored response, decompresses it, reconstructs
-        the Response object, and re-runs the continuation method with an
-        XPathObserver active to capture all XPath/CSS queries.
+        the Response object, and re-runs the continuation method with a
+        SelectorObserver active to capture all XPath/CSS queries.
 
         Useful for debugging "zero results" issues where the HTML structure
         may have changed or XPath queries are incorrect.
@@ -198,8 +198,8 @@ class APIMixin:
         Raises:
             ValueError: If request_id not found or has no response.
         """
-        from kent.common.xpath_observer import (
-            XPathObserver,
+        from kent.common.selector_observer import (
+            SelectorObserver,
         )
 
         # Get response and request data - all in one table now
@@ -284,7 +284,7 @@ class APIMixin:
         yields: list[dict[str, Any]] = []
         error: str | None = None
 
-        with XPathObserver() as observer:
+        with SelectorObserver() as observer:
             try:
                 continuation_method = self.scraper.get_continuation(
                     continuation_name

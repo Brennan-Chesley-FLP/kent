@@ -376,7 +376,7 @@ def _is_html_content_type(content_type: str) -> bool:
 
 
 def _selector_query_to_info(query: dict[str, Any]) -> SelectorInfo:
-    """Convert XPathObserver query dict to SelectorInfo model."""
+    """Convert SelectorObserver query dict to SelectorInfo model."""
     # Determine pass/fail status
     match_count = query.get("match_count", 0)
     expected_min = query.get("expected_min", 1)
@@ -575,7 +575,7 @@ async def get_response_output(
     """Analyze a response by re-running its continuation with XPath observation.
 
     This endpoint retrieves a stored response and re-runs the continuation
-    method with an XPathObserver active to capture all XPath/CSS queries.
+    method with a SelectorObserver active to capture all XPath/CSS queries.
     Returns structured data suitable for the debug palette UI.
 
     Works with both loaded and unloaded runs. For unloaded runs, the scraper
@@ -592,7 +592,7 @@ async def get_response_output(
         HTTPException: 404 if run or response not found.
         HTTPException: 400 if scraper class cannot be resolved.
     """
-    from kent.common.xpath_observer import XPathObserver
+    from kent.common.selector_observer import SelectorObserver
     from kent.data_types import (
         HttpMethod,
         HTTPRequestParams,
@@ -695,7 +695,7 @@ async def get_response_output(
     error: str | None = None
     selectors: list[SelectorInfo] = []
 
-    with XPathObserver() as observer:
+    with SelectorObserver() as observer:
         try:
             continuation_method = scraper.get_continuation(continuation_name)
             gen = continuation_method(response)

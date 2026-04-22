@@ -436,12 +436,12 @@ class ComparisonMixin:
 
         return comparison_result
 
-    async def run_with_xpath_observer(
+    async def run_with_selector_observer(
         self,
         request_id: int,
         scraper_class: type,
     ) -> dict[str, Any]:
-        """Run a continuation with XPathObserver to capture selector queries.
+        """Run a continuation with SelectorObserver to capture selector queries.
 
         Args:
             request_id: The request ID to run.
@@ -455,7 +455,7 @@ class ComparisonMixin:
         Raises:
             ValueError: If request not found or no response available.
         """
-        from kent.common.xpath_observer import XPathObserver
+        from kent.common.selector_observer import SelectorObserver
         from kent.data_types import (
             HttpMethod,
             HTTPRequestParams,
@@ -545,11 +545,11 @@ class ComparisonMixin:
             request=reconstructed_request,
         )
 
-        # Run continuation with XPathObserver
+        # Run continuation with SelectorObserver
         scraper_instance = scraper_class()
         error: str | None = None
 
-        with XPathObserver() as observer:
+        with SelectorObserver() as observer:
             try:
                 continuation_method = scraper_instance.get_continuation(
                     continuation_name

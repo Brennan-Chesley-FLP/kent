@@ -639,14 +639,14 @@ def xpath_stats(
             if limit is not None and len(request_ids) > limit:
                 request_ids = request_ids[:limit]
 
-            # Run each request with XPath observer
+            # Run each request with selector observer
             all_observations: list[tuple[int, list[dict[str, Any]]]] = []
             error_count = 0
             total = len(request_ids)
 
             for i, req_id in enumerate(request_ids, 1):
                 try:
-                    result = await debugger.run_with_xpath_observer(
+                    result = await debugger.run_with_selector_observer(
                         req_id, scraper_cls
                     )
                     all_observations.append((req_id, result["queries"]))

@@ -16,7 +16,7 @@ from lxml.html import HtmlElement
 from kent.common.exceptions import (
     HTMLStructuralAssumptionException,
 )
-from kent.common.xpath_observer import (
+from kent.common.selector_observer import (
     get_active_observer,
 )
 

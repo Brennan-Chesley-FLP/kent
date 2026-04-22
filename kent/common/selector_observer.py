@@ -1,9 +1,8 @@
-"""SelectorObserver for debugging selector queries in PageElement.
+"""SelectorObserver for debugging selector queries.
 
-This module provides SelectorObserver, a plain object that records selector
-queries for debugging. Unlike XPathObserver (which uses context variables and
-context managers), SelectorObserver is directly passed to PageElement at
-construction.
+Records XPath/CSS queries for debugging. Can be used either by direct
+injection into a PageElement, or as a context manager whose active instance
+CheckedHtmlElement picks up via ``get_active_observer()``.
 
 The observer records query trees, deduplicates repeated selectors, captures
 sample content, and provides human-readable and JSON output formats.
@@ -11,11 +10,16 @@ sample content, and provides human-readable and JSON output formats.
 
 from __future__ import annotations
 
+import contextvars
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from lxml.html import HtmlElement
+
+_active_observer: contextvars.ContextVar[SelectorObserver | None] = (
+    contextvars.ContextVar("selector_observer", default=None)
+)
 
 
 @dataclass
@@ -71,17 +75,20 @@ class SelectorQuery:
 class SelectorObserver:
     """Observer that collects selector query information.
 
-    Unlike XPathObserver, this is a plain object (not a context manager) that
-    is passed directly to PageElement at construction. It records queries,
-    deduplicates repeated selectors, and provides output formats.
+    Two usage modes:
 
-    Usage::
+    - Direct injection into a PageElement::
 
         observer = SelectorObserver()
         page = LxmlPageElement(lxml_element, observer=observer)
         rows = page.query_xpath("//tr", "table rows", min_count=1)
-        for row in rows:
-            cells = row.query_xpath(".//td", "cells")
+
+    - Context manager, picked up by CheckedHtmlElement via
+      ``get_active_observer()``::
+
+        with SelectorObserver() as observer:
+            tree = CheckedHtmlElement(lxml_html.fromstring(content), url)
+            rows = tree.checked_xpath("//tr", "table rows", min_count=1)
 
         print(observer.simple_tree())  # Human-readable tree
         print(observer.json())  # JSON for UI highlighting
@@ -109,6 +116,23 @@ class SelectorObserver:
         self._element_to_query: dict[int, SelectorQuery] = {}
         # Maps (parent_element_id, selector) to existing SelectorQuery for deduplication
         self._dedup_index: dict[tuple[str | None, str], SelectorQuery] = {}
+        self._token: contextvars.Token[SelectorObserver | None] | None = None
+
+    def __enter__(self) -> SelectorObserver:
+        """Activate this observer for any CheckedHtmlElement in this context."""
+        self._token = _active_observer.set(self)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        """Restore the previously-active observer, if any."""
+        if self._token is not None:
+            _active_observer.reset(self._token)
+            self._token = None
 
     def record_query(
         self,
@@ -401,3 +425,8 @@ class SelectorObserver:
             return " ".join(composed_parts)
 
         return None
+
+
+def get_active_observer() -> SelectorObserver | None:
+    """Return the SelectorObserver active in the current context, if any."""
+    return _active_observer.get()

@@ -111,7 +111,7 @@ async def diagnose_response(
     """Re-run a continuation against a stored response with XPath observation.
 
     This endpoint retrieves a stored response and re-runs its continuation
-    method with an XPathObserver active. Returns information about what
+    method with a SelectorObserver active. Returns information about what
     XPath/CSS queries were made, their match counts, and what was yielded.
 
     Useful for debugging "zero results" issues where the HTML structure

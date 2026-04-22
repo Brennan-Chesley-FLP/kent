@@ -6,9 +6,11 @@ Tests recording logic, deduplication, output formats, and absolute selector comp
 import pytest
 from lxml import html
 
+from kent.common.checked_html import CheckedHtmlElement
 from kent.common.selector_observer import (
     SelectorObserver,
     SelectorQuery,
+    get_active_observer,
 )
 
 
@@ -30,14 +32,61 @@ def simple_html():
     """
 
 
-def test_observer_is_plain_object():
-    """SelectorObserver should be a plain object, not a context manager."""
+def test_observer_starts_empty():
+    """SelectorObserver should start with no recorded queries."""
     observer = SelectorObserver()
     assert observer.queries == []
 
-    # Should not have context manager methods
-    assert not hasattr(observer, "__enter__")
-    assert not hasattr(observer, "__exit__")
+
+def test_context_manager_sets_active_observer():
+    """Entering the context makes the observer the active one."""
+    assert get_active_observer() is None
+
+    with SelectorObserver() as observer:
+        assert get_active_observer() is observer
+
+    assert get_active_observer() is None
+
+
+def test_nested_context_managers_restore_previous():
+    """Nested observers take over, and the outer is restored on exit."""
+    with SelectorObserver() as outer:
+        assert get_active_observer() is outer
+
+        with SelectorObserver() as inner:
+            assert get_active_observer() is inner
+
+        assert get_active_observer() is outer
+
+    assert get_active_observer() is None
+
+
+def test_checked_html_element_reports_to_active_observer(simple_html):
+    """CheckedHtmlElement records queries to the active observer."""
+    tree = CheckedHtmlElement(
+        html.fromstring(simple_html), "http://example.com"
+    )
+
+    with SelectorObserver() as observer:
+        rows = tree.checked_xpath("//tr[@class='row']", "rows")
+        assert len(rows) == 3
+
+    assert len(observer.queries) == 1
+    assert observer.queries[0].selector == "//tr[@class='row']"
+    assert observer.queries[0].match_count == 3
+
+
+def test_no_active_observer_outside_context(simple_html):
+    """CheckedHtmlElement still works when no observer is active."""
+    assert get_active_observer() is None
+
+    tree = CheckedHtmlElement(
+        html.fromstring(simple_html), "http://example.com"
+    )
+    rows = tree.checked_xpath("//tr[@class='row']", "rows")
+    assert len(rows) == 3
+
+    assert get_active_observer() is None
 
 
 def test_record_simple_query(simple_html):
