@@ -10,63 +10,14 @@ Verifies that:
 from __future__ import annotations
 
 import json
-import socket
-import threading
-from collections.abc import Generator
-from contextlib import closing
 from pathlib import Path
 
-import pytest
-import uvicorn
-
-from kent.demo.app import app as demo_app
 from kent.demo.data import CASES, JUSTICES
 from kent.demo.scraper import BugCourtDemoScraper
 from kent.driver.sync_driver import SyncDriver
 from tests.utils import collect_results
 
-# ── Server fixture ──────────────────────────────────────────────────
-
-
-def _find_free_port() -> int:
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.bind(("", 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
-
-
-@pytest.fixture(scope="module")
-def demo_server_url() -> Generator[str, None, None]:
-    """Start the demo FastAPI app in a background thread."""
-    port = _find_free_port()
-    host = "127.0.0.1"
-
-    config = uvicorn.Config(
-        demo_app,
-        host=host,
-        port=port,
-        log_level="error",
-    )
-    server = uvicorn.Server(config)
-
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-
-    # Wait for the server to be ready
-    import time
-
-    for _ in range(50):
-        try:
-            with socket.create_connection((host, port), timeout=0.1):
-                break
-        except OSError:
-            time.sleep(0.1)
-
-    url = f"http://{host}:{port}"
-    yield url
-
-    server.should_exit = True
-    thread.join(timeout=2.0)
+# The ``demo_server_url`` fixture lives in ``conftest.py``.
 
 
 # ── Website smoke tests ─────────────────────────────────────────────

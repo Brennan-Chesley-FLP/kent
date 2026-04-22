@@ -443,7 +443,13 @@ class PersistentDriver(
         If ``seed_params_json`` is already stored (the run was originally
         seeded with ``--params``), the new entries are merged into the
         stored list so the speculation filter inside :meth:`run` keeps
-        templates originating from this call.
+        templates originating from this call. To avoid state-key collisions
+        with the already-stopped state rows from the first run, the stored
+        speculative invocations are first replayed through
+        ``initial_seed()`` so new templates land at the next available
+        ``{func_name}:{param_index}`` positions — any :class:`Request`
+        objects yielded from that replay are discarded (they were already
+        enqueued on the original run).
 
         Args:
             params: List of ``{entry_name: kwargs}`` invocations, identical
@@ -453,11 +459,18 @@ class PersistentDriver(
             ValueError: If ``params`` is empty or names an unknown entry —
                 propagated from :meth:`BaseScraper.initial_seed`.
         """
+        stored = await self.db.get_seed_params()
+        if stored:
+            # Replay stored invocations so their speculative templates
+            # re-populate ``scraper._speculation_templates`` at their
+            # original positions; new templates append after them.
+            for _ in self.scraper.initial_seed(stored):
+                pass
+
         entry_requests = self.scraper.initial_seed(params)
         for entry_request in entry_requests:
             await self._enqueue_entry_request(entry_request)
 
-        stored = await self.db.get_seed_params()
         if stored is not None:
             await self.db.update_seed_params(stored + params)
 

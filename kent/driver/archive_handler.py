@@ -11,12 +11,36 @@ implementations for different archive strategies:
 
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlparse
 
 from kent.data_types import ArchiveDecision
+
+
+def _streaming_target_path(
+    storage_dir: Path,
+    deduplication_key: str | None,
+    sha_hex: str,
+    expected_type: str | None,
+) -> Path:
+    """Assemble the final target path for a streamed download.
+
+    Layout: ``{storage_dir}/{deduplication_key}/{shasum}.{expected_type}``
+    (the ``deduplication_key`` segment is omitted when it's ``None`` and
+    the ``.{expected_type}`` suffix is omitted when ``expected_type`` is
+    ``None``). The parent directory is created as a side effect.
+    """
+    target_dir = (
+        storage_dir / deduplication_key if deduplication_key else storage_dir
+    )
+    target_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{sha_hex}.{expected_type}" if expected_type else sha_hex
+    return target_dir / filename
 
 
 class SyncArchiveHandler(Protocol):
@@ -249,7 +273,11 @@ class LocalSyncStreamingArchiveHandler:
     """Streams downloaded bytes to a local directory.
 
     Behaves like :class:`LocalSyncArchiveHandler` but writes chunks straight
-    to disk instead of accepting a fully-buffered ``bytes`` payload.
+    to disk instead of accepting a fully-buffered ``bytes`` payload. The
+    default filename is content-addressed:
+    ``{storage_dir}/{deduplication_key}/{sha256}.{expected_type}``. Bytes
+    stream into a temp file alongside the final destination so the rename
+    is atomic once the full SHA-256 is known.
     """
 
     def __init__(self, storage_dir: Path) -> None:
@@ -277,22 +305,46 @@ class LocalSyncStreamingArchiveHandler:
         hash_header_value: str | None,
         chunks: Iterator[bytes],
     ) -> str:
-        filename = _filename_from_url(url, expected_type)
-        if deduplication_key:
-            target_dir = self.storage_dir / deduplication_key
-            target_dir.mkdir(parents=True, exist_ok=True)
-            file_path = target_dir / filename
-        else:
-            self.storage_dir.mkdir(parents=True, exist_ok=True)
-            file_path = self.storage_dir / filename
-        with file_path.open("wb") as f:
-            for chunk in chunks:
-                f.write(chunk)
-        return str(file_path)
+        target_dir = (
+            self.storage_dir / deduplication_key
+            if deduplication_key
+            else self.storage_dir
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        sha = hashlib.sha256()
+        tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115 (rename-then-close)
+            dir=target_dir, delete=False, prefix=".stream-", suffix=".tmp"
+        )
+        try:
+            with tmp as f:
+                for chunk in chunks:
+                    sha.update(chunk)
+                    f.write(chunk)
+            final_path = _streaming_target_path(
+                self.storage_dir,
+                deduplication_key,
+                sha.hexdigest(),
+                expected_type,
+            )
+            os.replace(tmp.name, final_path)
+        except BaseException:
+            # Best-effort cleanup on any error so we don't leave .tmp
+            # files behind.
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+            raise
+        return str(final_path)
 
 
 class LocalAsyncStreamingArchiveHandler:
-    """Async counterpart of :class:`LocalSyncStreamingArchiveHandler`."""
+    """Async counterpart of :class:`LocalSyncStreamingArchiveHandler`.
+
+    Same content-addressed filename scheme:
+    ``{storage_dir}/{deduplication_key}/{sha256}.{expected_type}``.
+    """
 
     def __init__(self, storage_dir: Path) -> None:
         self.storage_dir = storage_dir
@@ -319,15 +371,33 @@ class LocalAsyncStreamingArchiveHandler:
         hash_header_value: str | None,
         chunks: AsyncIterator[bytes],
     ) -> str:
-        filename = _filename_from_url(url, expected_type)
-        if deduplication_key:
-            target_dir = self.storage_dir / deduplication_key
-            target_dir.mkdir(parents=True, exist_ok=True)
-            file_path = target_dir / filename
-        else:
-            self.storage_dir.mkdir(parents=True, exist_ok=True)
-            file_path = self.storage_dir / filename
-        with file_path.open("wb") as f:
-            async for chunk in chunks:
-                f.write(chunk)
-        return str(file_path)
+        target_dir = (
+            self.storage_dir / deduplication_key
+            if deduplication_key
+            else self.storage_dir
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        sha = hashlib.sha256()
+        tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115 (rename-then-close)
+            dir=target_dir, delete=False, prefix=".stream-", suffix=".tmp"
+        )
+        try:
+            with tmp as f:
+                async for chunk in chunks:
+                    sha.update(chunk)
+                    f.write(chunk)
+            final_path = _streaming_target_path(
+                self.storage_dir,
+                deduplication_key,
+                sha.hexdigest(),
+                expected_type,
+            )
+            os.replace(tmp.name, final_path)
+        except BaseException:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+            raise
+        return str(final_path)
