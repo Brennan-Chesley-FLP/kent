@@ -240,16 +240,6 @@ Re-evaluate steps and analyze selectors:
     pdd --db run.db step re-evaluate parse_detail   # Re-run a step against stored responses
     pdd --db run.db step xpath-stats parse_detail    # XPath selector statistics
 
-compare
--------
-
-Compare step execution results:
-
-.. code-block:: bash
-
-    pdd --db run.db compare <request_id>   # Compare dry-run vs stored execution
-
-
 seed-error-patch-rerun
 ----------------------
 

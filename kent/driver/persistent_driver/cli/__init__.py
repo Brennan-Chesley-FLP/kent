@@ -453,9 +453,6 @@ from kent.driver.persistent_driver.cli import (
     cancel as _cancel_mod,
 )
 from kent.driver.persistent_driver.cli import (
-    compare as _compare_mod,
-)
-from kent.driver.persistent_driver.cli import (
     compression as _compression_mod,
 )
 from kent.driver.persistent_driver.cli import (

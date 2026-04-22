@@ -165,9 +165,7 @@ Options:
 
 Commands:
   cancel                  Cancel pending or held requests.
-  compare                 Compare continuation output between stored and...
   compression             Inspect and manipulate compression.
-  diagnose                Diagnose an error by re-running XPath observation.
   doctor                  Run health checks on database.
   errors                  Inspect and manipulate errors.
   export                  Export results and responses.
@@ -226,51 +224,6 @@ Usage: pdd cancel request [OPTIONS] REQUEST_ID
 Options:
   --db PATH  Path to the database file
   --help     Show this message and exit.
-```
-
-## pdd compare
-
-```
-Usage: pdd compare [OPTIONS] CONTINUATION
-
-  Compare continuation output between stored and dry-run execution.
-
-  Replays stored responses through current continuation code and compares the
-  output (child requests, ParsedData, errors) against stored results.
-
-  Examples:
-      # Compare all requests for a continuation
-      ldd-debug compare run.db parse_opinions
-
-      # Compare a specific request     ldd-debug compare run.db parse_opinions
-      --request-id 123
-
-      # Sample 10 terminal requests     ldd-debug compare run.db
-      parse_opinions --sample 10
-
-      # Show detailed output     ldd-debug compare run.db parse_opinions
-      --template detail
-
-      # Show only request changes     ldd-debug compare run.db parse_opinions
-      --show-requests
-
-      # Limit to 50 comparisons     ldd-debug compare run.db parse_opinions
-      --limit 50
-
-Options:
-  --db PATH                       Path to the database file
-  --request-id INTEGER            Compare specific request ID only
-  --sample INTEGER                Sample N requests and follow their entire
-                                  request trees
-  --format [default|summary|json|jsonl]
-                                  Output format
-  --template TEXT                 Template name
-  --show-requests                 Show only request tree differences
-  --show-data                     Show only data differences
-  --limit INTEGER                 Maximum number of requests to compare
-  --scraper-class TEXT            Scraper class path (e.g., juriscraper.opinio
-                                  ns.united_states.federal_appellate.ca1.Site)
-  --help                          Show this message and exit.
 ```
 
 ## pdd compression
@@ -341,25 +294,6 @@ Options:
   --db PATH          Path to the database file
   --samples INTEGER  Number of samples to use for training
   --help             Show this message and exit.
-```
-
-## pdd diagnose
-
-```
-Usage: pdd diagnose [OPTIONS] ERROR_ID
-
-  Diagnose an error by re-running XPath observation.
-
-  Examples:
-      ldd-debug diagnose run.db 123
-      ldd-debug diagnose run.db 123 --format json
-
-Options:
-  --db PATH                       Path to the database file
-  --format [default|table|json|jsonl]
-                                  Output format
-  --template TEXT                 Template name
-  --help                          Show this message and exit.
 ```
 
 ## pdd doctor

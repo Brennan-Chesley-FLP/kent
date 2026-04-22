@@ -37,7 +37,7 @@ Follow this general approach, adapting to the specific issue:
 
 - List errors: `uv run pdd --db <path> errors list`
 - Show specific error details: `uv run pdd --db <path> errors show <id>`
-- Re-run XPath observation on an error: `uv run pdd --db <path> diagnose <error-id>`
+- Re-run XPath observation on an error: `uv run pdd --db <path> errors diagnose <error-id>`
 
 ### 4. Inspect XPath behavior across pages
 
@@ -46,8 +46,8 @@ Follow this general approach, adapting to the specific issue:
 
 ### 5. Compare code changes
 
-- Compare current code against stored results: `uv run pdd --db <path> compare <continuation>`
-- Use `--output-mode detail` for per-request diffs.
+- Compare current code against stored results: `uv run pdd --db <path> step re-evaluate <step_name>`
+- Use `--verbose` for per-request diffs.
 - Use `--sample N` to spot-check a subset.
 
 ### 6. Inspect specific requests/responses

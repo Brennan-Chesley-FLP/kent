@@ -34,8 +34,59 @@ def step(ctx: click.Context, db_path: str | None) -> None:
         ctx.obj["db_path"] = db_path
 
 
+def _load_scraper_class(
+    scraper_class_path: str | None, metadata: dict[str, Any] | None
+) -> type:
+    """Load a scraper class from an explicit path or run metadata.
+
+    Args:
+        scraper_class_path: Explicit class path (e.g., module.path.Site).
+        metadata: Run metadata dict (may contain scraper_name).
+
+    Returns:
+        The scraper class.
+    """
+    import importlib
+
+    if scraper_class_path:
+        try:
+            module_path, class_name = scraper_class_path.rsplit(".", 1)
+            module = importlib.import_module(module_path)
+            return getattr(module, class_name)
+        except (ValueError, ImportError, AttributeError) as e:
+            click.echo(
+                f"Error: Cannot import scraper class '{scraper_class_path}': {e}",
+                err=True,
+            )
+            sys.exit(1)
+
+    if not metadata or not metadata.get("scraper_name"):
+        click.echo(
+            "Error: No scraper_name in run metadata. "
+            "Please provide --scraper-class",
+            err=True,
+        )
+        sys.exit(1)
+
+    scraper_name = metadata["scraper_name"]
+    try:
+        if ":" in scraper_name:
+            module_path, class_name = scraper_name.rsplit(":", 1)
+            module = importlib.import_module(module_path)
+            return getattr(module, class_name)
+        else:
+            module = importlib.import_module(scraper_name)
+            return module.Site
+    except (ImportError, AttributeError) as e:
+        click.echo(
+            f"Error: Cannot import scraper '{scraper_name}': {e}",
+            err=True,
+        )
+        sys.exit(1)
+
+
 # =========================================================================
-# Re-evaluate Command (moved from compare.py)
+# Re-evaluate Command
 # =========================================================================
 
 
@@ -132,55 +183,18 @@ def re_evaluate(
     db_path = _resolve_db_path(ctx, db_path)
 
     async def run() -> None:
-        import importlib
-
         from kent.driver.persistent_driver.comparison import (
             ComparisonResult,
             ComparisonSummary,
         )
 
         async with LocalDevDriverDebugger.open(db_path) as debugger:
-            # Load scraper class
-            if scraper_class:
-                # Parse module.Class format
-                try:
-                    module_path, class_name = scraper_class.rsplit(".", 1)
-                    module = importlib.import_module(module_path)
-                    scraper_cls = getattr(module, class_name)
-                except (ValueError, ImportError, AttributeError) as e:
-                    click.echo(
-                        f"Error: Cannot import scraper class '{scraper_class}': {e}",
-                        err=True,
-                    )
-                    sys.exit(1)
-            else:
-                # Discover from run metadata
-                metadata = await debugger.get_run_metadata()
-                if not metadata or not metadata.get("scraper_name"):
-                    click.echo(
-                        "Error: No scraper_name in run metadata. "
-                        "Please provide --scraper-class",
-                        err=True,
-                    )
-                    sys.exit(1)
-
-                scraper_name = metadata["scraper_name"]
-                try:
-                    # Handle both new format (module:class) and old format (module only)
-                    if ":" in scraper_name:
-                        module_path, class_name = scraper_name.rsplit(":", 1)
-                        module = importlib.import_module(module_path)
-                        scraper_cls = getattr(module, class_name)
-                    else:
-                        # Old format - assume Site class
-                        module = importlib.import_module(scraper_name)
-                        scraper_cls = module.Site
-                except (ImportError, AttributeError) as e:
-                    click.echo(
-                        f"Error: Cannot import scraper '{scraper_name}': {e}",
-                        err=True,
-                    )
-                    sys.exit(1)
+            metadata = (
+                await debugger.get_run_metadata()
+                if not scraper_class
+                else None
+            )
+            scraper_cls = _load_scraper_class(scraper_class, metadata)
 
             # Determine which requests to compare
             if request_id is not None:
@@ -451,59 +465,8 @@ def _collect_queries_flat(
             _collect_queries_flat(q["children"], stats, request_id)
 
 
-def _load_scraper_class(
-    scraper_class_path: str | None, metadata: dict[str, Any] | None
-) -> type:
-    """Load a scraper class from an explicit path or run metadata.
-
-    Args:
-        scraper_class_path: Explicit class path (e.g., module.path.Site).
-        metadata: Run metadata dict (may contain scraper_name).
-
-    Returns:
-        The scraper class.
-    """
-    import importlib
-
-    if scraper_class_path:
-        try:
-            module_path, class_name = scraper_class_path.rsplit(".", 1)
-            module = importlib.import_module(module_path)
-            return getattr(module, class_name)
-        except (ValueError, ImportError, AttributeError) as e:
-            click.echo(
-                f"Error: Cannot import scraper class '{scraper_class_path}': {e}",
-                err=True,
-            )
-            sys.exit(1)
-
-    if not metadata or not metadata.get("scraper_name"):
-        click.echo(
-            "Error: No scraper_name in run metadata. "
-            "Please provide --scraper-class",
-            err=True,
-        )
-        sys.exit(1)
-
-    scraper_name = metadata["scraper_name"]
-    try:
-        if ":" in scraper_name:
-            module_path, class_name = scraper_name.rsplit(":", 1)
-            module = importlib.import_module(module_path)
-            return getattr(module, class_name)
-        else:
-            module = importlib.import_module(scraper_name)
-            return module.Site
-    except (ImportError, AttributeError) as e:
-        click.echo(
-            f"Error: Cannot import scraper '{scraper_name}': {e}",
-            err=True,
-        )
-        sys.exit(1)
-
-
 # =========================================================================
-# XPath Stats Command (moved from bulk_xpath.py)
+# XPath Stats Command
 # =========================================================================
 
 
