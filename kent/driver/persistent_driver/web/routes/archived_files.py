@@ -93,6 +93,44 @@ async def _get_debugger(
         ) from e
 
 
+async def _fetch_archived_file_row(
+    run_id: str, file_id: int, manager: RunManager
+) -> sa.Row:
+    """Fetch a single archived file row joined with its request, or 404."""
+    from kent.driver.persistent_driver.models import ArchivedFile
+    from kent.driver.persistent_driver.models import Request as RequestModel
+
+    debugger = await _get_debugger(run_id, manager, read_only=True)
+
+    async with debugger._session_factory() as session:
+        stmt = (
+            select(
+                ArchivedFile.id,
+                ArchivedFile.request_id,
+                ArchivedFile.file_path,
+                ArchivedFile.original_url,
+                ArchivedFile.expected_type,
+                ArchivedFile.file_size,
+                ArchivedFile.content_hash,
+                ArchivedFile.created_at,
+                RequestModel.continuation,
+            )
+            .outerjoin(
+                RequestModel, ArchivedFile.request_id == RequestModel.id
+            )
+            .where(ArchivedFile.id == file_id)
+        )
+        result = await session.execute(stmt)
+        row = result.first()
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Archived file {file_id} not found in run '{run_id}'",
+        )
+    return row
+
+
 def _format_size(size: int) -> str:
     """Format bytes to human-readable string."""
     if size < 1024:
@@ -258,37 +296,7 @@ async def get_archived_file(
     Raises:
         HTTPException: 404 if file not found.
     """
-    from kent.driver.persistent_driver.models import ArchivedFile
-    from kent.driver.persistent_driver.models import Request as RequestModel
-
-    debugger = await _get_debugger(run_id, manager, read_only=True)
-
-    async with debugger._session_factory() as session:
-        stmt = (
-            select(
-                ArchivedFile.id,
-                ArchivedFile.request_id,
-                ArchivedFile.file_path,
-                ArchivedFile.original_url,
-                ArchivedFile.expected_type,
-                ArchivedFile.file_size,
-                ArchivedFile.content_hash,
-                ArchivedFile.created_at,
-                RequestModel.continuation,
-            )
-            .outerjoin(
-                RequestModel, ArchivedFile.request_id == RequestModel.id
-            )
-            .where(ArchivedFile.id == file_id)
-        )
-        result = await session.execute(stmt)
-        row = result.first()
-
-    if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Archived file {file_id} not found in run '{run_id}'",
-        )
+    row = await _fetch_archived_file_row(run_id, file_id, manager)
 
     return ArchivedFileResponse(
         id=row[0],
@@ -321,37 +329,7 @@ async def get_archived_file_content(
     Raises:
         HTTPException: 404 if file not found or file doesn't exist on disk.
     """
-    from kent.driver.persistent_driver.models import ArchivedFile
-    from kent.driver.persistent_driver.models import Request as RequestModel
-
-    debugger = await _get_debugger(run_id, manager, read_only=True)
-
-    async with debugger._session_factory() as session:
-        stmt = (
-            select(
-                ArchivedFile.id,
-                ArchivedFile.request_id,
-                ArchivedFile.file_path,
-                ArchivedFile.original_url,
-                ArchivedFile.expected_type,
-                ArchivedFile.file_size,
-                ArchivedFile.content_hash,
-                ArchivedFile.created_at,
-                RequestModel.continuation,
-            )
-            .outerjoin(
-                RequestModel, ArchivedFile.request_id == RequestModel.id
-            )
-            .where(ArchivedFile.id == file_id)
-        )
-        result = await session.execute(stmt)
-        row = result.first()
-
-    if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Archived file {file_id} not found in run '{run_id}'",
-        )
+    row = await _fetch_archived_file_row(run_id, file_id, manager)
 
     file_path = row[2]
     expected_type = row[4]

@@ -24,7 +24,6 @@ import heapq
 import logging
 import threading
 from collections.abc import Callable, Generator
-from dataclasses import dataclass
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Any, Generic, TypeVar
@@ -42,7 +41,6 @@ from kent.common.exceptions import (
 from kent.common.request_manager import (
     SyncRequestManager,
 )
-from kent.common.speculative import Speculative
 from kent.data_types import (
     ArchiveResponse,
     BaseRequest,
@@ -56,11 +54,21 @@ from kent.data_types import (
     ScraperYield,
     SkipDeduplicationCheck,
 )
+from kent.driver._speculation_support import (
+    SpeculationState,
+    SyncSpeculationSupport,
+)
 from kent.driver.archive_handler import (
     LocalSyncArchiveHandler,
     SyncArchiveHandler,
     SyncStreamingArchiveHandler,
 )
+
+__all__ = [
+    "SpeculationState",
+    "SyncDriver",
+    "log_and_validate_invalid_data",
+]
 
 # =============================================================================
 # Step 2: Class-based Driver with HTTP Support
@@ -73,34 +81,6 @@ from kent.driver.archive_handler import (
 logger = logging.getLogger(__name__)
 
 ScraperReturnDatatype = TypeVar("ScraperReturnDatatype")
-
-
-@dataclass
-class SpeculationState:
-    """Tracks speculation state for a single speculative template.
-
-    Each template (one per param invocation of a speculative entry)
-    gets its own SpeculationState, keyed by ``{func_name}:{param_index}``.
-
-    Attributes:
-        func_name: State key: ``{entry_name}:{param_index}``.
-        template: The Speculative protocol instance (template for from_int calls).
-        param_index: Position of this invocation in the params list.
-        base_func_name: The actual method name on the scraper.
-        highest_successful_id: Highest ID that returned a successful response.
-        consecutive_failures: Consecutive non-success responses beyond highest_successful_id.
-        current_ceiling: Highest ID currently seeded to the queue.
-        stopped: True when max_gap consecutive failures reached or max_gap == 0.
-    """
-
-    func_name: str
-    template: Speculative  # type: ignore[type-arg]
-    param_index: int
-    base_func_name: str = ""
-    highest_successful_id: int = 0
-    consecutive_failures: int = 0
-    current_ceiling: int = 0
-    stopped: bool = False
 
 
 def log_and_validate_invalid_data(data: DeferredValidation) -> None:
@@ -132,7 +112,7 @@ def log_and_validate_invalid_data(data: DeferredValidation) -> None:
         )
 
 
-class SyncDriver(Generic[ScraperReturnDatatype]):
+class SyncDriver(SyncSpeculationSupport, Generic[ScraperReturnDatatype]):
     """Synchronous driver for running scrapers.
 
     This Step 4 driver:
@@ -254,196 +234,12 @@ class SyncDriver(Generic[ScraperReturnDatatype]):
         # Speculation state - populated by _discover_speculate_functions
         self._speculation_state: dict[str, SpeculationState] = {}
 
-    def _discover_speculate_functions(self) -> dict[str, SpeculationState]:
-        """Discover speculative entry functions and build tracking state.
-
-        Looks up templates from ``scraper._speculation_templates`` (populated
-        by ``initial_seed()``). Each template at index *i* becomes a
-        ``SpeculationState`` keyed by ``{func_name}:{i}``.
-
-        Returns:
-            Dictionary mapping state keys to their SpeculationState.
-        """
-        state: dict[str, SpeculationState] = {}
-        templates = getattr(self.scraper, "_speculation_templates", {})
-
-        for entry_info in self.scraper.list_speculative_entries():
-            func_templates = templates.get(entry_info.name, [])
-            for i, template in enumerate(func_templates):
-                key = f"{entry_info.name}:{i}"
-                state[key] = SpeculationState(
-                    func_name=key,
-                    template=template,
-                    param_index=i,
-                    base_func_name=entry_info.name,
-                )
-        return state
-
-    def _seed_speculative_queue(self) -> None:
-        """Seed the queue with requests from speculative templates.
-
-        Every enqueued request is speculative (``is_speculative=True`` +
-        populated ``speculation_id``). First seeds ``template.seed_range()``
-        (the explicitly-requested IDs), then — when
-        ``template.should_advance`` is True and ``template.max_gap() > 0`` —
-        an initial advance window of ``max_gap()`` probes past
-        ``seed_range.stop``.
-        """
-        for state_key, spec_state in self._speculation_state.items():
-            func = getattr(self.scraper, spec_state.base_func_name)
-            template = spec_state.template
-            speculative_param: str | None = None
-            for entry_info in self.scraper.list_speculative_entries():
-                if entry_info.name == spec_state.base_func_name:
-                    speculative_param = entry_info.speculative_param
-                    break
-            assert speculative_param is not None
-
-            seed_ids = template.seed_range()
-            # Advance floor: one past the last seed id. When seed_range is
-            # empty (soft_max <= min), fall back to the template's floor
-            # (seed_ids.start == min) so the advance window starts there.
-            advance_floor = max(seed_ids.start, seed_ids.stop)
-            window = (
-                range(advance_floor, advance_floor + template.max_gap())
-                if template.should_advance and template.max_gap() > 0
-                else range(0)
-            )
-
-            for n in list(seed_ids) + list(window):
-                concrete = template.from_int(n)
-                request = func(**{speculative_param: concrete})
-                request = request.speculative(
-                    state_key, spec_state.param_index, n
-                )
-                heapq.heappush(
-                    self.request_queue,
-                    (request.priority, self._queue_counter, request),
-                )
-                self._queue_counter += 1
-
-            if window:
-                spec_state.current_ceiling = (
-                    advance_floor + template.max_gap() - 1
-                )
-            else:
-                spec_state.current_ceiling = advance_floor - 1
-                spec_state.stopped = True
-
-    def _extend_speculation(self, state_key: str) -> None:
-        """Extend speculation when approaching the ceiling.
-
-        Seeds additional IDs beyond current_ceiling when
-        highest_successful_id gets close. Does not extend if
-        stopped or max_gap == 0 (frozen).
-
-        Args:
-            state_key: Key in _speculation_state.
-        """
-        spec_state = self._speculation_state.get(state_key)
-        if spec_state is None or spec_state.stopped:
-            return
-
-        gap = spec_state.template.max_gap()
-        if gap == 0:
-            return
-
-        if spec_state.consecutive_failures >= gap:
-            spec_state.stopped = True
-            return
-
-        if (
-            spec_state.highest_successful_id
-            >= spec_state.current_ceiling - gap
-        ):
-            func = getattr(self.scraper, spec_state.base_func_name)
-            speculative_param = None
-            for entry_info in self.scraper.list_speculative_entries():
-                if entry_info.name == spec_state.base_func_name:
-                    speculative_param = entry_info.speculative_param
-                    break
-
-            new_ceiling = spec_state.current_ceiling + gap
-            for n in range(spec_state.current_ceiling + 1, new_ceiling + 1):
-                concrete = spec_state.template.from_int(n)
-                assert speculative_param is not None
-                request = func(**{speculative_param: concrete})
-                request = request.speculative(
-                    state_key, spec_state.param_index, n
-                )
-                heapq.heappush(
-                    self.request_queue,
-                    (request.priority, self._queue_counter, request),
-                )
-                self._queue_counter += 1
-
-            spec_state.current_ceiling = new_ceiling
-
-    def _track_speculation_outcome(
-        self, request: BaseRequest, response: Response
-    ) -> None:
-        """Track the outcome of a speculative request.
-
-        Updates highest_successful_id and consecutive_failures.
-
-        Args:
-            request: The speculative request.
-            response: The HTTP response.
-        """
-        if not request.is_speculative or request.speculation_id is None:
-            return
-
-        state_key, _param_index, speculative_id = request.speculation_id
-
-        spec_state = self._speculation_state.get(state_key)
-        if spec_state is None:
-            return
-
-        is_success = 200 <= response.status_code < 300
-        if is_success and not self.scraper.fails_successfully(response):
-            is_success = False
-
-        if is_success:
-            if speculative_id > spec_state.highest_successful_id:
-                spec_state.highest_successful_id = speculative_id
-            spec_state.consecutive_failures = 0
-            self._extend_speculation(state_key)
-        else:
-            if speculative_id > spec_state.highest_successful_id:
-                spec_state.consecutive_failures += 1
-                gap = spec_state.template.max_gap()
-                if spec_state.consecutive_failures >= gap:
-                    spec_state.stopped = True
-
-    def _get_entry_requests(
-        self,
-    ) -> Generator[Request, None, None]:
-        """Get initial entry requests from the scraper.
-
-        If ``seed_params`` is set, dispatches those via
-        ``initial_seed()``.  Otherwise builds default invocations from
-        @entry-decorated methods.  Falls back to ``get_entry()`` for
-        scrapers without @entry decorators.
-
-        Yields:
-            Request instances for queue initialization.
-        """
-        if self.seed_params is not None:
-            yield from self.scraper.initial_seed(self.seed_params)
-            return
-        entries = self.scraper.list_entries()
-        if entries:
-            # Build default invocation: call each non-speculative @entry
-            # with no params (speculative entries are handled separately)
-            invocations: list[dict[str, dict[str, Any]]] = []
-            for entry_info in entries:
-                if not entry_info.speculative and not entry_info.param_types:
-                    invocations.append({entry_info.name: {}})
-            if invocations:
-                yield from self.scraper.initial_seed(invocations)
-                return
-        # Fall back to get_entry() for scrapers without @entry decorators
-        yield from self.scraper.get_entry()
+    def _enqueue_speculative(self, request: BaseRequest) -> None:
+        heapq.heappush(
+            self.request_queue,
+            (request.priority, self._queue_counter, request),
+        )
+        self._queue_counter += 1
 
     def run(self) -> None:
         """Run the scraper starting from the scraper's entry point.
