@@ -21,6 +21,7 @@ from kent.driver.persistent_driver.web.app import (
     RunManager,
     get_run_manager,
 )
+from kent.driver.persistent_driver.web.routes._helpers import convert_run_error
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -441,15 +442,7 @@ async def start_run(
         run_info = await manager.start_run(run_id)
         return _run_info_to_response(run_info)
     except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
+        raise convert_run_error(e) from e
 
 
 @router.post("/{run_id}/stop", response_model=RunResponse)
@@ -480,15 +473,7 @@ async def stop_run(
         run_info = await manager.stop_run(run_id, timeout=timeout)
         return _run_info_to_response(run_info)
     except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
+        raise convert_run_error(e) from e
 
 
 @router.post("/{run_id}/resume", response_model=RunResponse)
@@ -656,15 +641,7 @@ async def delete_run(
     try:
         await manager.delete_run(run_id)
     except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
+        raise convert_run_error(e) from e
 
 
 @router.post("/{run_id}/unload", response_model=RunResponse)
@@ -697,15 +674,7 @@ async def unload_run(
             )
         return _run_info_to_response(run_info)
     except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
+        raise convert_run_error(e) from e
 
 
 @router.post("/scan", response_model=RunListResponse)

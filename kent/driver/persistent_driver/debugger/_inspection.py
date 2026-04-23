@@ -24,6 +24,10 @@ from kent.driver.persistent_driver.sql_manager import (
     ResultRecord,
     SQLManager,
 )
+from kent.driver.persistent_driver.sql_manager._incidental_requests import (
+    incidental_record_select,
+    row_to_incidental_record,
+)
 
 if TYPE_CHECKING:
     pass
@@ -262,30 +266,8 @@ class InspectionMixin:
             count_result = await session.execute(base)
             total = count_result.scalar() or 0
 
-            query = (
-                select(
-                    IncidentalRequest.id,
-                    IncidentalRequest.parent_request_id,
-                    IncidentalRequest.url,
-                    IncidentalRequest.headers_json,
-                    IncidentalRequest.started_at_ns,
-                    IncidentalRequest.completed_at_ns,
-                    IncidentalRequest.from_cache,
-                    IncidentalRequest.created_at,
-                    IncidentalRequest.storage_id,
-                    IncidentalRequestStorage.resource_type,
-                    IncidentalRequestStorage.method,
-                    IncidentalRequestStorage.status_code,
-                    IncidentalRequestStorage.content_size_original,
-                    IncidentalRequestStorage.content_size_compressed,
-                    IncidentalRequestStorage.failure_reason,
-                )
-                .outerjoin(
-                    IncidentalRequestStorage,
-                    IncidentalRequest.storage_id
-                    == IncidentalRequestStorage.id,
-                )
-                .order_by(IncidentalRequest.created_at.desc())  # type: ignore[union-attr]
+            query = incidental_record_select().order_by(
+                IncidentalRequest.created_at.desc()  # type: ignore[union-attr]
             )
             for cond in conditions:
                 query = query.where(cond)
@@ -293,26 +275,7 @@ class InspectionMixin:
             result = await session.execute(query)
             rows = result.all()
 
-        items = [
-            IncidentalRequestRecord(
-                id=row[0],
-                parent_request_id=row[1],
-                url=row[2],
-                headers_json=row[3],
-                started_at_ns=row[4],
-                completed_at_ns=row[5],
-                from_cache=bool(row[6]) if row[6] is not None else None,
-                created_at=row[7],
-                storage_id=row[8],
-                resource_type=row[9],
-                method=row[10],
-                status_code=row[11],
-                content_size_original=row[12],
-                content_size_compressed=row[13],
-                failure_reason=row[14],
-            )
-            for row in rows
-        ]
+        items = [row_to_incidental_record(row) for row in rows]
 
         return Page(
             items=items,

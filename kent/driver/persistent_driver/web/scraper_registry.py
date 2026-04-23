@@ -224,6 +224,27 @@ class ScraperRegistry:
         """
         return list(self._scrapers.values())
 
+    def find_scrapers_by_name(self, name: str) -> list[ScraperInfo]:
+        """Find scrapers matching ``name`` via module_path, full_path, or class_name.
+
+        Used to resolve a scraper_name stored in run metadata back to a registry
+        entry. Tries progressively looser matches; stops at the first non-empty
+        result.
+
+        Args:
+            name: Module path (preferred), full path (``module:class``), or class name.
+
+        Returns:
+            List of matching ScraperInfo. Empty if no match found. Callers are
+            responsible for handling the zero-match and multi-match cases.
+        """
+        scrapers = self.list_scrapers()
+        for attr in ("module_path", "full_path", "class_name"):
+            matching = [s for s in scrapers if getattr(s, attr) == name]
+            if matching:
+                return matching
+        return []
+
     def get_scraper(self, full_path: str) -> ScraperInfo | None:
         """Get info for a specific scraper.
 

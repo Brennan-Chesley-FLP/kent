@@ -8,7 +8,8 @@ import click
 
 from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
-    cli,
+    _run_health_report,
+    register_cli_group,
 )
 from kent.driver.persistent_driver.cli._options import (
     db_option,
@@ -17,15 +18,9 @@ from kent.driver.persistent_driver.cli._options import (
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
-
-@cli.group()
-@db_option
-@click.pass_context
-def scrape(ctx: click.Context, db_path: str | None) -> None:
-    """Scrape-level health checks and diagnostics."""
-    ctx.ensure_object(dict)
-    if db_path:
-        ctx.obj["db_path"] = db_path
+scrape = register_cli_group(
+    "scrape", "Scrape-level health checks and diagnostics."
+)
 
 
 @scrape.command("health")
@@ -49,31 +44,11 @@ def scrape_health(
         pdd scrape --db run.db health
     """
     db_path = _resolve_db_path(ctx, db_path)
-
-    async def run() -> None:
-        async with LocalDevDriverDebugger.open(db_path) as debugger:
-            # Get all health check data
-            integrity = await debugger.check_integrity()
-            ghosts = await debugger.get_ghost_requests()
-            status = await debugger.get_run_status()
-            stats = await debugger.get_stats()
-            estimates = await debugger.check_estimates()
-
-            output = {
-                "status": status,
-                "integrity": integrity,
-                "ghosts": ghosts,
-                "error_stats": stats["errors"],
-                "estimates": estimates,
-            }
-            render_output(
-                output,
-                format_type=format_type,
-                template_path="scrape/health",
-                template_name=template_name or "default",
-            )
-
-    asyncio.run(run())
+    asyncio.run(
+        _run_health_report(
+            db_path, format_type, "scrape/health", template_name
+        )
+    )
 
 
 @scrape.command("estimates")

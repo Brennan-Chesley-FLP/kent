@@ -611,6 +611,7 @@ class TestSeedSpeculativeRequests:
 
         mock_registry = MagicMock()
         mock_registry.list_scrapers.return_value = []  # No scrapers registered
+        mock_registry.find_scrapers_by_name.return_value = []
 
         with patch(
             "kent.driver.persistent_driver.web.scraper_registry.get_registry",

@@ -12,7 +12,7 @@ import click
 from kent.driver.persistent_driver.cli import (
     _format_data_diff,
     _resolve_db_path,
-    cli,
+    register_cli_group,
 )
 from kent.driver.persistent_driver.cli._options import (
     db_option,
@@ -21,15 +21,9 @@ from kent.driver.persistent_driver.cli._options import (
 from kent.driver.persistent_driver.cli.templating import render_output
 from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 
-
-@cli.group()
-@db_option
-@click.pass_context
-def step(ctx: click.Context, db_path: str | None) -> None:
-    """Step-level development and debugging tools."""
-    ctx.ensure_object(dict)
-    if db_path:
-        ctx.obj["db_path"] = db_path
+step = register_cli_group(
+    "step", "Step-level development and debugging tools."
+)
 
 
 def _load_scraper_class(

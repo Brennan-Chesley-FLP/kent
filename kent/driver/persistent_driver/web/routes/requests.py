@@ -244,9 +244,6 @@ async def get_speculative_steps(
     from kent.driver.persistent_driver.web.app import (
         get_sql_manager_for_run,
     )
-    from kent.driver.persistent_driver.web.scraper_registry import (
-        get_registry,
-    )
 
     # Get run info
     run_info = await manager.get_run(run_id)
@@ -291,29 +288,6 @@ async def get_speculative_steps(
         scraper_name = run_metadata.get("scraper_name")
         if not scraper_name:
             return SpeculativeStepsResponse(items=[], run_loaded=False)
-
-        # Find scraper in registry
-        # scraper_name in DB is the module path (e.g., juriscraper.sd.state.connecticut...)
-        registry = get_registry()
-        matching = [
-            s
-            for s in registry.list_scrapers()
-            if s.module_path == scraper_name
-        ]
-        if not matching:
-            # Try full path match (module:class format)
-            matching = [
-                s
-                for s in registry.list_scrapers()
-                if s.full_path == scraper_name
-            ]
-        if not matching:
-            # Try class name match as last resort
-            matching = [
-                s
-                for s in registry.list_scrapers()
-                if s.class_name == scraper_name
-            ]
 
         # speculative_steps were removed from ScraperInfo during @entry migration;
         # speculative info is now in entry_schema

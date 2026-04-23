@@ -9,7 +9,7 @@ import click
 
 from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
-    cli,
+    register_cli_group,
 )
 from kent.driver.persistent_driver.cli._options import (
     db_option,
@@ -24,14 +24,7 @@ from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 # =========================================================================
 
 
-@cli.group()
-@db_option
-@click.pass_context
-def errors(ctx: click.Context, db_path: str | None) -> None:
-    """Inspect and manipulate errors."""
-    ctx.ensure_object(dict)
-    if db_path:
-        ctx.obj["db_path"] = db_path
+errors = register_cli_group("errors", "Inspect and manipulate errors.")
 
 
 @errors.command("list")

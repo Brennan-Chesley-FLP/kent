@@ -8,7 +8,8 @@ import click
 
 from kent.driver.persistent_driver.cli import (
     _resolve_db_path,
-    cli,
+    _run_health_report,
+    register_cli_group,
 )
 from kent.driver.persistent_driver.cli._options import (
     db_option,
@@ -21,25 +22,19 @@ from kent.driver.persistent_driver.debugger import LocalDevDriverDebugger
 # Doctor Commands
 # =========================================================================
 
-
-@cli.group(invoke_without_command=True)
-@db_option
-@click.pass_context
-def doctor(ctx: click.Context, db_path: str | None) -> None:
+doctor = register_cli_group(
+    "doctor",
     """Run health checks on database.
 
-    \b
-    Examples:
-        ldd-debug doctor --db run.db health
-        ldd-debug doctor health --db run.db
-        ldd-debug doctor structure --db run.db
-        ldd-debug doctor structure --db run.db --detailed
-    """
-    ctx.ensure_object(dict)
-    if db_path:
-        ctx.obj["db_path"] = db_path
-    if ctx.invoked_subcommand is None:
-        click.echo(ctx.get_help())
+\b
+Examples:
+    ldd-debug doctor --db run.db health
+    ldd-debug doctor health --db run.db
+    ldd-debug doctor structure --db run.db
+    ldd-debug doctor structure --db run.db --detailed
+""",
+    invoke_without_command=True,
+)
 
 
 @doctor.command("health")
@@ -63,31 +58,11 @@ def doctor_health(
         ldd-debug doctor --db run.db health
     """
     db_path = _resolve_db_path(ctx, db_path)
-
-    async def run() -> None:
-        async with LocalDevDriverDebugger.open(db_path) as debugger:
-            # Get all health check data
-            integrity = await debugger.check_integrity()
-            ghosts = await debugger.get_ghost_requests()
-            status = await debugger.get_run_status()
-            stats = await debugger.get_stats()
-            estimates = await debugger.check_estimates()
-
-            output = {
-                "status": status,
-                "integrity": integrity,
-                "ghosts": ghosts,
-                "error_stats": stats["errors"],
-                "estimates": estimates,
-            }
-            render_output(
-                output,
-                format_type=format_type,
-                template_path="doctor/health",
-                template_name=template_name or "default",
-            )
-
-    asyncio.run(run())
+    asyncio.run(
+        _run_health_report(
+            db_path, format_type, "doctor/health", template_name
+        )
+    )
 
 
 @doctor.command("orphans")

@@ -279,6 +279,37 @@ async def get_response_content(
         HTTPException: 404 if response not found.
         HTTPException: 500 if decompression fails.
     """
+    content, headers_json = await _fetch_response_content(
+        run_id, request_id, manager
+    )
+
+    # Try to get content-type from headers
+    content_type = "application/octet-stream"
+    if headers_json:
+        try:
+            headers = json.loads(headers_json)
+            if isinstance(headers, dict):
+                for key, value in headers.items():
+                    if key.lower() == "content-type":
+                        content_type = value
+                        break
+        except json.JSONDecodeError:
+            pass
+
+    return Response(content=content, media_type=content_type)
+
+
+async def _fetch_response_content(
+    run_id: str, request_id: int, manager: RunManager
+) -> tuple[bytes, str | None]:
+    """Load decompressed content + headers for a response, or raise an HTTPException.
+
+    Returns:
+        (content, headers_json) — content is non-empty bytes; headers_json may be None.
+
+    Raises:
+        HTTPException: 500 if decompression fails, 404 if the response is missing or empty.
+    """
     debugger = await get_debugger(run_id, manager, read_only=True)
 
     try:
@@ -305,20 +336,7 @@ async def get_response_content(
             detail=f"Response for request {request_id} has no content",
         )
 
-    # Try to get content-type from headers
-    content_type = "application/octet-stream"
-    if headers_json:
-        try:
-            headers = json.loads(headers_json)
-            if isinstance(headers, dict):
-                for key, value in headers.items():
-                    if key.lower() == "content-type":
-                        content_type = value
-                        break
-        except json.JSONDecodeError:
-            pass
-
-    return Response(content=content, media_type=content_type)
+    return content, headers_json
 
 
 def _extract_content_type(headers_json: str | None) -> str:
@@ -506,17 +524,7 @@ async def _resolve_scraper(run_id: str, manager: RunManager):
         )
 
     registry = get_registry()
-    matching = [
-        s for s in registry.list_scrapers() if s.module_path == scraper_name
-    ]
-    if not matching:
-        matching = [
-            s for s in registry.list_scrapers() if s.full_path == scraper_name
-        ]
-    if not matching:
-        matching = [
-            s for s in registry.list_scrapers() if s.class_name == scraper_name
-        ]
+    matching = registry.find_scrapers_by_name(scraper_name)
 
     if not matching:
         raise HTTPException(
@@ -720,31 +728,9 @@ async def get_annotated_response(
     Raises:
         HTTPException: 404 if response not found.
     """
-    debugger = await get_debugger(run_id, manager, read_only=True)
-
-    try:
-        result = await debugger.sql.get_response_content_with_headers(
-            request_id
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to decompress content: {e}",
-        ) from e
-
-    if result is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response for request {request_id} not found in run '{run_id}'",
-        )
-
-    content, headers_json = result
-
-    if not content:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Response for request {request_id} has no content",
-        )
+    content, headers_json = await _fetch_response_content(
+        run_id, request_id, manager
+    )
 
     # Check if HTML
     content_type = _extract_content_type(headers_json)

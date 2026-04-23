@@ -210,25 +210,7 @@ class ManipulationMixin:
         )
 
         registry = get_registry()
-
-        # Find scraper by module path (primary), full path, or class name
-        matching = [
-            s
-            for s in registry.list_scrapers()
-            if s.module_path == scraper_name
-        ]
-        if not matching:
-            matching = [
-                s
-                for s in registry.list_scrapers()
-                if s.full_path == scraper_name
-            ]
-        if not matching:
-            matching = [
-                s
-                for s in registry.list_scrapers()
-                if s.class_name == scraper_name
-            ]
+        matching = registry.find_scrapers_by_name(scraper_name)
 
         if not matching:
             raise ValueError(

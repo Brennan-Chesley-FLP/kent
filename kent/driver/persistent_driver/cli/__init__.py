@@ -258,6 +258,64 @@ def cli(ctx: click.Context, db_path: str | None) -> None:
 # =========================================================================
 
 
+def register_cli_group(
+    name: str,
+    help_text: str,
+    *,
+    invoke_without_command: bool = False,
+) -> click.Group:
+    """Create a subgroup on the top-level :data:`cli` with standard --db propagation.
+
+    Subcommands can be attached via ``@group.command(...)`` on the returned group.
+    When ``invoke_without_command`` is true and no subcommand is given, the group
+    prints its own help text.
+    """
+
+    @cli.group(
+        name=name,
+        help=help_text,
+        invoke_without_command=invoke_without_command,
+    )
+    @db_option
+    @click.pass_context
+    def group(ctx: click.Context, db_path: str | None) -> None:
+        ctx.ensure_object(dict)
+        if db_path:
+            ctx.obj["db_path"] = db_path
+        if invoke_without_command and ctx.invoked_subcommand is None:
+            click.echo(ctx.get_help())
+
+    return group
+
+
+async def _run_health_report(
+    db_path: str,
+    format_type: str,
+    template_path: str,
+    template_name: str | None,
+) -> None:
+    """Fetch a run's health check data and render it with the given template."""
+    async with LocalDevDriverDebugger.open(db_path) as debugger:
+        integrity = await debugger.check_integrity()
+        ghosts = await debugger.get_ghost_requests()
+        status = await debugger.get_run_status()
+        stats = await debugger.get_stats()
+        estimates = await debugger.check_estimates()
+
+        render_output(
+            {
+                "status": status,
+                "integrity": integrity,
+                "ghosts": ghosts,
+                "error_stats": stats["errors"],
+                "estimates": estimates,
+            },
+            format_type=format_type,
+            template_path=template_path,
+            template_name=template_name or "default",
+        )
+
+
 def _resolve_db_path(ctx: click.Context, db_path: str | None) -> str:
     """Resolve db_path from the current option or any parent group.
 

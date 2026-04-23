@@ -18,8 +18,58 @@ from kent.driver.persistent_driver.sql_manager._types import (
 if TYPE_CHECKING:
     import asyncio
 
+    from sqlalchemy.sql import Select
+
     from kent.driver.persistent_driver.scoped_session import (
         ScopedSessionFactory,
+    )
+
+
+def incidental_record_select() -> Select[Any]:
+    """Build the shared select() for IncidentalRequestRecord with storage join.
+
+    Column order must match :func:`row_to_incidental_record`.
+    """
+    return select(
+        IncidentalRequest.id,
+        IncidentalRequest.parent_request_id,
+        IncidentalRequest.url,
+        IncidentalRequest.headers_json,
+        IncidentalRequest.started_at_ns,
+        IncidentalRequest.completed_at_ns,
+        IncidentalRequest.from_cache,
+        IncidentalRequest.created_at,
+        IncidentalRequest.storage_id,
+        IncidentalRequestStorage.resource_type,
+        IncidentalRequestStorage.method,
+        IncidentalRequestStorage.status_code,
+        IncidentalRequestStorage.content_size_original,
+        IncidentalRequestStorage.content_size_compressed,
+        IncidentalRequestStorage.failure_reason,
+    ).outerjoin(
+        IncidentalRequestStorage,
+        IncidentalRequest.storage_id == IncidentalRequestStorage.id,
+    )
+
+
+def row_to_incidental_record(row: Any) -> IncidentalRequestRecord:
+    """Map a row from :func:`incidental_record_select` to a record."""
+    return IncidentalRequestRecord(
+        id=row[0],
+        parent_request_id=row[1],
+        url=row[2],
+        headers_json=row[3],
+        started_at_ns=row[4],
+        completed_at_ns=row[5],
+        from_cache=bool(row[6]) if row[6] is not None else None,
+        created_at=row[7],
+        storage_id=row[8],
+        resource_type=row[9],
+        method=row[10],
+        status_code=row[11],
+        content_size_original=row[12],
+        content_size_compressed=row[13],
+        failure_reason=row[14],
     )
 
 
@@ -116,54 +166,13 @@ class IncidentalRequestStorageMixin:
         """
         async with self._session_factory() as session:
             result = await session.execute(
-                select(
-                    IncidentalRequest.id,
-                    IncidentalRequest.parent_request_id,
-                    IncidentalRequest.url,
-                    IncidentalRequest.headers_json,
-                    IncidentalRequest.started_at_ns,
-                    IncidentalRequest.completed_at_ns,
-                    IncidentalRequest.from_cache,
-                    IncidentalRequest.created_at,
-                    IncidentalRequest.storage_id,
-                    IncidentalRequestStorage.resource_type,
-                    IncidentalRequestStorage.method,
-                    IncidentalRequestStorage.status_code,
-                    IncidentalRequestStorage.content_size_original,
-                    IncidentalRequestStorage.content_size_compressed,
-                    IncidentalRequestStorage.failure_reason,
-                )
-                .outerjoin(
-                    IncidentalRequestStorage,
-                    IncidentalRequest.storage_id
-                    == IncidentalRequestStorage.id,
-                )
+                incidental_record_select()
                 .where(
                     IncidentalRequest.parent_request_id == parent_request_id
                 )
                 .order_by(IncidentalRequest.started_at_ns.asc())  # type: ignore[union-attr]
             )
-            rows = result.all()
-            return [
-                IncidentalRequestRecord(
-                    id=row[0],
-                    parent_request_id=row[1],
-                    url=row[2],
-                    headers_json=row[3],
-                    started_at_ns=row[4],
-                    completed_at_ns=row[5],
-                    from_cache=row[6],
-                    created_at=row[7],
-                    storage_id=row[8],
-                    resource_type=row[9],
-                    method=row[10],
-                    status_code=row[11],
-                    content_size_original=row[12],
-                    content_size_compressed=row[13],
-                    failure_reason=row[14],
-                )
-                for row in rows
-            ]
+            return [row_to_incidental_record(row) for row in result.all()]
 
     async def get_incidental_request_by_id(
         self, incidental_id: int
@@ -171,50 +180,12 @@ class IncidentalRequestStorageMixin:
         """Get a single incidental request by ID with storage data."""
         async with self._session_factory() as session:
             result = await session.execute(
-                select(
-                    IncidentalRequest.id,
-                    IncidentalRequest.parent_request_id,
-                    IncidentalRequest.url,
-                    IncidentalRequest.headers_json,
-                    IncidentalRequest.started_at_ns,
-                    IncidentalRequest.completed_at_ns,
-                    IncidentalRequest.from_cache,
-                    IncidentalRequest.created_at,
-                    IncidentalRequest.storage_id,
-                    IncidentalRequestStorage.resource_type,
-                    IncidentalRequestStorage.method,
-                    IncidentalRequestStorage.status_code,
-                    IncidentalRequestStorage.content_size_original,
-                    IncidentalRequestStorage.content_size_compressed,
-                    IncidentalRequestStorage.failure_reason,
+                incidental_record_select().where(
+                    IncidentalRequest.id == incidental_id
                 )
-                .outerjoin(
-                    IncidentalRequestStorage,
-                    IncidentalRequest.storage_id
-                    == IncidentalRequestStorage.id,
-                )
-                .where(IncidentalRequest.id == incidental_id)
             )
             row = result.first()
-            if row is None:
-                return None
-            return IncidentalRequestRecord(
-                id=row[0],
-                parent_request_id=row[1],
-                url=row[2],
-                headers_json=row[3],
-                started_at_ns=row[4],
-                completed_at_ns=row[5],
-                from_cache=row[6],
-                created_at=row[7],
-                storage_id=row[8],
-                resource_type=row[9],
-                method=row[10],
-                status_code=row[11],
-                content_size_original=row[12],
-                content_size_compressed=row[13],
-                failure_reason=row[14],
-            )
+            return row_to_incidental_record(row) if row is not None else None
 
     async def get_incidental_request_storage(
         self, storage_id: int
