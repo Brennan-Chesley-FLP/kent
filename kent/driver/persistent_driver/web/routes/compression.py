@@ -15,14 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
-from kent.driver.persistent_driver.debugger import (
-    LocalDevDriverDebugger,
-)
 from kent.driver.persistent_driver.web.app import (
     RunManager,
-    get_debugger_for_run,
     get_run_manager,
 )
+from kent.driver.persistent_driver.web.routes._helpers import get_debugger
 
 router = APIRouter(
     prefix="/api/runs/{run_id}/compression", tags=["compression"]
@@ -112,36 +109,6 @@ class CompressionStatsByContinuationResponse(BaseModel):
     overall_ratio: float
 
 
-async def _get_debugger(
-    run_id: str, manager: RunManager, read_only: bool = True
-) -> LocalDevDriverDebugger:
-    """Get LocalDevDriverDebugger for a run.
-
-    Args:
-        run_id: The run identifier.
-        manager: The run manager.
-        read_only: If True, open in read-only mode (prevents writes).
-
-    Returns:
-        LocalDevDriverDebugger instance.
-
-    Raises:
-        HTTPException: 404 if run not found, 400 if error.
-    """
-    try:
-        return await get_debugger_for_run(run_id, manager, read_only=read_only)
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-
-
 # Default training parameters
 DEFAULT_DICT_SIZE = 112640  # 110KB
 DEFAULT_SAMPLE_LIMIT = 100
@@ -180,7 +147,7 @@ async def train_dictionary(
         train_compression_dict,
     )
 
-    debugger = await _get_debugger(run_id, manager, read_only=False)
+    debugger = await get_debugger(run_id, manager, read_only=False)
 
     # Calculate smart defaults if not provided
     dict_size = request.dict_size
@@ -287,7 +254,7 @@ async def recompress_responses(
         recompress_responses as do_recompress,
     )
 
-    debugger = await _get_debugger(run_id, manager, read_only=False)
+    debugger = await get_debugger(run_id, manager, read_only=False)
 
     try:
         count, total_original, total_compressed = await do_recompress(
@@ -325,7 +292,7 @@ async def get_compression_stats(
     Returns:
         Compression statistics.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     stats = await debugger.get_compression_stats()
 
@@ -372,7 +339,7 @@ async def get_compression_stats_by_continuation(
         Request as RequestModel,
     )
 
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     async with debugger._session_factory() as session:
         # First, get set of continuations that have trained dictionaries
@@ -464,6 +431,6 @@ async def list_dictionaries(
     Returns:
         List of dictionary metadata.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     return await debugger.list_compression_dicts()

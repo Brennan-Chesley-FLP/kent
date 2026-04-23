@@ -90,25 +90,7 @@ class ListingMixin:
             total = result.scalar() or 0
 
             # Data query
-            data_stmt = select(
-                Request.id,
-                Request.status,
-                Request.priority,
-                Request.queue_counter,
-                Request.method,
-                Request.url,
-                Request.continuation,
-                Request.current_location,
-                Request.created_at,
-                Request.started_at,
-                Request.completed_at,
-                Request.retry_count,
-                Request.cumulative_backoff,
-                Request.last_error,
-                Request.created_at_ns,
-                Request.started_at_ns,
-                Request.completed_at_ns,
-            )
+            data_stmt = select(*RequestRecord.select_columns(Request))
             for cond in conditions:
                 data_stmt = data_stmt.where(cond)
 
@@ -126,28 +108,7 @@ class ListingMixin:
             result = await session.execute(data_stmt)
             rows = result.all()
 
-            items = [
-                RequestRecord(
-                    id=row[0],
-                    status=row[1],
-                    priority=row[2],
-                    queue_counter=row[3],
-                    method=row[4],
-                    url=row[5],
-                    continuation=row[6],
-                    current_location=row[7],
-                    created_at=row[8],
-                    started_at=row[9],
-                    completed_at=row[10],
-                    retry_count=row[11],
-                    cumulative_backoff=row[12],
-                    last_error=row[13],
-                    created_at_ns=row[14],
-                    started_at_ns=row[15],
-                    completed_at_ns=row[16],
-                )
-                for row in rows
-            ]
+            items = [RequestRecord.from_row(row) for row in rows]
 
             return Page(
                 items=items,
@@ -325,48 +286,14 @@ class ListingMixin:
         """
         async with self._session_factory() as session:
             result = await session.execute(
-                select(
-                    Request.id,
-                    Request.status,
-                    Request.priority,
-                    Request.queue_counter,
-                    Request.method,
-                    Request.url,
-                    Request.continuation,
-                    Request.current_location,
-                    Request.created_at,
-                    Request.started_at,
-                    Request.completed_at,
-                    Request.retry_count,
-                    Request.cumulative_backoff,
-                    Request.last_error,
-                    Request.created_at_ns,
-                    Request.started_at_ns,
-                    Request.completed_at_ns,
-                ).where(Request.id == request_id)
+                select(*RequestRecord.select_columns(Request)).where(
+                    Request.id == request_id
+                )
             )
             row = result.first()
             if row is None:
                 return None
-            return RequestRecord(
-                id=row[0],
-                status=row[1],
-                priority=row[2],
-                queue_counter=row[3],
-                method=row[4],
-                url=row[5],
-                continuation=row[6],
-                current_location=row[7],
-                created_at=row[8],
-                started_at=row[9],
-                completed_at=row[10],
-                retry_count=row[11],
-                cumulative_backoff=row[12],
-                last_error=row[13],
-                created_at_ns=row[14],
-                started_at_ns=row[15],
-                completed_at_ns=row[16],
-            )
+            return RequestRecord.from_row(row)
 
     async def get_response(self, request_id: int) -> ResponseRecord | None:
         """Get response data for a request by its ID.

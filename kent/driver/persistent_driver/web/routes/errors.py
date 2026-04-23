@@ -15,14 +15,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from kent.driver.persistent_driver.debugger import (
-    LocalDevDriverDebugger,
-)
 from kent.driver.persistent_driver.web.app import (
     RunManager,
-    get_debugger_for_run,
     get_run_manager,
 )
+from kent.driver.persistent_driver.web.routes._helpers import get_debugger
 
 router = APIRouter(prefix="/api/runs/{run_id}/errors", tags=["errors"])
 
@@ -70,36 +67,6 @@ class ResolveRequest(BaseModel):
     """Request model for resolving an error."""
 
     notes: str = Field(default="", description="Resolution notes")
-
-
-async def _get_debugger(
-    run_id: str, manager: RunManager, read_only: bool = True
-) -> LocalDevDriverDebugger:
-    """Get LocalDevDriverDebugger for a run.
-
-    Args:
-        run_id: The run identifier.
-        manager: The run manager.
-        read_only: If True, open in read-only mode (prevents writes).
-
-    Returns:
-        LocalDevDriverDebugger instance.
-
-    Raises:
-        HTTPException: 404 if run not found, 400 if error.
-    """
-    try:
-        return await get_debugger_for_run(run_id, manager, read_only=read_only)
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
 
 
 def _row_to_error(row) -> ErrorResponse:
@@ -235,7 +202,7 @@ async def get_error_summary(
     Returns:
         Summary with counts by type and resolution status.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     # Use LDDD's get_error_summary method
     summary = await debugger.get_error_summary()
@@ -277,7 +244,7 @@ async def list_errors(
     Returns:
         Paginated list of errors.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     # Use LDDD's list_errors method
     page = await debugger.list_errors(
@@ -317,7 +284,7 @@ async def get_error(
     Raises:
         HTTPException: 404 if error not found.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     # Use LDDD's get_error method
     error_dict = await debugger.get_error(error_id)
@@ -351,7 +318,7 @@ async def resolve_error(
     Raises:
         HTTPException: 404 if error not found.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=False)
+    debugger = await get_debugger(run_id, manager, read_only=False)
 
     # Use LDDD's resolve_error method
     resolved = await debugger.resolve_error(error_id, request.notes)

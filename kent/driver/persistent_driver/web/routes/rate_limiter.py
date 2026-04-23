@@ -12,48 +12,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from kent.driver.persistent_driver.debugger import (
-    LocalDevDriverDebugger,
-)
 from kent.driver.persistent_driver.web.app import (
     RunManager,
-    get_debugger_for_run,
     get_run_manager,
 )
+from kent.driver.persistent_driver.web.routes._helpers import get_debugger
 
 router = APIRouter(
     prefix="/api/runs/{run_id}/rate-limiter", tags=["rate-limiter"]
 )
-
-
-async def _get_debugger(
-    run_id: str, manager: RunManager, read_only: bool = True
-) -> LocalDevDriverDebugger:
-    """Get LocalDevDriverDebugger for a run.
-
-    Args:
-        run_id: The run identifier.
-        manager: The run manager.
-        read_only: If True, open in read-only mode (prevents writes).
-
-    Returns:
-        LocalDevDriverDebugger instance.
-
-    Raises:
-        HTTPException: 404 if run not found, 400 if error.
-    """
-    try:
-        return await get_debugger_for_run(run_id, manager, read_only=read_only)
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
 
 
 class RateLimitConfig(BaseModel):
@@ -169,7 +136,7 @@ async def get_throughput_stats(
     Raises:
         HTTPException: 404 if run not found.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     import sqlalchemy as sa
     from sqlmodel import select

@@ -17,14 +17,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlmodel import select
 
-from kent.driver.persistent_driver.debugger import (
-    LocalDevDriverDebugger,
-)
 from kent.driver.persistent_driver.web.app import (
     RunManager,
-    get_debugger_for_run,
     get_run_manager,
 )
+from kent.driver.persistent_driver.web.routes._helpers import get_debugger
 
 router = APIRouter(
     prefix="/api/runs/{run_id}/archived-files", tags=["archived-files"]
@@ -63,36 +60,6 @@ class ArchivedFilesStatsResponse(BaseModel):
     total_size_human: str
 
 
-async def _get_debugger(
-    run_id: str, manager: RunManager, read_only: bool = True
-) -> LocalDevDriverDebugger:
-    """Get LocalDevDriverDebugger for a run.
-
-    Args:
-        run_id: The run identifier.
-        manager: The run manager.
-        read_only: If True, open in read-only mode (prevents writes).
-
-    Returns:
-        LocalDevDriverDebugger instance.
-
-    Raises:
-        HTTPException: 404 if run not found, 400 if error.
-    """
-    try:
-        return await get_debugger_for_run(run_id, manager, read_only=read_only)
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-
-
 async def _fetch_archived_file_row(
     run_id: str, file_id: int, manager: RunManager
 ) -> sa.Row:
@@ -100,7 +67,7 @@ async def _fetch_archived_file_row(
     from kent.driver.persistent_driver.models import ArchivedFile
     from kent.driver.persistent_driver.models import Request as RequestModel
 
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     async with debugger._session_factory() as session:
         stmt = (
@@ -169,7 +136,7 @@ async def list_archived_files(
     from kent.driver.persistent_driver.models import ArchivedFile
     from kent.driver.persistent_driver.models import Request as RequestModel
 
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     async with debugger._session_factory() as session:
         # Build count query
@@ -257,7 +224,7 @@ async def get_archived_files_stats(
     """
     from kent.driver.persistent_driver.models import ArchivedFile
 
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     async with debugger._session_factory() as session:
         result = await session.execute(

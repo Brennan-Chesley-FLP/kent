@@ -56,49 +56,15 @@ class ComparisonMixin:
         """
         # Build a recursive CTE
         base = (
-            select(
-                Request.id,
-                Request.status,
-                Request.priority,
-                Request.queue_counter,
-                Request.method,
-                Request.url,
-                Request.continuation,
-                Request.current_location,
-                Request.created_at,
-                Request.started_at,
-                Request.completed_at,
-                Request.retry_count,
-                Request.cumulative_backoff,
-                Request.last_error,
-                Request.created_at_ns,
-                Request.started_at_ns,
-                Request.completed_at_ns,
-            )
+            select(*RequestRecord.select_columns(Request))
             .where(Request.parent_request_id == parent_request_id)
             .cte(name="children", recursive=True)
         )
 
         req_alias = Request.__table__.alias("r")
-        recursive = select(
-            req_alias.c.id,
-            req_alias.c.status,
-            req_alias.c.priority,
-            req_alias.c.queue_counter,
-            req_alias.c.method,
-            req_alias.c.url,
-            req_alias.c.continuation,
-            req_alias.c.current_location,
-            req_alias.c.created_at,
-            req_alias.c.started_at,
-            req_alias.c.completed_at,
-            req_alias.c.retry_count,
-            req_alias.c.cumulative_backoff,
-            req_alias.c.last_error,
-            req_alias.c.created_at_ns,
-            req_alias.c.started_at_ns,
-            req_alias.c.completed_at_ns,
-        ).where(req_alias.c.parent_request_id == base.c.id)
+        recursive = select(*RequestRecord.select_columns(req_alias.c)).where(
+            req_alias.c.parent_request_id == base.c.id
+        )
 
         children_cte = base.union_all(recursive)
 
@@ -108,31 +74,7 @@ class ComparisonMixin:
             result = await session.execute(final_query)
             rows = result.all()
 
-        requests = []
-        for row in rows:
-            requests.append(
-                RequestRecord(
-                    id=row[0],
-                    status=row[1],
-                    priority=row[2],
-                    queue_counter=row[3],
-                    method=row[4],
-                    url=row[5],
-                    continuation=row[6],
-                    current_location=row[7],
-                    created_at=row[8],
-                    started_at=row[9],
-                    completed_at=row[10],
-                    retry_count=row[11],
-                    cumulative_backoff=row[12],
-                    last_error=row[13],
-                    created_at_ns=row[14],
-                    started_at_ns=row[15],
-                    completed_at_ns=row[16],
-                )
-            )
-
-        return requests
+        return [RequestRecord.from_row(row) for row in rows]
 
     async def get_results_for_request(
         self, request_id: int

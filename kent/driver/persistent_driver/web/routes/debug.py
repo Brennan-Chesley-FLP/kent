@@ -12,12 +12,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
-from kent.driver.persistent_driver.debugger import (
-    LocalDevDriverDebugger,
-)
 from kent.driver.persistent_driver.web.app import (
     RunManager,
-    get_debugger_for_run,
     get_run_manager,
 )
 
@@ -35,42 +31,12 @@ class DiagnoseResponse(BaseModel):
     error: str | None = None
 
 
-async def _get_debugger(
-    run_id: str, manager: RunManager, read_only: bool = True
-) -> LocalDevDriverDebugger:
-    """Get LocalDevDriverDebugger for a run.
-
-    Args:
-        run_id: The run identifier.
-        manager: The run manager.
-        read_only: If True, open in read-only mode (prevents writes).
-
-    Returns:
-        LocalDevDriverDebugger instance.
-
-    Raises:
-        HTTPException: 404 if run not found, 400 if error.
-    """
-    try:
-        return await get_debugger_for_run(run_id, manager, read_only=read_only)
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-
-
 async def _get_driver_for_run(run_id: str, manager: RunManager):
     """Get driver instance for a loaded run.
 
     NOTE: This is used for operations that require the full driver machinery,
     such as re-running continuations with XPath observation. For read-only
-    database inspection, use _get_debugger instead.
+    database inspection, use get_debugger instead.
 
     Args:
         run_id: The run identifier.

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, Generic, TypeVar
 
 
@@ -243,6 +243,21 @@ class RequestRecord:
     def to_json(self) -> str:
         """Serialize to JSON."""
         return json.dumps(self.to_dict())
+
+    @classmethod
+    def select_columns(cls, source: Any) -> tuple[Any, ...]:
+        """Return the ordered columns to select for building a RequestRecord.
+
+        ``source`` may be the Request model class or an aliased column
+        collection (e.g. ``Request.__table__.alias("r").c``); both support
+        attribute access by column name.
+        """
+        return tuple(getattr(source, f.name) for f in fields(cls))
+
+    @classmethod
+    def from_row(cls, row: Any) -> RequestRecord:
+        """Build a RequestRecord from a row whose columns follow select_columns order."""
+        return cls(**{f.name: row[i] for i, f in enumerate(fields(cls))})
 
 
 @dataclass

@@ -19,14 +19,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import select
 
-from kent.driver.persistent_driver.debugger import (
-    LocalDevDriverDebugger,
-)
 from kent.driver.persistent_driver.web.app import (
     RunManager,
-    get_debugger_for_run,
     get_run_manager,
 )
+from kent.driver.persistent_driver.web.routes._helpers import get_debugger
 
 router = APIRouter(prefix="/api/runs/{run_id}/results", tags=["results"])
 
@@ -76,36 +73,6 @@ class ResultsSummaryResponse(BaseModel):
     by_type: list[ResultTypeSummaryItem]
 
 
-async def _get_debugger(
-    run_id: str, manager: RunManager, read_only: bool = True
-) -> LocalDevDriverDebugger:
-    """Get LocalDevDriverDebugger for a run.
-
-    Args:
-        run_id: The run identifier.
-        manager: The run manager.
-        read_only: If True, open in read-only mode (prevents writes).
-
-    Returns:
-        LocalDevDriverDebugger instance.
-
-    Raises:
-        HTTPException: 404 if run not found, 400 if error.
-    """
-    try:
-        return await get_debugger_for_run(run_id, manager, read_only=read_only)
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-
-
 @router.get("", response_model=ResultListResponse)
 async def list_results(
     run_id: str,
@@ -131,7 +98,7 @@ async def list_results(
     Returns:
         Paginated list of results.
     """
-    debugger = await _get_debugger(run_id, manager)
+    debugger = await get_debugger(run_id, manager)
 
     # LDDD only supports result_type and is_valid filters, not request_id
     # Fall back to SQL for request_id filtering
@@ -190,7 +157,7 @@ async def get_result_type_summary(
     """
     from kent.driver.persistent_driver.models import Result
 
-    debugger = await _get_debugger(run_id, manager)
+    debugger = await get_debugger(run_id, manager)
 
     async with debugger._session_factory() as session:
         result = await session.execute(
@@ -216,7 +183,7 @@ async def get_results_summary(
     Returns:
         Summary with total counts and breakdown by result type.
     """
-    debugger = await _get_debugger(run_id, manager)
+    debugger = await get_debugger(run_id, manager)
 
     # Use LDDD's get_result_summary method
     summary = await debugger.get_result_summary()
@@ -273,7 +240,7 @@ async def export_results_jsonl(
     """
     from kent.driver.persistent_driver.models import Result as ResultModel
 
-    debugger = await _get_debugger(run_id, manager)
+    debugger = await get_debugger(run_id, manager)
 
     # Build query
     stmt = select(
@@ -366,7 +333,7 @@ async def get_result(
     Raises:
         HTTPException: 404 if result not found.
     """
-    debugger = await _get_debugger(run_id, manager)
+    debugger = await get_debugger(run_id, manager)
 
     record = await debugger.get_result(result_id)
 

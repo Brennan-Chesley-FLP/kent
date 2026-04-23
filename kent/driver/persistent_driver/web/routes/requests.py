@@ -15,14 +15,11 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from kent.driver.persistent_driver.debugger import (
-    LocalDevDriverDebugger,
-)
 from kent.driver.persistent_driver.web.app import (
     RunManager,
-    get_debugger_for_run,
     get_run_manager,
 )
+from kent.driver.persistent_driver.web.routes._helpers import get_debugger
 
 router = APIRouter(prefix="/api/runs/{run_id}/requests", tags=["requests"])
 
@@ -89,36 +86,6 @@ class RequestSummaryResponse(BaseModel):
     grand_total: int
 
 
-async def _get_debugger(
-    run_id: str, manager: RunManager, read_only: bool = True
-) -> LocalDevDriverDebugger:
-    """Get LocalDevDriverDebugger for a run.
-
-    Args:
-        run_id: The run identifier.
-        manager: The run manager.
-        read_only: If True, open in read-only mode (prevents writes).
-
-    Returns:
-        LocalDevDriverDebugger instance.
-
-    Raises:
-        HTTPException: 404 if run not found, 400 if error.
-    """
-    try:
-        return await get_debugger_for_run(run_id, manager, read_only=read_only)
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-
-
 @router.get("", response_model=RequestListResponse)
 async def list_requests(
     run_id: str,
@@ -148,7 +115,7 @@ async def list_requests(
     Returns:
         Paginated list of requests.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     # Use LDDD's list_requests method
     page = await debugger.list_requests(
@@ -206,7 +173,7 @@ async def get_request_summary(
     Returns:
         Summary of request counts by continuation and status.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     # Use LDDD's get_request_summary method
     summary = await debugger.get_request_summary()
@@ -409,7 +376,7 @@ async def seed_speculative_requests(
         )
 
     # Get debugger in write mode to seed requests
-    debugger = await _get_debugger(run_id, manager, read_only=False)
+    debugger = await get_debugger(run_id, manager, read_only=False)
 
     try:
         seeded_count = await debugger.seed_speculative_requests(
@@ -450,7 +417,7 @@ async def get_request(
     Raises:
         HTTPException: 404 if request not found.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     record = await debugger.get_request(request_id)
 
@@ -497,7 +464,7 @@ async def cancel_request(
         HTTPException: 404 if request not found.
         HTTPException: 400 if request cannot be cancelled.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=False)
+    debugger = await get_debugger(run_id, manager, read_only=False)
 
     cancelled = await debugger.cancel_request(request_id)
 
@@ -535,7 +502,7 @@ async def cancel_by_continuation(
     Returns:
         Number of requests cancelled.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=False)
+    debugger = await get_debugger(run_id, manager, read_only=False)
 
     cancelled_count = await debugger.cancel_requests_by_continuation(
         request.continuation

@@ -19,14 +19,11 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlmodel import select
 
-from kent.driver.persistent_driver.debugger import (
-    LocalDevDriverDebugger,
-)
 from kent.driver.persistent_driver.web.app import (
     RunManager,
-    get_debugger_for_run,
     get_run_manager,
 )
+from kent.driver.persistent_driver.web.routes._helpers import get_debugger
 
 router = APIRouter(prefix="/api/runs/{run_id}/responses", tags=["responses"])
 
@@ -56,36 +53,6 @@ class ResponseListResponse(BaseModel):
     offset: int
     limit: int
     has_more: bool
-
-
-async def _get_debugger(
-    run_id: str, manager: RunManager, read_only: bool = True
-) -> LocalDevDriverDebugger:
-    """Get LocalDevDriverDebugger for a run.
-
-    Args:
-        run_id: The run identifier.
-        manager: The run manager.
-        read_only: If True, open in read-only mode (prevents writes).
-
-    Returns:
-        LocalDevDriverDebugger instance.
-
-    Raises:
-        HTTPException: 404 if run not found, 400 if error.
-    """
-    try:
-        return await get_debugger_for_run(run_id, manager, read_only=read_only)
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            ) from e
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
 
 
 class SpeculationSummaryResponse(BaseModel):
@@ -161,7 +128,7 @@ async def get_speculation_summary(
     """
     from kent.driver.persistent_driver.models import Request as RequestModel
 
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     async with debugger._session_factory() as session:
         result = await session.execute(
@@ -216,7 +183,7 @@ async def list_responses(
     Returns:
         Paginated list of responses.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     page = await debugger.sql.list_responses(
         continuation=continuation,
@@ -269,7 +236,7 @@ async def get_response(
     Raises:
         HTTPException: 404 if response not found.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     record = await debugger.get_response(request_id)
 
@@ -312,7 +279,7 @@ async def get_response_content(
         HTTPException: 404 if response not found.
         HTTPException: 500 if decompression fails.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     try:
         result = await debugger.sql.get_response_content_with_headers(
@@ -602,7 +569,7 @@ async def get_response_output(
         Response as ScraperResponse,
     )
 
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     # Resolve the scraper instance: prefer loaded driver, fall back to registry
     scraper = await _resolve_scraper(run_id, manager)
@@ -753,7 +720,7 @@ async def get_annotated_response(
     Raises:
         HTTPException: 404 if response not found.
     """
-    debugger = await _get_debugger(run_id, manager, read_only=True)
+    debugger = await get_debugger(run_id, manager, read_only=True)
 
     try:
         result = await debugger.sql.get_response_content_with_headers(
