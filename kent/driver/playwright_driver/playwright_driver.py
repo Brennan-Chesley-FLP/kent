@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from playwright.async_api import (
     Browser,
     BrowserContext,
+    ElementHandle,
     Page,
     async_playwright,
 )
@@ -1134,6 +1135,84 @@ class PlaywrightDriver(
             )
             raise
 
+    async def _wait_for_required_element(
+        self,
+        page: Page,
+        selector: str,
+        selector_type: str,
+        request_url: str,
+    ) -> ElementHandle:
+        """Wait for a required selector, raising structurally on miss/timeout.
+
+        Both a None result and a PlaywrightTimeoutError are converted to
+        HTMLStructuralAssumptionException so callers can rely on a non-None
+        return.
+        """
+        label = selector_type.capitalize()
+        try:
+            element = await page.wait_for_selector(selector, timeout=5000)
+            if not element:
+                raise HTMLStructuralAssumptionException(
+                    selector=selector,
+                    selector_type=selector_type,
+                    description=f"{label} selector not found: {selector}",
+                    expected_min=1,
+                    expected_max=1,
+                    actual_count=0,
+                    request_url=request_url,
+                )
+        except PlaywrightTimeoutError as e:
+            raise HTMLStructuralAssumptionException(
+                selector=selector,
+                selector_type=selector_type,
+                description=f"{label} selector timeout: {selector}",
+                expected_min=1,
+                expected_max=1,
+                actual_count=0,
+                request_url=request_url,
+            ) from e
+        return element
+
+    async def _fill_form_fields(
+        self,
+        form_element: ElementHandle,
+        field_data: dict[str, Any],
+    ) -> None:
+        """Populate form fields by name based on tag/type/visibility."""
+        for field_name, field_value in field_data.items():
+            field_selector = f'[name="{field_name}"]'
+            field_element = await form_element.query_selector(field_selector)
+            if not field_element:
+                continue
+            tag = await field_element.evaluate(
+                "el => el.tagName.toLowerCase()"
+            )
+            input_type = await field_element.get_attribute("type")
+            is_visible = await field_element.is_visible()
+            str_value = str(field_value)
+
+            if tag == "select":
+                await field_element.select_option(value=str_value)
+            elif input_type == "radio":
+                radio = await form_element.query_selector(
+                    f'[name="{field_name}"][value="{str_value}"]'
+                )
+                if radio:
+                    await radio.evaluate("(el) => el.checked = true")
+            elif input_type == "checkbox":
+                await field_element.evaluate(
+                    "(el, val) => el.checked = !!val", str_value
+                )
+            elif input_type in ("hidden", "submit") or not is_visible:
+                # Invisible-but-not-type=hidden covers e.g. 1x1px
+                # Telerik RadDatePicker parent inputs; fill() requires
+                # visibility, so assign .value directly.
+                await field_element.evaluate(
+                    "(el, val) => el.value = val", str_value
+                )
+            else:
+                await field_element.fill(str_value)
+
     async def _execute_via_download(
         self, request: BaseRequest, page: Page
     ) -> Any:
@@ -1148,31 +1227,9 @@ class PlaywrightDriver(
         if isinstance(request.via, ViaLink):
             # Link download: click the link, expect a download
             link_via = request.via
-
-            try:
-                link_element = await page.wait_for_selector(
-                    link_via.selector, timeout=5000
-                )
-                if not link_element:
-                    raise HTMLStructuralAssumptionException(
-                        selector=link_via.selector,
-                        selector_type="link",
-                        description=f"Link selector not found: {link_via.selector}",
-                        expected_min=1,
-                        expected_max=1,
-                        actual_count=0,
-                        request_url=request.request.url,
-                    )
-            except PlaywrightTimeoutError as e:
-                raise HTMLStructuralAssumptionException(
-                    selector=link_via.selector,
-                    selector_type="link",
-                    description=f"Link selector timeout: {link_via.selector}",
-                    expected_min=1,
-                    expected_max=1,
-                    actual_count=0,
-                    request_url=request.request.url,
-                ) from e
+            link_element = await self._wait_for_required_element(
+                page, link_via.selector, "link", request.request.url
+            )
 
             async with page.expect_download() as download_info:
                 await link_element.click()
@@ -1181,54 +1238,11 @@ class PlaywrightDriver(
         elif isinstance(request.via, ViaFormSubmit):
             form_via = request.via
 
-            # Locate form
-            form_element = await page.wait_for_selector(
-                form_via.form_selector, timeout=5000
+            form_element = await self._wait_for_required_element(
+                page, form_via.form_selector, "form", request.request.url
             )
-            if not form_element:
-                raise HTMLStructuralAssumptionException(
-                    selector=form_via.form_selector,
-                    selector_type="form",
-                    description=f"Form selector not found: {form_via.form_selector}",
-                    expected_min=1,
-                    expected_max=1,
-                    actual_count=0,
-                    request_url=request.request.url,
-                )
 
-            # Fill form fields (same as _execute_via_navigation)
-            for field_name, field_value in form_via.field_data.items():
-                field_selector = f'[name="{field_name}"]'
-                field_element = await form_element.query_selector(
-                    field_selector
-                )
-                if field_element:
-                    tag = await field_element.evaluate(
-                        "el => el.tagName.toLowerCase()"
-                    )
-                    input_type = await field_element.get_attribute("type")
-                    is_visible = await field_element.is_visible()
-                    str_value = str(field_value)
-
-                    if tag == "select":
-                        await field_element.select_option(value=str_value)
-                    elif input_type == "radio":
-                        radio = await form_element.query_selector(
-                            f'[name="{field_name}"][value="{str_value}"]'
-                        )
-                        if radio:
-                            await radio.evaluate("(el) => el.checked = true")
-                    elif input_type == "checkbox":
-                        await field_element.evaluate(
-                            "(el, val) => el.checked = !!val",
-                            str_value,
-                        )
-                    elif input_type in ("hidden", "submit") or not is_visible:
-                        await field_element.evaluate(
-                            "(el, val) => el.value = val", str_value
-                        )
-                    else:
-                        await field_element.fill(str_value)
+            await self._fill_form_fields(form_element, form_via.field_data)
 
             # Click submit button, expecting a download instead of navigation
             if form_via.submit_selector:
@@ -1290,74 +1304,11 @@ class PlaywrightDriver(
             form_via = request.via
 
             # --- Phase 1: locate form and elements (structural) ---
-            try:
-                form_element = await page.wait_for_selector(
-                    form_via.form_selector, timeout=5000
-                )
-                if not form_element:
-                    raise HTMLStructuralAssumptionException(
-                        selector=form_via.form_selector,
-                        selector_type="form",
-                        description=f"Form selector not found: {form_via.form_selector}",
-                        expected_min=1,
-                        expected_max=1,
-                        actual_count=0,
-                        request_url=request.request.url,
-                    )
-            except PlaywrightTimeoutError as e:
-                raise HTMLStructuralAssumptionException(
-                    selector=form_via.form_selector,
-                    selector_type="form",
-                    description=f"Form selector timeout: {form_via.form_selector}",
-                    expected_min=1,
-                    expected_max=1,
-                    actual_count=0,
-                    request_url=request.request.url,
-                ) from e
+            form_element = await self._wait_for_required_element(
+                page, form_via.form_selector, "form", request.request.url
+            )
 
-            # Fill form fields
-            for field_name, field_value in form_via.field_data.items():
-                # Locate field relative to form
-                field_selector = f'[name="{field_name}"]'
-                field_element = await form_element.query_selector(
-                    field_selector
-                )
-                if field_element:
-                    tag = await field_element.evaluate(
-                        "el => el.tagName.toLowerCase()"
-                    )
-                    input_type = await field_element.get_attribute("type")
-                    is_visible = await field_element.is_visible()
-                    str_value = str(field_value)
-
-                    if tag == "select":
-                        await field_element.select_option(value=str_value)
-                    elif input_type == "radio":
-                        # Check the matching radio in the group
-                        radio = await form_element.query_selector(
-                            f'[name="{field_name}"][value="{str_value}"]'
-                        )
-                        if radio:
-                            await radio.evaluate("(el) => el.checked = true")
-                    elif input_type == "checkbox":
-                        await field_element.evaluate(
-                            "(el, val) => el.checked = !!val",
-                            str_value,
-                        )
-                    elif input_type in ("hidden", "submit"):
-                        await field_element.evaluate(
-                            "(el, val) => el.value = val",
-                            str_value,
-                        )
-                    elif not is_visible:
-                        # Invisible but not type=hidden (e.g. 1x1px
-                        # Telerik RadDatePicker parent inputs)
-                        await field_element.evaluate(
-                            "(el, val) => el.value = val",
-                            str_value,
-                        )
-                    else:
-                        await field_element.fill(str_value)
+            await self._fill_form_fields(form_element, form_via.field_data)
 
             # --- Phase 2: submit and navigate (transient on timeout) ---
             if form_via.submit_selector:
@@ -1413,30 +1364,9 @@ class PlaywrightDriver(
             link_via = request.via
 
             # --- Phase 1: locate link element (structural) ---
-            try:
-                link_element = await page.wait_for_selector(
-                    link_via.selector, timeout=5000
-                )
-                if not link_element:
-                    raise HTMLStructuralAssumptionException(
-                        selector=link_via.selector,
-                        selector_type="link",
-                        description=f"Link selector not found: {link_via.selector}",
-                        expected_min=1,
-                        expected_max=1,
-                        actual_count=0,
-                        request_url=request.request.url,
-                    )
-            except PlaywrightTimeoutError as e:
-                raise HTMLStructuralAssumptionException(
-                    selector=link_via.selector,
-                    selector_type="link",
-                    description=f"Link selector timeout: {link_via.selector}",
-                    expected_min=1,
-                    expected_max=1,
-                    actual_count=0,
-                    request_url=request.request.url,
-                ) from e
+            link_element = await self._wait_for_required_element(
+                page, link_via.selector, "link", request.request.url
+            )
 
             # --- Phase 2: click and navigate (transient on timeout) ---
             # Navigation timeouts propagate to _process_regular_request
