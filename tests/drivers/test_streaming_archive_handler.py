@@ -150,3 +150,25 @@ class TestAsyncStreamingLayout:
         )
 
         assert Path(path) == tmp_path / f"{sha}.pdf"
+
+    async def test_tempfile_cleaned_up_on_stream_error(
+        self, tmp_path: Path
+    ) -> None:
+        handler = LocalAsyncStreamingArchiveHandler(tmp_path)
+
+        async def _boom() -> AsyncIterator[bytes]:
+            yield b"first"
+            raise RuntimeError("stream exploded")
+
+        with pytest.raises(RuntimeError, match="stream exploded"):
+            await handler.save_stream(
+                url="u",
+                deduplication_key="k",
+                expected_type="pdf",
+                hash_header_value=None,
+                chunks=_boom(),
+            )
+
+        dedup_dir = tmp_path / "k"
+        # Neither a final file nor a stray .tmp file should remain.
+        assert not dedup_dir.exists() or list(dedup_dir.iterdir()) == []

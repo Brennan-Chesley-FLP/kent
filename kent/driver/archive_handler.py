@@ -11,12 +11,13 @@ implementations for different archive strategies:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import tempfile
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.parse import urlparse
 
 from kent.data_types import ArchiveDecision
@@ -98,6 +99,39 @@ def _filename_from_url(url: str, expected_type: str | None) -> str:
     return f"download_{hash(url)}{ext}"
 
 
+def _existing_dedup_file(dedup_dir: Path) -> Path | None:
+    """Return the first file in ``dedup_dir`` if it exists and is non-empty."""
+    if not dedup_dir.is_dir():
+        return None
+    try:
+        return next(iter(dedup_dir.iterdir()))
+    except StopIteration:
+        return None
+
+
+def _write_local_file(
+    storage_dir: Path,
+    deduplication_key: str | None,
+    filename: str,
+    content: bytes,
+) -> Path:
+    """Write ``content`` under the local storage directory and return the path."""
+    if deduplication_key:
+        target_dir = storage_dir / deduplication_key
+        target_dir.mkdir(parents=True, exist_ok=True)
+        file_path = target_dir / filename
+    else:
+        file_path = storage_dir / filename
+    file_path.write_bytes(content)
+    return file_path
+
+
+def _hash_and_write(sha: Any, tmp: Any, chunk: bytes) -> None:
+    """Update a running hash and write ``chunk`` in a single thread dispatch."""
+    sha.update(chunk)
+    tmp.write(chunk)
+
+
 class NoDownloadsSyncArchiveHandler:
     """Always skips downloads. Replaces skip_archive=True for SyncDriver."""
 
@@ -159,8 +193,8 @@ class LocalSyncArchiveHandler:
     ) -> ArchiveDecision:
         if deduplication_key:
             dedup_dir = self.storage_dir / deduplication_key
-            if dedup_dir.is_dir() and any(dedup_dir.iterdir()):
-                existing = next(dedup_dir.iterdir())
+            existing = _existing_dedup_file(dedup_dir)
+            if existing is not None:
                 return ArchiveDecision(download=False, file_url=str(existing))
         return ArchiveDecision(download=True)
 
@@ -173,13 +207,9 @@ class LocalSyncArchiveHandler:
         content: bytes,
     ) -> str:
         filename = _filename_from_url(url, expected_type)
-        if deduplication_key:
-            target_dir = self.storage_dir / deduplication_key
-            target_dir.mkdir(parents=True, exist_ok=True)
-            file_path = target_dir / filename
-        else:
-            file_path = self.storage_dir / filename
-        file_path.write_bytes(content)
+        file_path = _write_local_file(
+            self.storage_dir, deduplication_key, filename, content
+        )
         return str(file_path)
 
 
@@ -198,8 +228,8 @@ class LocalAsyncArchiveHandler:
     ) -> ArchiveDecision:
         if deduplication_key:
             dedup_dir = self.storage_dir / deduplication_key
-            if dedup_dir.is_dir() and any(dedup_dir.iterdir()):
-                existing = next(dedup_dir.iterdir())
+            existing = await asyncio.to_thread(_existing_dedup_file, dedup_dir)
+            if existing is not None:
                 return ArchiveDecision(download=False, file_url=str(existing))
         return ArchiveDecision(download=True)
 
@@ -212,13 +242,13 @@ class LocalAsyncArchiveHandler:
         content: bytes,
     ) -> str:
         filename = _filename_from_url(url, expected_type)
-        if deduplication_key:
-            target_dir = self.storage_dir / deduplication_key
-            target_dir.mkdir(parents=True, exist_ok=True)
-            file_path = target_dir / filename
-        else:
-            file_path = self.storage_dir / filename
-        file_path.write_bytes(content)
+        file_path = await asyncio.to_thread(
+            _write_local_file,
+            self.storage_dir,
+            deduplication_key,
+            filename,
+            content,
+        )
         return str(file_path)
 
 
@@ -292,8 +322,8 @@ class LocalSyncStreamingArchiveHandler:
     ) -> ArchiveDecision:
         if deduplication_key:
             dedup_dir = self.storage_dir / deduplication_key
-            if dedup_dir.is_dir() and any(dedup_dir.iterdir()):
-                existing = next(dedup_dir.iterdir())
+            existing = _existing_dedup_file(dedup_dir)
+            if existing is not None:
                 return ArchiveDecision(download=False, file_url=str(existing))
         return ArchiveDecision(download=True)
 
@@ -358,8 +388,8 @@ class LocalAsyncStreamingArchiveHandler:
     ) -> ArchiveDecision:
         if deduplication_key:
             dedup_dir = self.storage_dir / deduplication_key
-            if dedup_dir.is_dir() and any(dedup_dir.iterdir()):
-                existing = next(dedup_dir.iterdir())
+            existing = await asyncio.to_thread(_existing_dedup_file, dedup_dir)
+            if existing is not None:
                 return ArchiveDecision(download=False, file_url=str(existing))
         return ArchiveDecision(download=True)
 
@@ -376,25 +406,33 @@ class LocalAsyncStreamingArchiveHandler:
             if deduplication_key
             else self.storage_dir
         )
-        target_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(target_dir.mkdir, parents=True, exist_ok=True)
 
         sha = hashlib.sha256()
-        tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115 (rename-then-close)
-            dir=target_dir, delete=False, prefix=".stream-", suffix=".tmp"
+        tmp = await asyncio.to_thread(
+            tempfile.NamedTemporaryFile,  # noqa: SIM115 (rename-then-close)
+            dir=target_dir,
+            delete=False,
+            prefix=".stream-",
+            suffix=".tmp",
         )
         try:
-            with tmp as f:
+            try:
                 async for chunk in chunks:
-                    sha.update(chunk)
-                    f.write(chunk)
-            final_path = _streaming_target_path(
+                    await asyncio.to_thread(_hash_and_write, sha, tmp, chunk)
+            finally:
+                await asyncio.to_thread(tmp.close)
+            final_path = await asyncio.to_thread(
+                _streaming_target_path,
                 self.storage_dir,
                 deduplication_key,
                 sha.hexdigest(),
                 expected_type,
             )
-            os.replace(tmp.name, final_path)
+            await asyncio.to_thread(os.replace, tmp.name, final_path)
         except BaseException:
+            # Best-effort cleanup — use sync os.unlink so this stays safe
+            # under cancellation (an await here could itself be cancelled).
             try:
                 os.unlink(tmp.name)
             except OSError:
