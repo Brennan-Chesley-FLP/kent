@@ -109,6 +109,7 @@ def render_output(
     format_type: str = "default",
     template_path: str,
     template_name: str = "default",
+    fallback_template_path: str | None = None,
 ) -> None:
     """Render command output.
 
@@ -121,6 +122,10 @@ def render_output(
             e.g. ``"requests/list"``.
         template_name: Template file stem.  Defaults to ``"default"``.
             Overridden by ``--template`` on the CLI.
+        fallback_template_path: Optional alternate template path used
+            when ``template_path`` resolves no template.  Useful for
+            commands that offer a generic renderer as a safety net
+            (``pdd query``).
     """
     if format_type == "json":
         click.echo(json.dumps(data, indent=2, default=str))
@@ -143,9 +148,21 @@ def render_output(
     try:
         template = env.get_template(tpl_file)
     except jinja2.TemplateNotFound:
-        click.echo(f"[template not found: {tpl_file}]", err=True)
-        click.echo(json.dumps(data, indent=2, default=str))
-        return
+        if fallback_template_path is not None:
+            fb = f"{fallback_template_path}/{template_name}.jinja2"
+            try:
+                template = env.get_template(fb)
+            except jinja2.TemplateNotFound:
+                click.echo(
+                    f"[template not found: {tpl_file} (fallback: {fb})]",
+                    err=True,
+                )
+                click.echo(json.dumps(data, indent=2, default=str))
+                return
+        else:
+            click.echo(f"[template not found: {tpl_file}]", err=True)
+            click.echo(json.dumps(data, indent=2, default=str))
+            return
 
     rendered = template.render(data=data)
     click.echo(rendered)

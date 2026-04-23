@@ -171,6 +171,7 @@ Commands:
   help-all                Show help for all commands and subcommands.
   incidental              Inspect incidental requests (browser-initiated...
   info                    Show run metadata and statistics.
+  query                   Run parameterized SQL queries against a scraper...
   requests                Inspect and manipulate requests.
   responses               Inspect responses.
   results                 Inspect and export results.
@@ -677,6 +678,58 @@ Options:
   --format [default|json|jsonl]  Output format
   --template TEXT                Template name
   --help                         Show this message and exit.
+```
+
+## pdd query
+
+```
+Usage: pdd query [OPTIONS] COMMAND [ARGS]...
+
+  Run parameterized SQL queries against a scraper run DB.
+
+  Examples:
+      pdd query list
+      pdd query <name> --db run.db --query-params '{"step": "parse"}'
+      pdd query --query ./adhoc.json --db run.db
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  list  List available queries.
+  run   Run a named or ad-hoc query.
+```
+
+### pdd query list
+
+```
+Usage: pdd query list [OPTIONS]
+
+  List available queries.
+
+Options:
+  --format [default|json|jsonl]  Output format
+  --template TEXT                Template name
+  --help                         Show this message and exit.
+```
+
+### pdd query run
+
+```
+Usage: pdd query run [OPTIONS] [NAME]
+
+  Run a named or ad-hoc query.
+
+Options:
+  --query FILE                   Run an ad-hoc query JSON file.
+  --query-params TEXT            JSON object mapping param names to values.
+  --force                        Bypass schema_version match check (with
+                                 warning).
+  --format [default|json|jsonl]  Output format
+  --template TEXT                Template name
+  --db PATH                      Path to the database file
+  --help                         Show this message and, if a query is
+                                 specified, its description.
 ```
 
 ## pdd requests

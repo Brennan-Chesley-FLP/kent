@@ -1,0 +1,17 @@
+{% from "_macros.jinja2" import section %}
+{{ section("Available queries") }}
+{% if data["items"] %}
+{% set name_w = 28 %}
+{% set source_w = 8 %}
+{{ "NAME" | ljust(name_w) }}  {{ "SOURCE" | ljust(source_w) }}  DESCRIPTION
+{{ '-' * (name_w + source_w + 40) }}
+{% for item in data["items"] %}
+{{ item.name | ljust(name_w) }}  {{ item.source | ljust(source_w) }}  {{ item.description }}
+{% endfor %}
+
+Total: {{ data.count }}
+{% else %}
+(no queries found)
+
+Drop query JSON files in ~/.config/kent/queries/ or add to the built-in set.
+{% endif %}

@@ -1,0 +1,6 @@
+{
+    "schema_version": 19,
+    "description": "List requests (id, status, url) for a given continuation (step name).",
+    "query": "SELECT id, status, url FROM requests WHERE continuation = :step ORDER BY id;",
+    "params": ["step"]
+}

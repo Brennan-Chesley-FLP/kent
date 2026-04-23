@@ -1,0 +1,20 @@
+{% from "_macros.jinja2" import section %}
+{{ section(data.name) }}
+{{ data.description }}
+{% if data.params %}
+Params: {{ data.params }}
+{% endif %}
+Schema version: {{ data.schema_version }}  Rows: {{ data.row_count }}
+
+{% if data.columns %}
+{% set col_width = 24 %}
+{% for col in data.columns %}{{ col | string | ljust(col_width) }}  {% endfor %}
+
+{{ '-' * (data.columns | length * (col_width + 2)) }}
+{% for row in data.rows %}
+{% for col in data.columns %}{{ row[col] | string | truncate_str(col_width) | ljust(col_width) }}  {% endfor %}
+
+{% endfor %}
+{% else %}
+(no columns returned)
+{% endif %}

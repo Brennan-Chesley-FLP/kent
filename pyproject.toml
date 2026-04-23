@@ -81,7 +81,7 @@ filterwarnings = [
 
 [tool.setuptools]
 [tool.setuptools.package-data]
-"kent" = ["**/*.jinja2", "**/*.html"]
+"kent" = ["**/*.jinja2", "**/*.html", "**/queries/*.json"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests*"]

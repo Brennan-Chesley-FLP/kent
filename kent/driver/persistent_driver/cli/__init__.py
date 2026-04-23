@@ -380,6 +380,9 @@ from kent.driver.persistent_driver.cli import (
     incidental as _incidental_mod,
 )
 from kent.driver.persistent_driver.cli import (
+    query as _query_mod,
+)
+from kent.driver.persistent_driver.cli import (
     requests as _requests_mod,
 )
 from kent.driver.persistent_driver.cli import (

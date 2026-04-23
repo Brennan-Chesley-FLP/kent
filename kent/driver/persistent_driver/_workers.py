@@ -488,7 +488,7 @@ class WorkerMixin:
                 # Decide whether to skip the rate limiter for this request.
                 bypass = getattr(request, "bypass_rate_limit", False)
                 archive_decision = None
-                if not bypass and getattr(request, "archive", False):
+                if getattr(request, "archive", False):
                     # Pre-check archive handler so skipped downloads
                     # don't consume a rate-limiter token.
                     dedup_key = (

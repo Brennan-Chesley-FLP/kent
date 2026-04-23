@@ -63,6 +63,34 @@ Follow this general approach, adapting to the specific issue:
 - Read the continuation methods directly in the source code to understand what
   XPath selectors are being used and what data is being extracted.
 
+### 8. Run parameterized SQL queries
+
+For investigations that don't map to a built-in subcommand, `pdd query` may be useful:
+
+- List what's available: `uv run pdd --db <path> query list`
+- Inspect a specific query: `uv run pdd query <name> --help` (prints
+  description, schema_version, required params)
+- Run a named query:
+  `uv run pdd --db <path> query <name> --query-params '{"step": "parse"}'`
+- Ad-hoc one-off from a JSON file:
+  `uv run pdd --db <path> query --query /tmp/foo.json --query-params '{...}'`
+
+Queries are JSON files at `~/.config/kent/queries/<name>.json` (user override)
+or shipped as built-ins. Each file declares:
+
+```json
+{
+    "schema_version": 19,
+    "description": "...",
+    "query": "SELECT ... WHERE x = :param ...",
+    "params": ["param"]
+}
+```
+
+The DB is opened read-only. `schema_version` must match the DB's current
+schema; `--force` overrides with a warning. Use `--format json` /
+`--format jsonl` for machine-readable output. The name `list` is reserved.
+
 ## Important Notes
 
 - The `--db` flag can go at any level: `pdd --db run.db errors list` or
