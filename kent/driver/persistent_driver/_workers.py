@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
     from kent.common.deferred_validation import DeferredValidation
     from kent.common.exceptions import (
-        HTMLStructuralAssumptionException,
+        ScraperAssumptionException,
     )
     from kent.data_types import ArchiveResponse
     from kent.driver.archive_handler import (
@@ -66,7 +66,7 @@ class WorkerMixin:
     on_progress: Callable[..., Awaitable[None]] | None
     on_invalid_data: Callable[[DeferredValidation], Awaitable[None]] | None
     on_structural_error: (
-        Callable[[HTMLStructuralAssumptionException], Awaitable[bool]] | None
+        Callable[[ScraperAssumptionException], Awaitable[bool]] | None
     )
 
     if TYPE_CHECKING:

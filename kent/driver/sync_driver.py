@@ -21,7 +21,6 @@ It evolves across the 29 steps of the design documentation.
 from __future__ import annotations
 
 import heapq
-import logging
 import threading
 from collections.abc import Callable, Generator
 from pathlib import Path
@@ -63,6 +62,7 @@ from kent.driver.archive_handler import (
     SyncArchiveHandler,
     SyncStreamingArchiveHandler,
 )
+from kent.driver.callbacks import log_and_validate_invalid_data
 
 __all__ = [
     "SpeculationState",
@@ -78,38 +78,7 @@ __all__ = [
 # Step 9: Data validation with on_invalid_data callback
 
 
-logger = logging.getLogger(__name__)
-
 ScraperReturnDatatype = TypeVar("ScraperReturnDatatype")
-
-
-def log_and_validate_invalid_data(data: DeferredValidation) -> None:
-    """Default callback for invalid data that logs validation errors.
-
-    This callback attempts to validate the data to get detailed error information,
-    then logs the validation failure at the error level.
-
-    Args:
-        data: DeferredValidation instance containing invalid data.
-    """
-    try:
-        # Attempt validation to get detailed error information
-        data.confirm()
-    except DataFormatAssumptionException as e:
-        # Log the validation failure with full context
-        error_summary = ", ".join(
-            f"{err['loc'][0]}: {err['msg']}" for err in e.errors
-        )
-        logger.error(
-            f"Data validation failed for model '{e.model_name}': {error_summary}",
-            extra={
-                "model_name": e.model_name,
-                "request_url": e.request_url,
-                "error_count": len(e.errors),
-                "errors": e.errors,
-                "failed_doc": e.failed_doc,
-            },
-        )
 
 
 class SyncDriver(SyncSpeculationSupport, Generic[ScraperReturnDatatype]):
@@ -166,10 +135,11 @@ class SyncDriver(SyncSpeculationSupport, Generic[ScraperReturnDatatype]):
             on_data: Optional callback invoked when ParsedData is yielded and validated. Useful for
                 persistence, logging, or other side effects. The callback receives the
                 unwrapped data from ParsedData.
-            on_structural_error: Optional callback invoked when HTMLStructuralAssumptionException
-                is raised during scraping. The callback receives the exception and should return
-                True to continue scraping or False to stop. If not provided, exceptions propagate
-                normally and stop the scraper.
+            on_structural_error: Optional callback invoked when a ScraperAssumptionException
+                (e.g. HTMLStructuralAssumptionException, or a DataFormatAssumptionException re-raised
+                from handle_data when on_invalid_data is unset) is raised during scraping. The
+                callback receives the exception and should return True to continue scraping or False
+                to stop. If not provided, exceptions propagate normally and stop the scraper.
             on_invalid_data: Optional callback invoked when data fails validation. If not provided,
                 invalid data is sent to on_data callback (if present), otherwise validation
                 exceptions propagate normally.

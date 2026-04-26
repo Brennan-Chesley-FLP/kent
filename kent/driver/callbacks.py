@@ -17,9 +17,44 @@ Example::
 """
 
 import json
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import TextIO
+
+from kent.common.deferred_validation import DeferredValidation
+from kent.common.exceptions import DataFormatAssumptionException
+
+logger = logging.getLogger(__name__)
+
+
+def log_and_validate_invalid_data(data: DeferredValidation) -> None:
+    """Default callback for invalid data that logs validation errors.
+
+    This callback attempts to validate the data to get detailed error information,
+    then logs the validation failure at the error level.
+
+    Args:
+        data: DeferredValidation instance containing invalid data.
+    """
+    try:
+        # Attempt validation to get detailed error information
+        data.confirm()
+    except DataFormatAssumptionException as e:
+        # Log the validation failure with full context
+        error_summary = ", ".join(
+            f"{err['loc'][0]}: {err['msg']}" for err in e.errors
+        )
+        logger.error(
+            f"Data validation failed for model '{e.model_name}': {error_summary}",
+            extra={
+                "model_name": e.model_name,
+                "request_url": e.request_url,
+                "error_count": len(e.errors),
+                "errors": e.errors,
+                "failed_doc": e.failed_doc,
+            },
+        )
 
 
 def save_to_jsonl_file(file_handle: TextIO) -> Callable[[dict], None]:

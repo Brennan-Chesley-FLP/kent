@@ -13,7 +13,6 @@ The AsyncDriver closely mirrors SyncDriver with three key differences:
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable, Generator
 from pathlib import Path
 from tempfile import gettempdir
@@ -26,9 +25,9 @@ from kent.common.deferred_validation import (
 )
 from kent.common.exceptions import (
     DataFormatAssumptionException,
-    HTMLStructuralAssumptionException,
     RequestFailedHalt,
     RequestFailedSkip,
+    ScraperAssumptionException,
     TransientException,
 )
 from kent.common.request_manager import (
@@ -57,39 +56,11 @@ from kent.driver.archive_handler import (
     AsyncStreamingArchiveHandler,
     LocalAsyncArchiveHandler,
 )
+from kent.driver.callbacks import log_and_validate_invalid_data
 
-logger = logging.getLogger(__name__)
+__all__ = ["AsyncDriver", "log_and_validate_invalid_data"]
 
 ScraperReturnDatatype = TypeVar("ScraperReturnDatatype")
-
-
-def log_and_validate_invalid_data(data: DeferredValidation) -> None:
-    """Default callback for invalid data that logs validation errors.
-
-    This callback attempts to validate the data to get detailed error information,
-    then logs the validation failure at the error level.
-
-    Args:
-        data: DeferredValidation instance containing invalid data.
-    """
-    try:
-        # Attempt validation to get detailed error information
-        data.confirm()
-    except DataFormatAssumptionException as e:
-        # Log the validation failure with full context
-        error_summary = ", ".join(
-            f"{err['loc'][0]}: {err['msg']}" for err in e.errors
-        )
-        logger.error(
-            f"Data validation failed for model '{e.model_name}': {error_summary}",
-            extra={
-                "model_name": e.model_name,
-                "request_url": e.request_url,
-                "error_count": len(e.errors),
-                "errors": e.errors,
-                "failed_doc": e.failed_doc,
-            },
-        )
 
 
 class AsyncDriver(AsyncSpeculationSupport, Generic[ScraperReturnDatatype]):
@@ -120,7 +91,7 @@ class AsyncDriver(AsyncSpeculationSupport, Generic[ScraperReturnDatatype]):
         ]
         | None = None,
         on_structural_error: Callable[
-            [HTMLStructuralAssumptionException], Awaitable[bool]
+            [ScraperAssumptionException], Awaitable[bool]
         ]
         | None = None,
         on_invalid_data: Callable[[DeferredValidation], Awaitable[None]]
@@ -149,10 +120,11 @@ class AsyncDriver(AsyncSpeculationSupport, Generic[ScraperReturnDatatype]):
             on_data: Optional async callback invoked when ParsedData is yielded and validated. Useful
                 for persistence, logging, or other side effects. The callback receives the
                 unwrapped data from ParsedData.
-            on_structural_error: Optional async callback invoked when HTMLStructuralAssumptionException
-                is raised during scraping. The callback receives the exception and should return
-                True to continue scraping or False to stop. If not provided, exceptions propagate
-                normally and stop the scraper.
+            on_structural_error: Optional async callback invoked when a ScraperAssumptionException
+                (e.g. HTMLStructuralAssumptionException, or a DataFormatAssumptionException re-raised
+                from handle_data when on_invalid_data is unset) is raised during scraping. The
+                callback receives the exception and should return True to continue scraping or False
+                to stop. If not provided, exceptions propagate normally and stop the scraper.
             on_invalid_data: Optional async callback invoked when data fails validation. If not
                 provided, invalid data is sent to on_data callback (if present), otherwise validation
                 exceptions propagate normally.
@@ -623,8 +595,10 @@ class AsyncDriver(AsyncSpeculationSupport, Generic[ScraperReturnDatatype]):
                         pass
                     case _:
                         assert_never(item)
-        except HTMLStructuralAssumptionException as e:
-            # Handle structural errors via callback
+        except ScraperAssumptionException as e:
+            # Handle structural errors via callback. Catches the parent class
+            # so that DataFormatAssumptionException re-raised from handle_data
+            # (when on_invalid_data is unset) falls back to on_structural_error.
             if self.on_structural_error:
                 should_continue = await self.on_structural_error(e)
                 if not should_continue:
