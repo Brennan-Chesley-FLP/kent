@@ -12,6 +12,7 @@ Key behaviors tested:
 - Integration with archive Request/ArchiveResponse flow
 """
 
+import hashlib
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,12 @@ from kent.driver.archive_handler import (
 )
 from kent.driver.sync_driver import SyncDriver
 from tests.utils import collect_results, collect_results_async
+
+
+def _dedup_path(storage_dir: Path, key: str) -> Path:
+    """Mirror of the handler's nested dedup-dir layout."""
+    sha = hashlib.sha256(key.encode()).hexdigest()
+    return storage_dir / sha[:2] / sha[2:4] / key
 
 
 class TestLocalArchiveHandler:
@@ -143,7 +150,7 @@ class TestLocalArchiveHandler:
     ) -> None:
         """shall download when deduplication_key dir exists but is empty."""
         handler = LocalSyncArchiveHandler(tmp_path)
-        (tmp_path / "case-123").mkdir()
+        _dedup_path(tmp_path, "case-123").mkdir(parents=True)
         decision = handler.should_download(
             url="http://example.com/file.pdf",
             deduplication_key="case-123",
@@ -157,8 +164,8 @@ class TestLocalArchiveHandler:
     ) -> None:
         """shall skip download when deduplication_key dir has files."""
         handler = LocalSyncArchiveHandler(tmp_path)
-        dedup_dir = tmp_path / "case-123"
-        dedup_dir.mkdir()
+        dedup_dir = _dedup_path(tmp_path, "case-123")
+        dedup_dir.mkdir(parents=True)
         existing_file = dedup_dir / "abc123.pdf"
         existing_file.write_bytes(b"existing content")
 

@@ -1,9 +1,10 @@
 """Tests for the default streaming archive handlers' filename scheme.
 
 The sync and async ``LocalStreamingArchiveHandler`` variants write files
-to ``{storage_dir}/{deduplication_key}/{sha256}.{expected_type}`` by
-default. These tests lock in that layout and confirm the hashing +
-atomic-rename plumbing.
+to ``{storage_dir}/{xx}/{yy}/{deduplication_key}/{sha256}.{expected_type}``
+by default, where ``xx`` and ``yy`` are the first two pairs of hex digits
+of the SHA-256 of the deduplication key. These tests lock in that layout
+and confirm the hashing + atomic-rename plumbing.
 """
 
 from __future__ import annotations
@@ -30,6 +31,12 @@ async def _aiter(chunks: list[bytes]) -> AsyncIterator[bytes]:
         yield c
 
 
+def _dedup_path(storage_dir: Path, key: str) -> Path:
+    """Mirror of the handler's nested dedup-dir layout."""
+    sha = hashlib.sha256(key.encode()).hexdigest()
+    return storage_dir / sha[:2] / sha[2:4] / key
+
+
 class TestSyncStreamingLayout:
     def test_dedup_key_and_expected_type(self, tmp_path: Path) -> None:
         handler = LocalSyncStreamingArchiveHandler(tmp_path)
@@ -44,7 +51,7 @@ class TestSyncStreamingLayout:
             chunks=iter(_iter_chunks(payload)),
         )
 
-        expected = tmp_path / "case-123" / f"{sha}.pdf"
+        expected = _dedup_path(tmp_path, "case-123") / f"{sha}.pdf"
         assert Path(path) == expected
         assert expected.read_bytes() == payload
 
@@ -76,9 +83,10 @@ class TestSyncStreamingLayout:
             chunks=iter([payload]),
         )
 
-        assert Path(path) == tmp_path / "dedup" / sha
+        dedup_dir = _dedup_path(tmp_path, "dedup")
+        assert Path(path) == dedup_dir / sha
         # No leftover ``.tmp`` files.
-        assert [p.name for p in (tmp_path / "dedup").iterdir()] == [sha]
+        assert [p.name for p in dedup_dir.iterdir()] == [sha]
 
     def test_sha_computed_across_chunks(self, tmp_path: Path) -> None:
         """The SHA is built incrementally from every chunk, not just one."""
@@ -113,7 +121,7 @@ class TestSyncStreamingLayout:
                 chunks=_boom(),
             )
 
-        dedup_dir = tmp_path / "k"
+        dedup_dir = _dedup_path(tmp_path, "k")
         # Neither a final file nor a stray .tmp file should remain.
         assert not dedup_dir.exists() or list(dedup_dir.iterdir()) == []
 
@@ -132,7 +140,7 @@ class TestAsyncStreamingLayout:
             chunks=_aiter(_iter_chunks(payload)),
         )
 
-        expected = tmp_path / "case-99" / f"{sha}.audio"
+        expected = _dedup_path(tmp_path, "case-99") / f"{sha}.audio"
         assert Path(path) == expected
         assert expected.read_bytes() == payload
 
@@ -169,6 +177,6 @@ class TestAsyncStreamingLayout:
                 chunks=_boom(),
             )
 
-        dedup_dir = tmp_path / "k"
+        dedup_dir = _dedup_path(tmp_path, "k")
         # Neither a final file nor a stray .tmp file should remain.
         assert not dedup_dir.exists() or list(dedup_dir.iterdir()) == []

@@ -23,6 +23,18 @@ from urllib.parse import urlparse
 from kent.data_types import ArchiveDecision
 
 
+def _dedup_dir(storage_dir: Path, deduplication_key: str) -> Path:
+    """Return the nested storage subdirectory for a deduplication key.
+
+    Layout: ``{storage_dir}/{xx}/{yy}/{deduplication_key}``, where ``xx`` and
+    ``yy`` are the first two pairs of hex digits of the SHA-256 of the key.
+    The two-level fanout keeps any single directory from growing large
+    enough to trigger filesystem link-count limits.
+    """
+    sha = hashlib.sha256(deduplication_key.encode()).hexdigest()
+    return storage_dir / sha[:2] / sha[2:4] / deduplication_key
+
+
 def _streaming_target_path(
     storage_dir: Path,
     deduplication_key: str | None,
@@ -31,13 +43,16 @@ def _streaming_target_path(
 ) -> Path:
     """Assemble the final target path for a streamed download.
 
-    Layout: ``{storage_dir}/{deduplication_key}/{shasum}.{expected_type}``
-    (the ``deduplication_key`` segment is omitted when it's ``None`` and
-    the ``.{expected_type}`` suffix is omitted when ``expected_type`` is
-    ``None``). The parent directory is created as a side effect.
+    Layout: ``{storage_dir}/{xx}/{yy}/{deduplication_key}/{shasum}.{expected_type}``
+    (the ``{xx}/{yy}/{deduplication_key}`` segment is omitted when
+    ``deduplication_key`` is ``None`` and the ``.{expected_type}`` suffix
+    is omitted when ``expected_type`` is ``None``). The parent directory
+    is created as a side effect.
     """
     target_dir = (
-        storage_dir / deduplication_key if deduplication_key else storage_dir
+        _dedup_dir(storage_dir, deduplication_key)
+        if deduplication_key
+        else storage_dir
     )
     target_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{sha_hex}.{expected_type}" if expected_type else sha_hex
@@ -117,7 +132,7 @@ def _write_local_file(
 ) -> Path:
     """Write ``content`` under the local storage directory and return the path."""
     if deduplication_key:
-        target_dir = storage_dir / deduplication_key
+        target_dir = _dedup_dir(storage_dir, deduplication_key)
         target_dir.mkdir(parents=True, exist_ok=True)
         file_path = target_dir / filename
     else:
@@ -192,7 +207,7 @@ class LocalSyncArchiveHandler:
         hash_header_value: str | None,
     ) -> ArchiveDecision:
         if deduplication_key:
-            dedup_dir = self.storage_dir / deduplication_key
+            dedup_dir = _dedup_dir(self.storage_dir, deduplication_key)
             existing = _existing_dedup_file(dedup_dir)
             if existing is not None:
                 return ArchiveDecision(download=False, file_url=str(existing))
@@ -227,7 +242,7 @@ class LocalAsyncArchiveHandler:
         hash_header_value: str | None,
     ) -> ArchiveDecision:
         if deduplication_key:
-            dedup_dir = self.storage_dir / deduplication_key
+            dedup_dir = _dedup_dir(self.storage_dir, deduplication_key)
             existing = await asyncio.to_thread(_existing_dedup_file, dedup_dir)
             if existing is not None:
                 return ArchiveDecision(download=False, file_url=str(existing))
@@ -305,9 +320,9 @@ class LocalSyncStreamingArchiveHandler:
     Behaves like :class:`LocalSyncArchiveHandler` but writes chunks straight
     to disk instead of accepting a fully-buffered ``bytes`` payload. The
     default filename is content-addressed:
-    ``{storage_dir}/{deduplication_key}/{sha256}.{expected_type}``. Bytes
-    stream into a temp file alongside the final destination so the rename
-    is atomic once the full SHA-256 is known.
+    ``{storage_dir}/{xx}/{yy}/{deduplication_key}/{sha256}.{expected_type}``.
+    Bytes stream into a temp file alongside the final destination so the
+    rename is atomic once the full SHA-256 is known.
     """
 
     def __init__(self, storage_dir: Path) -> None:
@@ -321,7 +336,7 @@ class LocalSyncStreamingArchiveHandler:
         hash_header_value: str | None,
     ) -> ArchiveDecision:
         if deduplication_key:
-            dedup_dir = self.storage_dir / deduplication_key
+            dedup_dir = _dedup_dir(self.storage_dir, deduplication_key)
             existing = _existing_dedup_file(dedup_dir)
             if existing is not None:
                 return ArchiveDecision(download=False, file_url=str(existing))
@@ -336,7 +351,7 @@ class LocalSyncStreamingArchiveHandler:
         chunks: Iterator[bytes],
     ) -> str:
         target_dir = (
-            self.storage_dir / deduplication_key
+            _dedup_dir(self.storage_dir, deduplication_key)
             if deduplication_key
             else self.storage_dir
         )
@@ -373,7 +388,7 @@ class LocalAsyncStreamingArchiveHandler:
     """Async counterpart of :class:`LocalSyncStreamingArchiveHandler`.
 
     Same content-addressed filename scheme:
-    ``{storage_dir}/{deduplication_key}/{sha256}.{expected_type}``.
+    ``{storage_dir}/{xx}/{yy}/{deduplication_key}/{sha256}.{expected_type}``.
     """
 
     def __init__(self, storage_dir: Path) -> None:
@@ -387,7 +402,7 @@ class LocalAsyncStreamingArchiveHandler:
         hash_header_value: str | None,
     ) -> ArchiveDecision:
         if deduplication_key:
-            dedup_dir = self.storage_dir / deduplication_key
+            dedup_dir = _dedup_dir(self.storage_dir, deduplication_key)
             existing = await asyncio.to_thread(_existing_dedup_file, dedup_dir)
             if existing is not None:
                 return ArchiveDecision(download=False, file_url=str(existing))
@@ -402,7 +417,7 @@ class LocalAsyncStreamingArchiveHandler:
         chunks: AsyncIterator[bytes],
     ) -> str:
         target_dir = (
-            self.storage_dir / deduplication_key
+            _dedup_dir(self.storage_dir, deduplication_key)
             if deduplication_key
             else self.storage_dir
         )
