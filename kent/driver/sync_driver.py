@@ -37,6 +37,7 @@ from kent.common.exceptions import (
     ScraperAssumptionException,
     TransientException,
 )
+from kent.common.h11_patch import lenient_te_for
 from kent.common.request_manager import (
     SyncRequestManager,
 )
@@ -218,107 +219,109 @@ class SyncDriver(SyncSpeculationSupport, Generic[ScraperReturnDatatype]):
         collect results, use a callback that appends to a list (see
         tests/design/utils.py::collect_results for a helper function).
         """
+        with lenient_te_for(self.scraper):
+            # Step 14: Fire on_run_start callback
+            scraper_name = self.scraper.__class__.__name__
+            if self.on_run_start:
+                self.on_run_start(scraper_name)
 
-        # Step 14: Fire on_run_start callback
-        scraper_name = self.scraper.__class__.__name__
-        if self.on_run_start:
-            self.on_run_start(scraper_name)
+            status = "completed"
+            error: Exception | None = None
 
-        status = "completed"
-        error: Exception | None = None
+            try:
+                # Initialize priority queue with entry requests.
+                self.request_queue = []
+                for entry_request in self._get_entry_requests():
+                    heapq.heappush(
+                        self.request_queue,
+                        (
+                            entry_request.priority,
+                            self._queue_counter,
+                            entry_request,
+                        ),
+                    )
+                    self._queue_counter += 1
 
-        try:
-            # Initialize priority queue with entry requests.
-            self.request_queue = []
-            for entry_request in self._get_entry_requests():
-                heapq.heappush(
-                    self.request_queue,
-                    (
-                        entry_request.priority,
-                        self._queue_counter,
-                        entry_request,
-                    ),
-                )
-                self._queue_counter += 1
+                # Discover and seed speculative requests
+                self._speculation_state = self._discover_speculate_functions()
+                if self._speculation_state:
+                    self._seed_speculative_queue()
 
-            # Discover and seed speculative requests
-            self._speculation_state = self._discover_speculate_functions()
-            if self._speculation_state:
-                self._seed_speculative_queue()
+                while self.request_queue:
+                    # Check for graceful shutdown before processing next request
+                    if self.stop_event and self.stop_event.is_set():
+                        break
 
-            while self.request_queue:
-                # Check for graceful shutdown before processing next request
-                if self.stop_event and self.stop_event.is_set():
-                    break
+                    # Step 15: Pop from heap (lowest priority first)
+                    _priority, _counter, request = heapq.heappop(
+                        self.request_queue
+                    )
 
-                # Step 15: Pop from heap (lowest priority first)
-                _priority, _counter, request = heapq.heappop(
-                    self.request_queue
-                )
-
-                # Use match/case for exhaustive request type handling
-                match request:
-                    case Request():
-                        # Normal request flow
-                        # Step 10: Wrap request resolution to catch transient exceptions
-                        try:
-                            response: Response = (
-                                self.resolve_archive_request(request)
-                                if request.archive
-                                else self.resolve_request(request)
-                            )
-                        except TransientException as e:
-                            # Step 10: Handle transient errors via callback
-                            if self.on_transient_exception:
-                                should_continue = self.on_transient_exception(
-                                    e
+                    # Use match/case for exhaustive request type handling
+                    match request:
+                        case Request():
+                            # Normal request flow
+                            # Step 10: Wrap request resolution to catch transient exceptions
+                            try:
+                                response: Response = (
+                                    self.resolve_archive_request(request)
+                                    if request.archive
+                                    else self.resolve_request(request)
                                 )
-                                if not should_continue:
-                                    return
-                                continue
-                            else:
-                                raise
+                            except TransientException as e:
+                                # Step 10: Handle transient errors via callback
+                                if self.on_transient_exception:
+                                    should_continue = (
+                                        self.on_transient_exception(e)
+                                    )
+                                    if not should_continue:
+                                        return
+                                    continue
+                                else:
+                                    raise
 
-                        # Track speculation outcome if this is a speculative request
-                        if request.is_speculative:
-                            self._track_speculation_outcome(request, response)
+                            # Track speculation outcome if this is a speculative request
+                            if request.is_speculative:
+                                self._track_speculation_outcome(
+                                    request, response
+                                )
 
-                        # Handle Callable continuations (convert to string)
-                        continuation_name = (
-                            request.continuation
-                            if isinstance(request.continuation, str)
-                            else request.continuation.__name__
-                        )
+                            # Handle Callable continuations (convert to string)
+                            continuation_name = (
+                                request.continuation
+                                if isinstance(request.continuation, str)
+                                else request.continuation.__name__
+                            )
 
-                        continuation_method = self.scraper.get_continuation(
-                            continuation_name
-                        )
+                            continuation_method = (
+                                self.scraper.get_continuation(continuation_name)
+                            )
 
-                        # Process the generator
-                        gen = continuation_method(response)
-                        self._process_generator(gen, response, request)
+                            # Process the generator
+                            gen = continuation_method(response)
+                            self._process_generator(gen, response, request)
 
-                    case _:
-                        # Exhaustive match - should never reach here
-                        assert_never(request)  # type: ignore[arg-type]
+                        case _:
+                            # Exhaustive match - should never reach here
+                            assert_never(request)  # type: ignore[arg-type]
 
-        except Exception as e:
-            # Step 14: Capture error for on_run_complete
-            status = "error"
-            error = e
-            raise
-        finally:
-            # Close request manager if we own it
-            if self._owns_request_manager:
-                self.request_manager.close()
+            except Exception as e:
+                # Step 14: Capture error for on_run_complete
+                status = "error"
+                error = e
+                raise
+            finally:
+                # Close request manager if we own it
+                if self._owns_request_manager:
+                    self.request_manager.close()
 
-            # Step 14: Fire on_run_complete callback
-            if self.on_run_complete:
-                self.on_run_complete(
-                    scraper_name,
-                    status,
-                    error,
-                )
+                # Step 14: Fire on_run_complete callback
+                if self.on_run_complete:
+                    self.on_run_complete(
+                        scraper_name,
+                        status,
+                        error,
+                    )
 
     def enqueue_request(
         self, new_request: BaseRequest, context: Response | BaseRequest

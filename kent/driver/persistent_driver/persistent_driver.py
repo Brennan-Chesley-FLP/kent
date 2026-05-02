@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 from pyrate_limiter import Limiter, Rate
 
+from kent.common.h11_patch import lenient_te_for
 from kent.data_types import (
     BaseScraper,
     Request,
@@ -486,149 +487,154 @@ class PersistentDriver(
                 for graceful shutdown. Set to False when running in a context
                 that manages its own signal handling (e.g., FastAPI).
         """
-        if setup_signal_handlers:
-            self._setup_signal_handlers()
-
-        # Update run status to running
-        await self.db.update_run_status("running")
-
-        await self._emit_progress(
-            "run_started",
-            {
-                "scraper_name": self.scraper.__class__.__name__,
-            },
-        )
-
-        status = "completed"
-        error: Exception | None = None
-
-        try:
-            # Check for early stop before doing any work
-            if self.stop_event.is_set():
-                return
-
-            # Check if we need to seed the queue with entry point
-            has_requests = await self.db.has_any_requests()
-
-            # Load seed_params once (used for both entry and speculation filtering)
-            seed_params = await self.db.get_seed_params()
-
-            if not has_requests:
-                # Seed queue with entry points.
-                # If seed_params were stored (from web UI selection),
-                # use them to run the selected entries. initial_seed()
-                # handles both speculative and non-speculative entries:
-                # speculative entries store templates, non-speculative yield requests.
-                if seed_params is not None:
-                    if seed_params:
-                        entry_requests = self.scraper.initial_seed(seed_params)
-                    else:
-                        entry_requests = iter(())  # type: ignore[assignment]
-                else:
-                    entry_requests = self._get_entry_requests()
-                for entry_request in entry_requests:
-                    await self._enqueue_entry_request(entry_request)
-
-            # Discover @speculate functions and seed the queue
-            self._speculation_state = self._discover_speculate_functions()
-
-            # If seed_params specified, remove speculative entries
-            # that weren't selected in the web UI.
-            if seed_params is not None and self._speculation_state:
-                selected_entries = {
-                    name for inv in seed_params for name in inv
-                }
-                to_remove = [
-                    key
-                    for key, state in self._speculation_state.items()
-                    if state.base_func_name not in selected_entries
-                ]
-                for key in to_remove:
-                    del self._speculation_state[key]
-
-            if self._speculation_state:
-                # Load any persisted state from previous run
-                await self._load_speculation_state_from_db()
-                # Seed the queue with speculative requests
-                await self._seed_speculative_queue()
-
-            # Start initial workers
-            logger.info(
-                f"Starting {self.num_workers} initial workers (max: {self.max_workers})"
-            )
-            for _ in range(self.num_workers):
-                self._spawn_worker()
-
-            # Start the worker monitor for dynamic scaling (if enabled)
-            if self.enable_monitor:
-                self._monitor_task = asyncio.create_task(
-                    self._worker_monitor()
-                )
-
-            # Wait for all workers and monitor to complete
-            # Workers exit when queue is empty or stop_event is set
-            # Monitor exits when no workers remain and no pending work
-            while self._worker_tasks or (
-                self._monitor_task and not self._monitor_task.done()
-            ):
-                # Gather current tasks (workers + monitor if still running)
-                tasks_to_wait: list[asyncio.Task[None]] = list(
-                    self._worker_tasks.values()
-                )
-                if self._monitor_task and not self._monitor_task.done():
-                    tasks_to_wait.append(self._monitor_task)
-
-                if not tasks_to_wait:
-                    break
-
-                # Wait for any task to complete
-                done, _ = await asyncio.wait(
-                    tasks_to_wait,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-
-                # Check for exceptions in completed tasks
-                for task in done:
-                    if (
-                        task.exception() is not None
-                        and task is not self._monitor_task
-                    ):
-                        # Re-raise worker exceptions
-                        raise task.exception()  # type: ignore[misc]
-
-        except Exception as e:
-            status = "error"
-            error = e
-            raise
-        finally:
-            # Cancel monitor if still running
-            if self._monitor_task and not self._monitor_task.done():
-                self._monitor_task.cancel()
-                try:
-                    await self._monitor_task
-                except asyncio.CancelledError:
-                    pass
-
-            # Restore signal handlers if we set them up
+        # Must wrap the entire body: asyncio.Task snapshots context at
+        # create time, so the contextvar has to be set before workers spawn.
+        with lenient_te_for(self.scraper):
             if setup_signal_handlers:
-                self._restore_signal_handlers()
+                self._setup_signal_handlers()
 
-            # Update run metadata
-            final_status = (
-                "interrupted" if self.stop_event.is_set() else status
-            )
-            await self.db.finalize_run(
-                final_status, str(error) if error else None
-            )
+            # Update run status to running
+            await self.db.update_run_status("running")
 
             await self._emit_progress(
-                "run_completed",
+                "run_started",
                 {
                     "scraper_name": self.scraper.__class__.__name__,
-                    "status": final_status,
-                    "error": str(error) if error else None,
                 },
             )
+
+            status = "completed"
+            error: Exception | None = None
+
+            try:
+                # Check for early stop before doing any work
+                if self.stop_event.is_set():
+                    return
+
+                # Check if we need to seed the queue with entry point
+                has_requests = await self.db.has_any_requests()
+
+                # Load seed_params once (used for both entry and speculation filtering)
+                seed_params = await self.db.get_seed_params()
+
+                if not has_requests:
+                    # Seed queue with entry points.
+                    # If seed_params were stored (from web UI selection),
+                    # use them to run the selected entries. initial_seed()
+                    # handles both speculative and non-speculative entries:
+                    # speculative entries store templates, non-speculative yield requests.
+                    if seed_params is not None:
+                        if seed_params:
+                            entry_requests = self.scraper.initial_seed(
+                                seed_params
+                            )
+                        else:
+                            entry_requests = iter(())  # type: ignore[assignment]
+                    else:
+                        entry_requests = self._get_entry_requests()
+                    for entry_request in entry_requests:
+                        await self._enqueue_entry_request(entry_request)
+
+                # Discover @speculate functions and seed the queue
+                self._speculation_state = self._discover_speculate_functions()
+
+                # If seed_params specified, remove speculative entries
+                # that weren't selected in the web UI.
+                if seed_params is not None and self._speculation_state:
+                    selected_entries = {
+                        name for inv in seed_params for name in inv
+                    }
+                    to_remove = [
+                        key
+                        for key, state in self._speculation_state.items()
+                        if state.base_func_name not in selected_entries
+                    ]
+                    for key in to_remove:
+                        del self._speculation_state[key]
+
+                if self._speculation_state:
+                    # Load any persisted state from previous run
+                    await self._load_speculation_state_from_db()
+                    # Seed the queue with speculative requests
+                    await self._seed_speculative_queue()
+
+                # Start initial workers
+                logger.info(
+                    f"Starting {self.num_workers} initial workers (max: {self.max_workers})"
+                )
+                for _ in range(self.num_workers):
+                    self._spawn_worker()
+
+                # Start the worker monitor for dynamic scaling (if enabled)
+                if self.enable_monitor:
+                    self._monitor_task = asyncio.create_task(
+                        self._worker_monitor()
+                    )
+
+                # Wait for all workers and monitor to complete
+                # Workers exit when queue is empty or stop_event is set
+                # Monitor exits when no workers remain and no pending work
+                while self._worker_tasks or (
+                    self._monitor_task and not self._monitor_task.done()
+                ):
+                    # Gather current tasks (workers + monitor if still running)
+                    tasks_to_wait: list[asyncio.Task[None]] = list(
+                        self._worker_tasks.values()
+                    )
+                    if self._monitor_task and not self._monitor_task.done():
+                        tasks_to_wait.append(self._monitor_task)
+
+                    if not tasks_to_wait:
+                        break
+
+                    # Wait for any task to complete
+                    done, _ = await asyncio.wait(
+                        tasks_to_wait,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+
+                    # Check for exceptions in completed tasks
+                    for task in done:
+                        if (
+                            task.exception() is not None
+                            and task is not self._monitor_task
+                        ):
+                            # Re-raise worker exceptions
+                            raise task.exception()  # type: ignore[misc]
+
+            except Exception as e:
+                status = "error"
+                error = e
+                raise
+            finally:
+                # Cancel monitor if still running
+                if self._monitor_task and not self._monitor_task.done():
+                    self._monitor_task.cancel()
+                    try:
+                        await self._monitor_task
+                    except asyncio.CancelledError:
+                        pass
+
+                # Restore signal handlers if we set them up
+                if setup_signal_handlers:
+                    self._restore_signal_handlers()
+
+                # Update run metadata
+                final_status = (
+                    "interrupted" if self.stop_event.is_set() else status
+                )
+                await self.db.finalize_run(
+                    final_status, str(error) if error else None
+                )
+
+                await self._emit_progress(
+                    "run_completed",
+                    {
+                        "scraper_name": self.scraper.__class__.__name__,
+                        "status": final_status,
+                        "error": str(error) if error else None,
+                    },
+                )
 
     # --- Status ---
 

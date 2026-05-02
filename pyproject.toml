@@ -11,7 +11,11 @@ description = "Scraper-driver framework for structured web scraping"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "httpx[socks]>=0.28.1",
+    "httpx[socks,http2]>=0.28.1",
+    # Pinned: kent monkey-patches h11._headers.normalize_and_validate
+    # (gated on the H11_HEADER_FIXES driver requirement) and relies on
+    # h11's internal API. Bumps must re-verify the patch.
+    "h11==0.16.0",
     "lxml>=5.2",
     "pydantic>=2.12.5",
     "typing-extensions>=4.0.0",

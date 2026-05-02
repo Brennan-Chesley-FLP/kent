@@ -30,6 +30,7 @@ from kent.common.exceptions import (
     ScraperAssumptionException,
     TransientException,
 )
+from kent.common.h11_patch import lenient_te_for
 from kent.common.request_manager import (
     AsyncRequestManager,
 )
@@ -209,94 +210,97 @@ class AsyncDriver(AsyncSpeculationSupport, Generic[ScraperReturnDatatype]):
         collect results, use a callback that appends to a list (see
         tests/design/utils.py::collect_results for a helper function).
         """
+        # Must wrap the entire body: asyncio.Task snapshots context at
+        # create time, so the contextvar has to be set before workers spawn.
+        with lenient_te_for(self.scraper):
+            # Fire on_run_start callback
+            scraper_name = self.scraper.__class__.__name__
+            if self.on_run_start:
+                await self.on_run_start(scraper_name)
 
-        # Fire on_run_start callback
-        scraper_name = self.scraper.__class__.__name__
-        if self.on_run_start:
-            await self.on_run_start(scraper_name)
+            status = "completed"
+            error: Exception | None = None
 
-        status = "completed"
-        error: Exception | None = None
-
-        try:
-            # Check for early stop before doing any work
-            if self.stop_event and self.stop_event.is_set():
-                return
-
-            # Initialize priority queue with entry requests.
-            self.request_queue = asyncio.PriorityQueue()
-            self._queue_counter = 0
-            for entry_request in self._get_entry_requests():
-                await self.request_queue.put(
-                    (
-                        entry_request.priority,
-                        self._queue_counter,
-                        entry_request,
-                    )
-                )
-                self._queue_counter += 1
-
-            # Discover and seed speculative requests
-            self._speculation_state = self._discover_speculate_functions()
-            if self._speculation_state:
-                await self._seed_speculative_queue()
-
-            # Start workers
-            workers = [
-                asyncio.create_task(self._worker(i))
-                for i in range(self.num_workers)
-            ]
-
-            # Wait for all items in the queue to be processed
-            # Use wait_for with periodic checks for stop_event
-            while True:
+            try:
+                # Check for early stop before doing any work
                 if self.stop_event and self.stop_event.is_set():
-                    # Stop requested - cancel workers and drain queue
-                    for worker in workers:
-                        worker.cancel()
-                    # Drain the queue to prevent join() from blocking
-                    while not self.request_queue.empty():
-                        try:
-                            self.request_queue.get_nowait()
-                            self.request_queue.task_done()
-                        except asyncio.QueueEmpty:
-                            break
-                    break
+                    return
 
-                try:
-                    await asyncio.wait_for(
-                        asyncio.shield(self.request_queue.join()), timeout=0.1
+                # Initialize priority queue with entry requests.
+                self.request_queue = asyncio.PriorityQueue()
+                self._queue_counter = 0
+                for entry_request in self._get_entry_requests():
+                    await self.request_queue.put(
+                        (
+                            entry_request.priority,
+                            self._queue_counter,
+                            entry_request,
+                        )
                     )
-                    # join() completed - all work is done
-                    break
-                except TimeoutError:
-                    # Check stop_event and continue waiting
-                    continue
+                    self._queue_counter += 1
 
-            # Cancel workers (they're waiting on the queue)
-            for worker in workers:
-                worker.cancel()
+                # Discover and seed speculative requests
+                self._speculation_state = self._discover_speculate_functions()
+                if self._speculation_state:
+                    await self._seed_speculative_queue()
 
-            # Wait for workers to finish cancellation
-            await asyncio.gather(*workers, return_exceptions=True)
+                # Start workers
+                workers = [
+                    asyncio.create_task(self._worker(i))
+                    for i in range(self.num_workers)
+                ]
 
-        except Exception as e:
-            # Capture error for on_run_complete
-            status = "error"
-            error = e
-            raise
-        finally:
-            # Close request manager if we own it
-            if self._owns_request_manager:
-                await self.request_manager.close()
+                # Wait for all items in the queue to be processed
+                # Use wait_for with periodic checks for stop_event
+                while True:
+                    if self.stop_event and self.stop_event.is_set():
+                        # Stop requested - cancel workers and drain queue
+                        for worker in workers:
+                            worker.cancel()
+                        # Drain the queue to prevent join() from blocking
+                        while not self.request_queue.empty():
+                            try:
+                                self.request_queue.get_nowait()
+                                self.request_queue.task_done()
+                            except asyncio.QueueEmpty:
+                                break
+                        break
 
-            # Fire on_run_complete callback
-            if self.on_run_complete:
-                await self.on_run_complete(
-                    scraper_name,
-                    status,
-                    error,
-                )
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(self.request_queue.join()),
+                            timeout=0.1,
+                        )
+                        # join() completed - all work is done
+                        break
+                    except TimeoutError:
+                        # Check stop_event and continue waiting
+                        continue
+
+                # Cancel workers (they're waiting on the queue)
+                for worker in workers:
+                    worker.cancel()
+
+                # Wait for workers to finish cancellation
+                await asyncio.gather(*workers, return_exceptions=True)
+
+            except Exception as e:
+                # Capture error for on_run_complete
+                status = "error"
+                error = e
+                raise
+            finally:
+                # Close request manager if we own it
+                if self._owns_request_manager:
+                    await self.request_manager.close()
+
+                # Fire on_run_complete callback
+                if self.on_run_complete:
+                    await self.on_run_complete(
+                        scraper_name,
+                        status,
+                        error,
+                    )
 
     async def _worker(self, worker_id: int) -> None:
         """Worker coroutine that processes requests from the queue.

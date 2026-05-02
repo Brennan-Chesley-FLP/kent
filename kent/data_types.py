@@ -81,6 +81,7 @@ class DriverRequirement(Enum):
         CHROME_ALIKE: Requires a Chrome-like browser profile.
         HCAP_HANDLER: Requires hCaptcha interstitial handling (auto-selects Playwright).
         RCAP_HANDLER: Requires reCAPTCHA interstitial handling (auto-selects Playwright).
+        H11_HEADER_FIXES: Loosen h11 response-header validation.
 
     FF_ALIKE and CHROME_ALIKE are mutually exclusive.
     """
@@ -90,6 +91,7 @@ class DriverRequirement(Enum):
     CHROME_ALIKE = "chrome_alike"
     HCAP_HANDLER = "hcap_handler"
     RCAP_HANDLER = "rcap_handler"
+    H11_HEADER_FIXES = "h11_header_fixes"
 
 
 @dataclass(frozen=True)
