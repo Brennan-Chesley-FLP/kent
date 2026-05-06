@@ -26,7 +26,12 @@ from kent.common.exceptions import (
     RequestTimeoutException,
     SpeculationHTTPFailure,
 )
-from kent.data_types import BaseRequest, BaseScraper, Response
+from kent.data_types import (
+    BaseRequest,
+    BaseScraper,
+    DriverRequirement,
+    Response,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -101,6 +106,14 @@ class AsyncStreamingResponse:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _wants_follow_redirects(
+    scraper: type[BaseScraper[Any]] | BaseScraper[Any],
+) -> bool:
+    return DriverRequirement.FOLLOW_REDIRECTS in getattr(
+        scraper, "driver_requirements", []
+    )
 
 
 def _merge_cookies_into_headers(
@@ -184,6 +197,7 @@ class SyncRequestManager:
         self._scraper: type[BaseScraper[Any]] | BaseScraper[Any] = (
             scraper if scraper is not None else BaseScraper
         )
+        self._follow_redirects = _wants_follow_redirects(self._scraper)
         self._limiter: Limiter | None = None
         self._alt_clients: dict[str, httpx.Client] = {}
         self._bypass_client: httpx.Client | None = None
@@ -322,6 +336,7 @@ class SyncRequestManager:
                 data=http_params.data  # type: ignore[arg-type]
                 if isinstance(http_params.data, dict)
                 else None,
+                follow_redirects=self._follow_redirects,
             )
         except httpx.TimeoutException:
             raise RequestTimeoutException(
@@ -382,6 +397,7 @@ class SyncRequestManager:
                 data=http_params.data  # type: ignore[arg-type]
                 if isinstance(http_params.data, dict)
                 else None,
+                follow_redirects=self._follow_redirects,
             ) as http_response:
                 _classify_and_raise(
                     self._scraper,
@@ -445,6 +461,7 @@ class AsyncRequestManager:
         self._scraper: type[BaseScraper[Any]] | BaseScraper[Any] = (
             scraper if scraper is not None else BaseScraper
         )
+        self._follow_redirects = _wants_follow_redirects(self._scraper)
         self._limiter: Limiter | None = None
         self._alt_clients: dict[str, httpx.AsyncClient] = {}
         self._bypass_client: httpx.AsyncClient | None = None
@@ -593,6 +610,7 @@ class AsyncRequestManager:
                 headers=headers,
                 content=content_param,
                 data=data_param,
+                follow_redirects=self._follow_redirects,
             )
         except httpx.TimeoutException:
             raise RequestTimeoutException(
@@ -656,6 +674,7 @@ class AsyncRequestManager:
                 headers=headers,
                 content=content_param,
                 data=data_param,
+                follow_redirects=self._follow_redirects,
             ) as http_response:
                 _classify_and_raise(
                     self._scraper,

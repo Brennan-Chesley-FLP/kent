@@ -82,6 +82,7 @@ class DriverRequirement(Enum):
         HCAP_HANDLER: Requires hCaptcha interstitial handling (auto-selects Playwright).
         RCAP_HANDLER: Requires reCAPTCHA interstitial handling (auto-selects Playwright).
         H11_HEADER_FIXES: Loosen h11 response-header validation.
+        FOLLOW_REDIRECTS: Have httpx follow 3xx redirects automatically.
 
     FF_ALIKE and CHROME_ALIKE are mutually exclusive.
     """
@@ -92,6 +93,7 @@ class DriverRequirement(Enum):
     HCAP_HANDLER = "hcap_handler"
     RCAP_HANDLER = "rcap_handler"
     H11_HEADER_FIXES = "h11_header_fixes"
+    FOLLOW_REDIRECTS = "follow_redirects"
 
 
 @dataclass(frozen=True)
