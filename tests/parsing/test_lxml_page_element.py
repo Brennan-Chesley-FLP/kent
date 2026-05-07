@@ -317,6 +317,89 @@ def test_find_form_raises_on_no_match(simple_page):
         simple_page.find_form("//form[@id='nonexistent']", "missing form")
 
 
+def _page_from_html(html_content: str, base_url: str = "https://example.com/"):
+    doc = html.fromstring(html_content)
+    checked = CheckedHtmlElement(doc, base_url)
+    return LxmlPageElement(checked, base_url)
+
+
+def test_unchecked_checkbox_with_value_is_omitted():
+    """Unchecked checkboxes must not appear in the submitted form data."""
+    page = _page_from_html(
+        '<form id="f" action="/x" method="post">'
+        '<input name="cb" type="checkbox" value="true" />'
+        "</form>"
+    )
+    form = page.find_form("//form[@id='f']", "f")
+
+    assert form.get_field("cb") is None
+    request = form.submit()
+    assert "cb" not in request.request.data
+
+
+def test_checked_checkbox_with_value_is_submitted():
+    """Checked checkboxes submit their explicit value attribute."""
+    page = _page_from_html(
+        '<form id="f" action="/x" method="post">'
+        '<input name="cb" type="checkbox" value="yes" checked />'
+        "</form>"
+    )
+    form = page.find_form("//form[@id='f']", "f")
+
+    field = form.get_field("cb")
+    assert field is not None
+    assert field.value == "yes"
+    request = form.submit()
+    assert request.request.data["cb"] == "yes"
+
+
+def test_checked_checkbox_without_value_defaults_to_on():
+    """Checked checkboxes without a value attribute submit as 'on'."""
+    page = _page_from_html(
+        '<form id="f" action="/x" method="post">'
+        '<input name="cb" type="checkbox" checked />'
+        "</form>"
+    )
+    form = page.find_form("//form[@id='f']", "f")
+
+    field = form.get_field("cb")
+    assert field is not None
+    assert field.value == "on"
+    request = form.submit()
+    assert request.request.data["cb"] == "on"
+
+
+def test_unchecked_checkbox_without_value_is_omitted():
+    """Unchecked checkboxes without a value attribute are still omitted."""
+    page = _page_from_html(
+        '<form id="f" action="/x" method="post">'
+        '<input name="cb" type="checkbox" />'
+        "</form>"
+    )
+    form = page.find_form("//form[@id='f']", "f")
+
+    assert form.get_field("cb") is None
+    request = form.submit()
+    assert "cb" not in request.request.data
+
+
+def test_mixed_checkboxes_only_checked_submitted():
+    """When two checkboxes share a name, only the checked one is submitted."""
+    page = _page_from_html(
+        '<form id="f" action="/x" method="post">'
+        '<input name="cb" type="checkbox" value="a" />'
+        '<input name="cb" type="checkbox" value="b" checked />'
+        "</form>"
+    )
+    form = page.find_form("//form[@id='f']", "f")
+
+    cb_fields = [f for f in form.fields if f.name == "cb"]
+    assert len(cb_fields) == 1
+    assert cb_fields[0].value == "b"
+    request = form.submit()
+    assert request.request.data["cb"] == "b"
+
+
 def test_query_count_validation(simple_page):
     """Query methods should validate count constraints."""
     # Too few

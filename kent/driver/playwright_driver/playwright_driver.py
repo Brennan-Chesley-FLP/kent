@@ -1200,9 +1200,17 @@ class PlaywrightDriver(
                 if radio:
                     await radio.evaluate("(el) => el.checked = true")
             elif input_type == "checkbox":
-                await field_element.evaluate(
-                    "(el, val) => el.checked = !!val", str_value
+                # When multiple checkboxes share a name, the value distinguishes
+                # them — find the matching one (mirroring the radio path).
+                checkbox = await form_element.query_selector(
+                    f'[name="{field_name}"][value="{str_value}"]'
                 )
+                if checkbox:
+                    await checkbox.evaluate("(el) => el.checked = true")
+                else:
+                    await field_element.evaluate(
+                        "(el, val) => el.checked = !!val", str_value
+                    )
             elif input_type in ("hidden", "submit") or not is_visible:
                 # Invisible-but-not-type=hidden covers e.g. 1x1px
                 # Telerik RadDatePicker parent inputs; fill() requires

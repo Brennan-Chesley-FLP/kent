@@ -248,12 +248,17 @@ class LxmlPageElement:
             field_type = input_elem.get_attribute("type") or "text"
             value = input_elem.get_attribute("value")
 
-            # For radio buttons, only include the checked one
+            # Per HTML spec, unchecked radios/checkboxes contribute nothing to
+            # form submission; omit them so request bodies match real browsers.
             if (
-                field_type == "radio"
+                field_type in ("radio", "checkbox")
                 and input_elem.get_attribute("checked") is None
             ):
                 continue
+
+            # A checked checkbox without an explicit value submits as "on".
+            if field_type == "checkbox" and value is None:
+                value = "on"
 
             fields.append(
                 FormField(name=name, field_type=field_type, value=value)
