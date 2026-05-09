@@ -328,3 +328,13 @@ class RequestFailedHalt(Exception):
 
 class RequestFailedSkip(Exception):
     pass
+
+
+class ScraperConfigError(PersistentException):
+    """Scraper or driver configuration is wrong in a way retrying won't fix.
+
+    Raised at run-time when a yield references a missing prep_method, when
+    a JSRequestPrep is yielded under an httpx-only driver, or when other
+    config invariants are violated. Persistent so the worker treats it as
+    a permanent failure for the parent request.
+    """

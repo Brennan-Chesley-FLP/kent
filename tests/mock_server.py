@@ -965,6 +965,93 @@ async def handle_same_url_search_post(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+async def handle_swizzle_page(request: web.Request) -> web.Response:
+    """GET /swizzle/page — exposes a JS-derivable token via window.
+
+    The token is a fixed string for tests. A page-side ``getSwizzleToken()``
+    helper returns it so a JSRequestPrep can extract it via
+    ``page.evaluate``.
+    """
+    html = """<html>
+<head><title>Swizzle</title></head>
+<body>
+    <h1>Swizzle page</h1>
+    <script>
+        window._kentSwizzleToken = "kent-test-token";
+        window.getSwizzleToken = () => window._kentSwizzleToken;
+    </script>
+</body>
+</html>"""
+    return web.Response(text=html, content_type="text/html")
+
+
+async def handle_swizzle_api(request: web.Request) -> web.Response:
+    """GET /swizzle/api — requires the swizzle token via header or query.
+
+    Accepts either ``X-Swizzled: kent-test-token`` (httpx-friendly) or
+    ``?swizzle=kent-test-token`` (Playwright-friendly, since
+    ``page.goto`` doesn't propagate per-request headers).
+    """
+    header_ok = request.headers.get("X-Swizzled") == "kent-test-token"
+    query_ok = request.query.get("swizzle") == "kent-test-token"
+    if not (header_ok or query_ok):
+        return web.json_response(
+            {"error": "missing or invalid swizzle token"}, status=403
+        )
+    return web.json_response({"swizzled": True})
+
+
+_CAPTCHA_ANSWERS: dict[str, str] = {"abc123": "twelve"}
+
+
+async def handle_captcha_page(request: web.Request) -> web.Response:
+    """GET /captcha/page — form gated on a captcha answer."""
+    token = "abc123"
+    html = f"""<html>
+<head><title>Captcha</title></head>
+<body>
+    <h1>Captcha page</h1>
+    <img src="/captcha/image/{token}" />
+    <form id="captcha-form" method="POST" action="/captcha/submit">
+        <input type="hidden" name="docket" value="C-1" />
+        <input type="hidden" name="captcha_token" value="{token}" />
+        <input type="text" name="captcha_answer" />
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>"""
+    return web.Response(text=html, content_type="text/html")
+
+
+async def handle_captcha_image(request: web.Request) -> web.Response:
+    """GET /captcha/image/{token} — returns canned image bytes."""
+    token = request.match_info["token"]
+    # The "image" is just the token bytes; the fake solver maps it to an answer.
+    return web.Response(body=token.encode(), content_type="image/png")
+
+
+async def handle_captcha_submit(request: web.Request) -> web.Response:
+    """POST /captcha/submit — accepts form, validates captcha_answer."""
+    data = await request.post()
+    token = data.get("captcha_token", "")
+    answer = data.get("captcha_answer", "")
+    expected = _CAPTCHA_ANSWERS.get(str(token))
+    if expected is None or answer != expected:
+        return web.json_response({"error": "captcha mismatch"}, status=403)
+    return web.json_response({"ok": True, "docket": str(data.get("docket"))})
+
+
+async def handle_fake_solver(request: web.Request) -> web.Response:
+    """POST /fake-solver — stub solver; takes image bytes, returns answer.
+
+    The body is the token bytes from /captcha/image; we look up its answer.
+    """
+    body = await request.read()
+    token = body.decode("utf-8", errors="ignore")
+    answer = _CAPTCHA_ANSWERS.get(token, "")
+    return web.json_response({"answer": answer})
+
+
 def create_app() -> web.Application:
     """Create the aiohttp application with all routes.
 
@@ -1000,6 +1087,13 @@ def create_app() -> web.Application:
     # Same-URL search (GET=form, POST=results) for unroute verification
     app.router.add_get("/same-url-search", handle_same_url_search_get)
     app.router.add_post("/same-url-search", handle_same_url_search_post)
+    # JSRequestPrep / HTTPRequestPrep test endpoints
+    app.router.add_get("/swizzle/page", handle_swizzle_page)
+    app.router.add_get("/swizzle/api", handle_swizzle_api)
+    app.router.add_get("/captcha/page", handle_captcha_page)
+    app.router.add_get("/captcha/image/{token}", handle_captcha_image)
+    app.router.add_post("/captcha/submit", handle_captcha_submit)
+    app.router.add_post("/fake-solver", handle_fake_solver)
 
     # Catch-all: any unmatched GET returns 200 with a placeholder body so
     # tests that hit arbitrary URLs (priority/stop/lifecycle suites) don't

@@ -58,6 +58,8 @@ __all__ = [
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable
 
+    from kent.preps import RequestPrepProvider
+
 logger = logging.getLogger(__name__)
 
 ScraperReturnDatatype = TypeVar("ScraperReturnDatatype")
@@ -122,6 +124,10 @@ class PersistentDriver(
             driver.on_progress = lambda e: print(e.to_json())
             await driver.run()
     """
+
+    # RequestPrep retry tunables. Operators override on subclass.
+    max_prep_retries: int = 3
+    prep_backoff_schedule: tuple[float, ...] = (1.0, 2.0, 4.0)
 
     def __init__(
         self,
@@ -203,6 +209,10 @@ class PersistentDriver(
         # Lock for speculation state updates from concurrent workers
         self._speculation_lock = asyncio.Lock()
 
+        # Driver-provided RequestPrep dispatch table, keyed by provider_name.
+        # Populated by ``open(request_preps=[...])``.
+        self._provided_preps: dict[str, Callable[..., Any]] = {}
+
     @classmethod
     async def _init_db(
         cls,
@@ -282,6 +292,17 @@ class PersistentDriver(
         custom_request_manager = kwargs.pop("request_manager", None)
         seed_params = kwargs.pop("seed_params", None)
         proxy = kwargs.pop("proxy", None)
+        request_preps: list[RequestPrepProvider] | None = kwargs.pop(
+            "request_preps", None
+        )
+
+        # Validate request_preps and build dispatch table. The httpx driver
+        # cannot host providers that require a live Playwright Page.
+        from kent.preps import build_provided_preps
+
+        provided_preps = build_provided_preps(
+            scraper, request_preps, allow_live_page_providers=False
+        )
 
         engine, sql_manager = await cls._init_db(
             scraper,
@@ -316,6 +337,7 @@ class PersistentDriver(
             rates=scraper.rate_limits,
             **kwargs,
         )
+        driver._provided_preps = provided_preps
 
         try:
             yield driver

@@ -526,6 +526,14 @@ class PlaywrightDriver(
         excluded_resource_types = kwargs.pop("excluded_resource_types", None)
         rates = kwargs.pop("rates", None)
         seed_params = kwargs.pop("seed_params", None)
+        request_preps = kwargs.pop("request_preps", None)
+
+        # Validate request_preps and build dispatch table.
+        from kent.preps import build_provided_preps
+
+        provided_preps = build_provided_preps(
+            scraper, request_preps, allow_live_page_providers=True
+        )
 
         # Default viewport
         if viewport is None:
@@ -669,6 +677,7 @@ class PlaywrightDriver(
                     excluded_resource_types=excluded_resource_types,
                     rates=effective_rates,
                 )
+                driver._provided_preps = provided_preps
 
                 # Store restart params for crash recovery (standard path only;
                 # persistent contexts leave these as None).

@@ -1,0 +1,135 @@
+"""Request-prep provider ABCs.
+
+Operators implement these to provide captcha solvers and similar preprocessors
+to the driver via ``Driver.open(request_preps=[...])``. Scraper code yields
+``JSRequestPrep`` / ``HTTPRequestPrep`` wrappers with ``prep_method="provided.X"``
+to dispatch to a registered provider.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from kent.data_types import BaseScraper, DriverRequirement
+
+if TYPE_CHECKING:
+    from playwright.async_api import Page
+
+    from kent.data_types import BaseRequest, Response
+
+
+class RequestPrepProvider(ABC):
+    """Marker base for anything that can register as a driver-provided prep.
+
+    Concrete subclasses (one per "kind" of prep — see ``HCaptchaSolver``,
+    ``ImageCaptchaSolver``) declare a stable ``provider_name`` and a
+    ``requires_live_page`` flag. Operators subclass the concrete kind to
+    provide an implementation; the namespace stays stable across operator
+    swaps because ``provider_name`` is on the kent-shipped ABC.
+    """
+
+    provider_name: ClassVar[str]
+    # When True, only drivers with a live Playwright Page can use this provider
+    # (httpx driver rejects them at open() time).
+    requires_live_page: ClassVar[bool] = False
+
+    # Concrete subclasses (HCaptchaSolver / ImageCaptchaSolver) declare the
+    # prep signature shape; an attribute reference here is enough for static
+    # callers like ``build_provided_preps``.
+    prep: Callable[..., Any]
+
+
+class HCaptchaSolver(RequestPrepProvider, ABC):
+    """JS-driven hCaptcha token producer.
+
+    The prep runs against the live parent page and is expected to call
+    ``page.evaluate(...)`` to obtain a token, then bake it into the
+    request's headers (or query string, as the operator chooses).
+    """
+
+    provider_name: ClassVar[str] = "hcaptcha_solver"
+    requires_live_page: ClassVar[bool] = True
+
+    @abstractmethod
+    async def prep(
+        self,
+        response: Response,
+        request: BaseRequest,
+        page: Page,
+    ) -> BaseRequest: ...
+
+
+class ImageCaptchaSolver(RequestPrepProvider, ABC):
+    """HTTP-driven image-captcha solver.
+
+    The prep fetches the captcha image, hands it to a paid solver service,
+    and bakes the answer into the form data of the inner Request.
+    """
+
+    provider_name: ClassVar[str] = "image_captcha_solver"
+    requires_live_page: ClassVar[bool] = False
+
+    @abstractmethod
+    async def prep(
+        self,
+        response: Response,
+        request: BaseRequest,
+        **kwargs: Any,
+    ) -> BaseRequest: ...
+
+
+# Map DriverRequirement enum members → provider_name. Used to validate at
+# Driver.open() time that any prep-related requirements declared by the
+# scraper are satisfied by something in ``request_preps=[]``.
+REQUIREMENT_TO_PROVIDED_PREP: dict[DriverRequirement, str] = {
+    DriverRequirement.HCAPTCHA_SOLVER: HCaptchaSolver.provider_name,
+    DriverRequirement.IMAGE_CAPTCHA_SOLVER: ImageCaptchaSolver.provider_name,
+}
+
+
+def build_provided_preps(
+    scraper: BaseScraper,
+    request_preps: list[RequestPrepProvider] | None,
+    *,
+    allow_live_page_providers: bool,
+) -> dict[str, Callable[..., Any]]:
+    """Build the ``provider_name → prep`` dispatch table for a driver.
+
+    Validates that:
+    - No two instances claim the same ``provider_name``
+    - When ``allow_live_page_providers`` is False, no provider has
+      ``requires_live_page=True`` (rejects JS-flavored providers under
+      the httpx driver)
+    - Every prep-related ``DriverRequirement`` declared by the scraper
+      is satisfied by a provider in the list
+
+    Raises:
+        ValueError: For any of the above violations.
+    """
+    provided: dict[str, Callable[..., Any]] = {}
+    for instance in request_preps or []:
+        name = instance.provider_name
+        if not allow_live_page_providers and instance.requires_live_page:
+            raise ValueError(
+                f"request_prep {type(instance).__name__!r} "
+                f"(provider_name={name!r}) requires a live Playwright Page "
+                f"and cannot be used with this driver"
+            )
+        if name in provided:
+            raise ValueError(
+                f"duplicate provider_name {name!r} among request_preps "
+                f"(at least two instances claim it)"
+            )
+        provided[name] = instance.prep
+
+    for req in scraper.driver_requirements:
+        key = REQUIREMENT_TO_PROVIDED_PREP.get(req)
+        if key and key not in provided:
+            raise ValueError(
+                f"scraper requires {req.name} but no request_prep with "
+                f"provider_name={key!r} was passed to open()"
+            )
+
+    return provided

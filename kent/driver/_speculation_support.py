@@ -96,9 +96,26 @@ def get_entry_requests(
     If ``seed_params`` is set, dispatches those via ``initial_seed()``.
     Otherwise builds default invocations from @entry-decorated methods.
     Falls back to ``get_entry()`` for scrapers without @entry decorators.
+
+    Entry steps cannot yield ``JSRequestPrep`` / ``HTTPRequestPrep`` —
+    preps need a parent response/page that doesn't exist yet — so we
+    validate each yield as it comes through.
     """
+    from kent.common.exceptions import ScraperConfigError
+    from kent.data_types import HTTPRequestPrep, JSRequestPrep
+
+    def _check(item: Any) -> Any:
+        if isinstance(item, JSRequestPrep | HTTPRequestPrep):
+            raise ScraperConfigError(
+                f"entry step yielded {type(item).__name__}; "
+                f"prep wrappers require a parent response and cannot be "
+                f"yielded from entry steps"
+            )
+        return item
+
     if seed_params is not None:
-        yield from scraper.initial_seed(seed_params)
+        for item in scraper.initial_seed(seed_params):
+            yield _check(item)
         return
     entries = scraper.list_entries()
     if entries:
@@ -107,9 +124,11 @@ def get_entry_requests(
             if not entry_info.speculative and not entry_info.param_types:
                 invocations.append({entry_info.name: {}})
         if invocations:
-            yield from scraper.initial_seed(invocations)
+            for item in scraper.initial_seed(invocations):
+                yield _check(item)
             return
-    yield from scraper.get_entry()
+    for item in scraper.get_entry():
+        yield _check(item)
 
 
 def build_speculative_request(
@@ -119,12 +138,21 @@ def build_speculative_request(
     n: int,
 ) -> BaseRequest:
     """Construct the speculative request for a given template ID."""
+    from kent.common.exceptions import ScraperConfigError
+    from kent.data_types import HTTPRequestPrep, JSRequestPrep
+
     func = getattr(scraper, spec_state.base_func_name)
     speculative_param = find_speculative_param(
         scraper, spec_state.base_func_name
     )
     concrete = spec_state.template.from_int(n)
     request = func(**{speculative_param: concrete})
+    if isinstance(request, JSRequestPrep | HTTPRequestPrep):
+        raise ScraperConfigError(
+            f"speculative step {spec_state.base_func_name!r} returned "
+            f"{type(request).__name__}; prep wrappers cannot be used "
+            f"with @speculate (no parent response/page exists)"
+        )
     return request.speculative(state_key, spec_state.param_index, n)
 
 

@@ -42,6 +42,8 @@ from kent.data_types import (
     EstimateData,
     HttpMethod,
     HTTPRequestParams,
+    HTTPRequestPrep,
+    JSRequestPrep,
     ParsedData,
     Request,
     Response,
@@ -613,6 +615,17 @@ class AsyncDriver(AsyncSpeculationSupport, Generic[ScraperReturnDatatype]):
                             functools.partial(
                                 self.enqueue_request, item, parent_request
                             )
+                        )
+                    case JSRequestPrep() | HTTPRequestPrep():
+                        # Preps are only supported by the persistent driver
+                        # path; the in-memory async driver doesn't have the
+                        # staging machinery to host them.
+                        from kent.common.exceptions import ScraperConfigError
+
+                        raise ScraperConfigError(
+                            f"{type(item).__name__} is not supported by "
+                            f"the in-memory AsyncDriver; use the persistent "
+                            f"driver (or a subclass thereof)"
                         )
                     case None:
                         pass

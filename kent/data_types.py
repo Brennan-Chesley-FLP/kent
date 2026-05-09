@@ -94,6 +94,8 @@ class DriverRequirement(Enum):
     RCAP_HANDLER = "rcap_handler"
     H11_HEADER_FIXES = "h11_header_fixes"
     FOLLOW_REDIRECTS = "follow_redirects"
+    HCAPTCHA_SOLVER = "hcaptcha_solver"
+    IMAGE_CAPTCHA_SOLVER = "image_captcha_solver"
 
 
 @dataclass(frozen=True)
@@ -1280,12 +1282,68 @@ class ArchiveDecision:
 
 
 # =============================================================================
+# Request preparation wrappers
+# =============================================================================
+
+
+class HTTPRequestPrep:
+    """Wraps a Request with an httpx-driven preprocessor that runs at yield time.
+
+    The prep callable receives ``(response, request, **kwargs)`` and returns
+    the modified Request that actually enters the queue.
+    """
+
+    __slots__ = ("request", "prep_method", "kwargs")
+
+    def __init__(
+        self,
+        request: BaseRequest,
+        *,
+        prep_method: str,
+        **kwargs: Any,
+    ) -> None:
+        self.request = request
+        self.prep_method = prep_method
+        self.kwargs = kwargs
+
+
+class JSRequestPrep:
+    """Wraps a Request with a Playwright-driven preprocessor.
+
+    The prep callable receives ``(response, request, page, **kwargs)`` —
+    ``page`` is the live parent page so the prep can call ``page.evaluate``
+    against an already-loaded DOM.
+    """
+
+    __slots__ = ("request", "prep_method", "kwargs")
+
+    def __init__(
+        self,
+        request: BaseRequest,
+        *,
+        prep_method: str,
+        **kwargs: Any,
+    ) -> None:
+        self.request = request
+        self.prep_method = prep_method
+        self.kwargs = kwargs
+
+
+# =============================================================================
 # Type Alias for Scraper Yields
 # =============================================================================
 
-# A scraper can yield ParsedData, EstimateData, Request, or None.
-# This type alias enables exhaustive pattern matching in the driver.
-ScraperYield = ParsedData[T] | EstimateData | Request | None
+# A scraper can yield ParsedData, EstimateData, Request, JSRequestPrep,
+# HTTPRequestPrep, or None. This type alias enables exhaustive pattern
+# matching in the driver.
+ScraperYield = (
+    ParsedData[T]
+    | EstimateData
+    | Request
+    | JSRequestPrep
+    | HTTPRequestPrep
+    | None
+)
 
 # Type alias for scraper generator - what continuation methods return
 # The second type parameter (bool | None) is the SendType - values sent back

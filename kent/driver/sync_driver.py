@@ -48,6 +48,8 @@ from kent.data_types import (
     EstimateData,
     HttpMethod,
     HTTPRequestParams,
+    HTTPRequestPrep,
+    JSRequestPrep,
     ParsedData,
     Request,
     Response,
@@ -541,6 +543,14 @@ class SyncDriver(SyncSpeculationSupport, Generic[ScraperReturnDatatype]):
                             functools.partial(
                                 self.enqueue_request, item, parent_request
                             )
+                        )
+                    case JSRequestPrep() | HTTPRequestPrep():
+                        from kent.common.exceptions import ScraperConfigError
+
+                        raise ScraperConfigError(
+                            f"{type(item).__name__} is not supported by "
+                            f"the in-memory SyncDriver; use the persistent "
+                            f"driver (or a subclass thereof)"
                         )
                     case None:
                         pass

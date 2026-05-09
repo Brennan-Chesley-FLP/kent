@@ -64,6 +64,9 @@ class WorkerMixin:
     _worker_tasks: dict[int, asyncio.Task[None]]
     _next_worker_id: int
     _speculation_state: dict[str, SpeculationState]
+    # RequestPrep dispatch table + retry tunables (PersistentDriver class)
+    _provided_preps: dict[str, Callable[..., Any]]
+    prep_backoff_schedule: tuple[float, ...]
     # Callback attrs — defined on AsyncDriver, annotated here for mypy
     on_progress: Callable[..., Awaitable[None]] | None
     on_invalid_data: Callable[[DeferredValidation], Awaitable[None]] | None
@@ -787,6 +790,7 @@ class WorkerMixin:
                 continuation_name,
                 request_id,
                 staged,
+                page=page,
             )
 
         emitted_events = await staged.flush(self.db)
@@ -850,6 +854,8 @@ class WorkerMixin:
         continuation_name: str,
         request_id: int,
         staged: StagedWrites,
+        *,
+        page: Any = None,
     ) -> None:
         """Process generator with DB storage.
 
@@ -864,6 +870,8 @@ class WorkerMixin:
             continuation_name: Name of the continuation method.
             request_id: Database ID for result storage.
             staged: Buffer to receive staged writes for atomic flush.
+            page: Live Playwright Page (Playwright driver only). Passed to
+                ``JSRequestPrep`` preps. ``None`` on httpx-only drivers.
         """
         from kent.common.deferred_validation import (
             DeferredValidation,
@@ -872,7 +880,12 @@ class WorkerMixin:
             DataFormatAssumptionException,
             HTMLStructuralAssumptionException,
         )
-        from kent.data_types import EstimateData, ParsedData
+        from kent.data_types import (
+            EstimateData,
+            HTTPRequestPrep,
+            JSRequestPrep,
+            ParsedData,
+        )
 
         try:
             for item in gen:
@@ -955,6 +968,42 @@ class WorkerMixin:
                             item, parent_request, request_id, staged
                         )
 
+                    case JSRequestPrep() as wrapper:
+                        modified = await self._run_prep(
+                            wrapper,
+                            response,
+                            parent_request,
+                            page=page,
+                            kind="js",
+                        )
+                        is_nav = (
+                            isinstance(modified, Request)
+                            and not modified.nonnavigating
+                            and not modified.archive
+                        )
+                        ctx = response if is_nav else parent_request
+                        await self._stage_enqueue_request(
+                            modified, ctx, request_id, staged
+                        )
+
+                    case HTTPRequestPrep() as wrapper:
+                        modified = await self._run_prep(
+                            wrapper,
+                            response,
+                            parent_request,
+                            page=page,
+                            kind="http",
+                        )
+                        is_nav = (
+                            isinstance(modified, Request)
+                            and not modified.nonnavigating
+                            and not modified.archive
+                        )
+                        ctx = response if is_nav else parent_request
+                        await self._stage_enqueue_request(
+                            modified, ctx, request_id, staged
+                        )
+
                     case None:
                         pass
 
@@ -965,3 +1014,74 @@ class WorkerMixin:
                     return
             else:
                 raise
+
+    def _resolve_prep_method(self, prep_method: str) -> Callable[..., Any]:
+        """Resolve a prep_method string to a callable.
+
+        ``"name"`` → ``getattr(self.scraper, "name")``.
+        ``"provided.name"`` → driver's ``_provided_preps[name]``.
+        Anything else, or a missing target, raises ``ScraperConfigError``.
+        """
+        from kent.common.exceptions import ScraperConfigError
+
+        if prep_method.startswith("provided."):
+            key = prep_method[len("provided.") :]
+            cb = self._provided_preps.get(key)
+            if cb is None:
+                raise ScraperConfigError(
+                    f"prep_method {prep_method!r} not provided by driver "
+                    f"(register a RequestPrepProvider with provider_name="
+                    f"{key!r} via Driver.open(request_preps=[...]))"
+                )
+            return cb
+        cb = getattr(self.scraper, prep_method, None)
+        if cb is None or not callable(cb):
+            raise ScraperConfigError(
+                f"prep_method {prep_method!r} not found on scraper"
+            )
+        return cb
+
+    async def _run_prep(
+        self,
+        wrapper: Any,  # JSRequestPrep | HTTPRequestPrep
+        response: Response,
+        parent_request: BaseRequest,
+        *,
+        page: Any = None,
+        kind: str,
+    ) -> BaseRequest:
+        """Invoke a prep callable with the F4 retry loop.
+
+        Transient exceptions are retried per ``prep_backoff_schedule``.
+        Persistent exceptions propagate immediately and the parent fails.
+        Exhausting the schedule re-raises the last TransientException so
+        the existing per-request retry path handles the parent.
+        """
+        from kent.common.exceptions import ScraperConfigError
+
+        if kind == "js" and page is None:
+            raise ScraperConfigError(
+                "JSRequestPrep yielded but driver has no live page "
+                "(httpx driver?)"
+            )
+
+        cb = self._resolve_prep_method(wrapper.prep_method)
+        delays = self.prep_backoff_schedule
+        last_exc: TransientException | None = None
+        for delay in (0.0, *delays):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                if kind == "js":
+                    return await cb(
+                        response, wrapper.request, page, **wrapper.kwargs
+                    )
+                return await cb(response, wrapper.request, **wrapper.kwargs)
+            except TransientException as e:
+                last_exc = e
+                continue
+
+        # Exhausted retries. Surface the last transient so the parent retries.
+        raise TransientException(
+            f"prep {wrapper.prep_method!r} exhausted retries: {last_exc}"
+        ) from last_exc
