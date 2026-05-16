@@ -109,7 +109,7 @@ class WorkerMixin:
 
         async def _handle_retry(
             self, request_id: int, error: Exception
-        ) -> bool: ...
+        ) -> float | None: ...
 
         async def _store_response(
             self,
@@ -167,6 +167,19 @@ class WorkerMixin:
     def active_worker_count(self) -> int:
         """Number of currently active workers."""
         return sum(1 for t in self._worker_tasks.values() if not t.done())
+
+    @property
+    def _strictly_serial(self) -> bool:
+        """Whether the scraper requires strictly-serial processing.
+
+        When True, transient retries idle the worker until the same
+        request is ready, rather than picking up other pending work.
+        """
+        from kent.data_types import DriverRequirement
+
+        return DriverRequirement.STRICTLY_SERIAL in getattr(
+            self.scraper, "driver_requirements", []
+        )
 
     def _spawn_worker(self) -> int:
         """Spawn a new worker and return its ID.
@@ -603,8 +616,8 @@ class WorkerMixin:
                 continue
 
             except TransientException as e:
-                should_retry = await self._handle_retry(request_id, e)
-                if should_retry:
+                retry_delay = await self._handle_retry(request_id, e)
+                if retry_delay is not None:
                     # Log at warning level without full traceback for transient errors
                     logger.warning(
                         f"Worker {worker_id} transient error on request "
@@ -619,6 +632,18 @@ class WorkerMixin:
                             "error_type": type(e).__name__,
                         },
                     )
+                    if self._strictly_serial:
+                        # Wait the full retry delay before considering any
+                        # other pending work, so the just-scheduled retry
+                        # is the next request picked up.
+                        try:
+                            await asyncio.wait_for(
+                                self.stop_event.wait(),
+                                timeout=retry_delay,
+                            )
+                            break  # stop_event was set during the wait
+                        except asyncio.TimeoutError:
+                            pass
                     continue  # Don't store as error, will be retried
                 else:
                     # Max backoff exceeded - log the full traceback and mark failed

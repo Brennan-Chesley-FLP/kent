@@ -83,6 +83,9 @@ class DriverRequirement(Enum):
         RCAP_HANDLER: Requires reCAPTCHA interstitial handling (auto-selects Playwright).
         H11_HEADER_FIXES: Loosen h11 response-header validation.
         FOLLOW_REDIRECTS: Have httpx follow 3xx redirects automatically.
+        STRICTLY_SERIAL: One worker; on transient retry, idle until the
+            same request is ready instead of picking up other work
+            (auto-selects Playwright).
 
     FF_ALIKE and CHROME_ALIKE are mutually exclusive.
     """
@@ -96,6 +99,7 @@ class DriverRequirement(Enum):
     FOLLOW_REDIRECTS = "follow_redirects"
     HCAPTCHA_SOLVER = "hcaptcha_solver"
     IMAGE_CAPTCHA_SOLVER = "image_captcha_solver"
+    STRICTLY_SERIAL = "strictly_serial"
 
 
 @dataclass(frozen=True)

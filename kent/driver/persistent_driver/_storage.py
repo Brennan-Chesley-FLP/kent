@@ -41,14 +41,16 @@ class StorageMixin:
         """
         await self.db.mark_request_failed(request_id, error_message)
 
-    async def _handle_retry(self, request_id: int, error: Exception) -> bool:
+    async def _handle_retry(
+        self, request_id: int, error: Exception
+    ) -> float | None:
         """Handle retry logic for transient errors with exponential backoff.
 
         Calculates the next retry delay using exponential backoff formula:
             next_retry_delay = base_delay * 2^retry_count
 
         Adds the delay to cumulative_backoff. If cumulative_backoff exceeds
-        max_backoff_time, returns False to indicate the request should be
+        max_backoff_time, returns None to indicate the request should be
         marked as failed instead of retried.
 
         Args:
@@ -56,12 +58,13 @@ class StorageMixin:
             error: The transient exception that was raised.
 
         Returns:
-            True if the request should be retried, False if it should fail.
+            The scheduled retry delay in seconds, or None if the request
+            should be marked as failed.
         """
         # Get current retry state
         retry_state = await self.db.get_retry_state(request_id)
         if retry_state is None:
-            return False
+            return None
 
         retry_count, cumulative_backoff = retry_state
 
@@ -82,7 +85,7 @@ class StorageMixin:
                 f"Request {request_id} exceeded max backoff time "
                 f"({new_cumulative_backoff:.1f}s >= {self.max_backoff_time:.1f}s)"
             )
-            return False
+            return None
 
         # Schedule retry by resetting to pending with updated backoff tracking
         await self.db.schedule_retry(
@@ -94,7 +97,7 @@ class StorageMixin:
             f"(delay: {next_retry_delay:.1f}s, cumulative: {new_cumulative_backoff:.1f}s)"
         )
 
-        return True
+        return next_retry_delay
 
     async def _store_response(
         self,

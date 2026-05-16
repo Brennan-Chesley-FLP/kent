@@ -566,6 +566,7 @@ def run(
             DriverRequirement.CHROME_ALIKE,
             DriverRequirement.HCAP_HANDLER,
             DriverRequirement.RCAP_HANDLER,
+            DriverRequirement.STRICTLY_SERIAL,
         )
     )
 
@@ -577,6 +578,16 @@ def run(
             f"but --driver {driver_name} was explicitly chosen.",
             err=True,
         )
+
+    if DriverRequirement.STRICTLY_SERIAL in reqs:
+        if workers != 1 or (max_workers is not None and max_workers != 1):
+            click.echo(
+                f"Warning: Scraper '{scraper_name}' requires STRICTLY_SERIAL; "
+                f"overriding --workers/--max-workers to 1.",
+                err=True,
+            )
+        workers = 1
+        max_workers = 1
 
     # Auto-resolve browser profile from $KENT_HOME/profiles/{name}/
     if not browser_profile_path and not user_chose_driver:
