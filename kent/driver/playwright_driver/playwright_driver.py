@@ -987,6 +987,23 @@ class PlaywrightDriver(
                     request_id, response, request, continuation_name
                 )
 
+            elif is_archive:
+                # Bare archive Request — no Via, so there is no click target
+                # in any parent page to drive a Playwright download event.
+                # Issue the fetch through the BrowserContext's APIRequestContext
+                # (cookies + proxy come along for the ride), buffer the body in
+                # memory, then hand it to the archive_handler the same way as
+                # the via-download branch above. Used for follow-up downloads
+                # whose URL is computed at runtime (e.g. an ASX redirect
+                # resolved to its underlying media file).
+                response = await self._fetch_bare_archive_request(
+                    request, archive_decision
+                )
+
+                await self._complete_request(
+                    request_id, response, request, continuation_name
+                )
+
             else:
                 # Non-archive: navigate and snapshot HTML
 
@@ -1239,6 +1256,108 @@ class PlaywrightDriver(
                 )
             else:
                 await field_element.fill(str_value)
+
+    async def _fetch_bare_archive_request(
+        self,
+        request: BaseRequest,
+        archive_decision: Any,
+    ) -> ArchiveResponse:
+        """Fetch an archive Request that has no Via via APIRequestContext.
+
+        The standard archive path drives a click in the parent page's
+        DOM and captures the resulting download event. That requires a
+        ViaFormSubmit/ViaLink whose selector resolves against the parent
+        page. For follow-up downloads whose URL is only known after the
+        parent page has been parsed (e.g. an ASX stub that resolves to
+        an ``http://`` recording on a different host), no such anchor
+        exists — so we issue the fetch through the BrowserContext's
+        :class:`APIRequestContext` instead. The browser's cookies and
+        any configured proxy still apply, but the response body is
+        delivered in-process rather than as a Playwright download,
+        which sidesteps the
+        ``Page.goto: Download is starting`` failure mode when the
+        server returns ``Content-Disposition: attachment``.
+
+        Buffers the body in memory and hands it to the
+        :attr:`archive_handler` exactly like the via-download branch
+        does, so dedup keys, expected-type suffixing, and on-disk
+        layout all match. Suitable for files up to a few hundred MB;
+        Playwright's :class:`APIResponse` has no streaming API.
+        """
+        params = request.request
+        method = params.method.value.upper()
+        api_kwargs: dict[str, Any] = {}
+        if params.headers:
+            api_kwargs["headers"] = dict(params.headers)
+        if params.params:
+            api_kwargs["params"] = params.params
+        if params.data is not None:
+            api_kwargs["data"] = params.data
+        if params.json is not None:
+            api_kwargs["data"] = params.json
+        if params.timeout is not None:
+            api_kwargs["timeout"] = (
+                float(params.timeout) * 1000.0
+                if not isinstance(params.timeout, tuple)
+                else float(params.timeout[1]) * 1000.0
+            )
+        if not params.allow_redirects:
+            api_kwargs["max_redirects"] = 0
+
+        request_context = self.browser_context.request
+        api_response = await request_context.fetch(
+            params.url, method=method, **api_kwargs
+        )
+        try:
+            content = await api_response.body()
+        finally:
+            await api_response.dispose()
+
+        dedup_key = (
+            request.deduplication_key
+            if isinstance(request.deduplication_key, str)
+            else None
+        )
+        expected_type = getattr(request, "expected_type", None)
+
+        if hasattr(self.archive_handler, "save_stream"):
+
+            async def _iter_chunks(
+                payload: bytes = content,
+            ) -> AsyncIterator[bytes]:
+                # APIResponse.body() is not streamable; yield in
+                # 64KB slices so save_stream's hashing/writer doesn't
+                # have to special-case a single giant chunk.
+                view = memoryview(payload)
+                step = 64 * 1024
+                for i in range(0, len(view), step):
+                    yield bytes(view[i : i + step])
+
+            file_url = await self.archive_handler.save_stream(
+                url=api_response.url or params.url,
+                deduplication_key=dedup_key,
+                expected_type=expected_type,
+                hash_header_value=None,
+                chunks=_iter_chunks(),
+            )
+        else:
+            file_url = await self.archive_handler.save(
+                url=api_response.url or params.url,
+                deduplication_key=dedup_key,
+                expected_type=expected_type,
+                hash_header_value=None,
+                content=content,
+            )
+
+        return ArchiveResponse(
+            status_code=api_response.status,
+            url=api_response.url or params.url,
+            content=content,
+            text="",
+            headers=dict(api_response.headers),
+            request=request,
+            file_url=file_url,
+        )
 
     async def _execute_via_download(
         self, request: BaseRequest, page: Page
