@@ -81,6 +81,7 @@ class DriverRequirement(Enum):
         CHROME_ALIKE: Requires a Chrome-like browser profile.
         HCAP_HANDLER: Requires hCaptcha interstitial handling (auto-selects Playwright).
         RCAP_HANDLER: Requires reCAPTCHA interstitial handling (auto-selects Playwright).
+        CFCAP_HANDLER: Requires Cloudflare interstitial handling (auto-selects Playwright).
         H11_HEADER_FIXES: Loosen h11 response-header validation.
         FOLLOW_REDIRECTS: Have httpx follow 3xx redirects automatically.
         STRICTLY_SERIAL: One worker; on transient retry, idle until the
@@ -95,6 +96,7 @@ class DriverRequirement(Enum):
     CHROME_ALIKE = "chrome_alike"
     HCAP_HANDLER = "hcap_handler"
     RCAP_HANDLER = "rcap_handler"
+    CFCAP_HANDLER = "cfcap_handler"
     H11_HEADER_FIXES = "h11_header_fixes"
     FOLLOW_REDIRECTS = "follow_redirects"
     HCAPTCHA_SOLVER = "hcaptcha_solver"

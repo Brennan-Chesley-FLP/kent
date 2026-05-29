@@ -31,11 +31,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from playwright.async_api import (
-    Browser,
     BrowserContext,
     ElementHandle,
     Page,
-    async_playwright,
 )
 from playwright.async_api import (
     Error as PlaywrightError,
@@ -82,6 +80,11 @@ from kent.driver.persistent_driver.sql_manager import (
     SQLManager,
 )
 from kent.driver.playwright_driver.browser_profile import BrowserProfile
+from kent.driver.playwright_driver.engines import (
+    BrowserEngine,
+    CamoufoxEngine,
+    PlaywrightEngine,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -89,103 +92,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ScraperReturnDatatype = TypeVar("ScraperReturnDatatype")
-
-
-def _parse_proxy_for_playwright(proxy_url: str) -> dict[str, str]:
-    """Convert a proxy URL into Playwright's ``proxy=`` dict.
-
-    Playwright expects ``{"server": "<scheme>://<host>:<port>"}`` with
-    credentials in separate ``username`` / ``password`` fields — not
-    embedded in the URL.  Accepts any scheme Playwright supports
-    (``http``, ``https``, ``socks4``, ``socks5``).
-    """
-    from urllib.parse import unquote, urlsplit
-
-    parts = urlsplit(proxy_url)
-    if not parts.scheme or not parts.hostname:
-        raise ValueError(f"Invalid proxy URL: {proxy_url!r}")
-
-    server = f"{parts.scheme}://{parts.hostname}"
-    if parts.port is not None:
-        server += f":{parts.port}"
-
-    result: dict[str, str] = {"server": server}
-    if parts.username:
-        result["username"] = unquote(parts.username)
-    if parts.password:
-        result["password"] = unquote(parts.password)
-    return result
-
-
-def _resolve_user_data_dir(
-    scraper: BaseScraper[Any],
-    profile_name: str,
-) -> Path:
-    """Determine the user_data_dir for a persistent browser context.
-
-    Returns ``~/.cache/kent/<scraper_module>/<profile_name>/browser-data/``,
-    creating the directory if needed.
-    """
-    scraper_module = scraper.__class__.__module__.replace(".", "_")
-    cache_dir = (
-        Path.home()
-        / ".cache"
-        / "kent"
-        / scraper_module
-        / profile_name
-        / "browser-data"
-    )
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
-
-
-async def _launch_persistent(
-    playwright: Any,
-    scraper: BaseScraper[Any],
-    profile: BrowserProfile,
-    headless: bool,
-    proxy: str | None = None,
-) -> BrowserContext:
-    """Launch a persistent browser context from a :class:`BrowserProfile`.
-
-    Handles protocol param injection, user data dir resolution, and
-    init script loading.
-    """
-    from kent.driver.playwright_driver.browser_profile import (
-        inject_protocol_params,
-    )
-
-    browser_launcher = getattr(playwright, profile.browser_type)
-
-    # Inject protocol params (e.g. assistantMode, cdpPort) if configured
-    if profile.protocol_params:
-        inject_protocol_params(
-            browser_launcher._impl_obj, profile.protocol_params
-        )
-
-    user_data_dir = _resolve_user_data_dir(scraper, profile.name)
-
-    # Merge launch + context options for persistent context
-    persistent_kwargs: dict[str, Any] = {}
-    persistent_kwargs.update(profile.launch_options)
-    persistent_kwargs.update(profile.context_options)
-    persistent_kwargs["headless"] = headless
-    if profile.channel:
-        persistent_kwargs["channel"] = profile.channel
-    if proxy:
-        persistent_kwargs["proxy"] = _parse_proxy_for_playwright(proxy)
-
-    context = await browser_launcher.launch_persistent_context(
-        str(user_data_dir),
-        **persistent_kwargs,
-    )
-
-    # Add init scripts from profile
-    for script_path in profile.init_scripts:
-        js = script_path.read_text(encoding="utf-8")
-        await context.add_init_script(js)
-
-    return context
 
 
 class WorkerPage:
@@ -368,17 +274,22 @@ class PlaywrightDriver(
             for req in getattr(scraper, "driver_requirements", [])
             if req in INTERSTITIAL_HANDLERS
         ]
-        # Browser restart state — populated by open() for crash recovery
-        self._playwright: Any | None = None
-        self._browser_obj: Browser | None = None
-        self._browser_launcher: Any | None = None
-        self._launch_kwargs: dict[str, Any] = {}
-        self._context_kwargs: dict[str, Any] = {}
+        # Browser-engine handle (set by open()).  All launch + restart
+        # behaviour lives on the engine; the driver only ever sees the
+        # BrowserContext yielded by engine.acquire().
+        self._engine: BrowserEngine | None = None
         self._browser_profile: BrowserProfile | None = None
         self._browser_restart_lock = asyncio.Lock()
 
     async def _acquire_worker_page(self, worker_id: int) -> WorkerPage:
-        """Get or create the reusable page for a worker."""
+        """Get or create the reusable page for a worker.
+
+        A dead browser connection routes through
+        :meth:`_new_page_after_restart`, which restarts the browser under
+        the restart lock and surfaces any failure as ``TransientException``
+        — propagating to the worker loop's retry handler rather than
+        permanently failing the request.
+        """
         wp = self._worker_pages.get(worker_id)
         if wp is not None and wp.page.is_closed():
             self._worker_pages.pop(worker_id)
@@ -388,18 +299,46 @@ class PlaywrightDriver(
                 page = await self.browser_context.new_page()
             except PlaywrightError as e:
                 if self._is_connection_dead(e):
-                    async with self._browser_restart_lock:
-                        # Double-check: another worker may have restarted already
-                        try:
-                            page = await self.browser_context.new_page()
-                        except PlaywrightError:
-                            await self._restart_browser_context()
-                            page = await self.browser_context.new_page()
+                    page = await self._new_page_after_restart()
                 else:
                     raise
             wp = WorkerPage(page, self.excluded_resource_types)
             self._worker_pages[worker_id] = wp
         return wp
+
+    async def _new_page_after_restart(self) -> Page:
+        """Open a page after a dead-connection event, restarting if needed.
+
+        Serialized under ``_browser_restart_lock`` so concurrent workers
+        don't each restart the browser.  First re-tries ``new_page()`` —
+        another worker may have already rebuilt the context — and only
+        restarts if that still fails.
+
+        Every failure in this path is surfaced as ``TransientException``.
+        A driver-process crash (e.g. the Firefox ``pageError.location``
+        bug) takes down all concurrent workers at once, and the relaunch
+        may not succeed on the first attempt — for camoufox's persistent
+        context, the orphaned browser can still hold the profile lock.
+        Treating these as transient lets the worker loop retry with
+        backoff instead of marking the request permanently failed, which
+        previously turned a single crash into a whole-run failure.
+        """
+        async with self._browser_restart_lock:
+            # Double-check: another worker may have restarted already.
+            try:
+                return await self.browser_context.new_page()
+            except PlaywrightError:
+                pass
+            # Still dead — restart the browser and try once more.
+            try:
+                await self._restart_browser_context()
+                return await self.browser_context.new_page()
+            except TransientException:
+                # restart_context() raises this when the engine can't
+                # restart; pass it through unchanged.
+                raise
+            except Exception as e:
+                raise TransientException(f"Browser restart failed: {e}") from e
 
     async def _release_worker_page(self, worker_id: int) -> None:
         """Close and remove the page when a worker exits."""
@@ -407,8 +346,17 @@ class PlaywrightDriver(
         if wp:
             await wp.close()
 
-    def _is_connection_dead(self, error: PlaywrightError) -> bool:
-        """Check if a PlaywrightError indicates the browser connection died."""
+    def _is_connection_dead(self, error: BaseException) -> bool:
+        """Check if an exception indicates the browser connection died.
+
+        Accepts any exception type because Playwright's
+        ``APIRequestContext.fetch`` rewraps the underlying transport
+        error in a bare ``Exception`` (see ``rewrite_error`` in
+        ``playwright._impl._connection``), not a ``PlaywrightError``.
+        The driver's Node.js process is also known to crash on certain
+        Firefox page-error events, producing a ``Connection closed``
+        message at the channel layer.
+        """
         msg = str(error)
         return (
             "Connection closed" in msg
@@ -420,44 +368,19 @@ class PlaywrightDriver(
         """Restart the browser and context after a crash.
 
         Called under ``_browser_restart_lock`` to prevent concurrent
-        restarts from multiple workers.  Only the standard (non-persistent)
-        launch path is supported; persistent contexts cannot be safely
-        restarted.
+        restarts from multiple workers.  Delegates to the engine; engines
+        that don't support restart (e.g. persistent-context profiles)
+        raise ``TransientException`` from ``restart_context()``.
         """
-        if self._browser_launcher is None:
+        if self._engine is None:
             raise TransientException(
-                "Browser connection lost and restart is not available "
-                "(persistent context or missing launch params)"
+                "Browser connection lost; no engine attached"
             )
-
-        logger.warning("Browser connection lost — restarting browser")
-
         # Discard all worker pages (they reference the dead browser)
+        # before triggering restart, so subsequent workers see the
+        # cleared registry and trigger a fresh page acquisition.
         self._worker_pages.clear()
-
-        # Best-effort close of the old browser
-        if self._browser_obj is not None:
-            try:
-                await self._browser_obj.close()
-            except Exception:
-                pass
-
-        # Relaunch browser and context
-        new_browser = await self._browser_launcher.launch(
-            **self._launch_kwargs
-        )
-        self._browser_obj = new_browser
-        self.browser_context = await new_browser.new_context(
-            **self._context_kwargs
-        )
-
-        # Re-add init scripts from browser profile
-        if self._browser_profile is not None:
-            for script_path in self._browser_profile.init_scripts:
-                js = script_path.read_text(encoding="utf-8")
-                await self.browser_context.add_init_script(js)
-
-        logger.info("Browser restarted successfully")
+        self.browser_context = await self._engine.restart_context()
 
     async def _db_worker(self, worker_id: int) -> None:
         """Wrap parent _db_worker to clean up the worker's page on exit."""
@@ -602,141 +525,75 @@ class PlaywrightDriver(
             browser_config=browser_config,
         )
 
-        # Initialize Playwright
-        playwright = await async_playwright().start()
-        try:
-            browser_obj: Browser | None = None
-            browser_context: BrowserContext
+        # Engine selection: scrapers declaring CFCAP_HANDLER get the
+        # camoufox engine (the only one that reliably passes CF's
+        # managed-challenge interstitial).  Everyone else gets the
+        # standard playwright engine.
+        from kent.data_types import DriverRequirement
 
-            if (
-                browser_profile is not None
-                and browser_profile.persistent_context
-            ):
-                # === Persistent context path (for Cloudflare bypass, etc.) ===
-                browser_context = await _launch_persistent(
-                    playwright,
-                    scraper,
-                    browser_profile,
-                    headless,
-                    proxy=proxy,
-                )
-            else:
-                # === Standard path (existing behavior) ===
-                effective_type = (
-                    browser_profile.browser_type
-                    if browser_profile is not None
-                    else browser_type
-                )
-                browser_launcher = getattr(playwright, effective_type)
+        reqs = getattr(scraper, "driver_requirements", [])
+        engine: BrowserEngine
+        if DriverRequirement.CFCAP_HANDLER in reqs:
+            engine = CamoufoxEngine(
+                scraper=scraper,
+                browser_profile=browser_profile,
+                headless=headless,
+                locale=locale,
+                proxy=proxy,
+            )
+        else:
+            engine = PlaywrightEngine(
+                scraper=scraper,
+                browser_profile=browser_profile,
+                browser_type=browser_type,
+                headless=headless,
+                viewport=viewport,
+                user_agent=user_agent,
+                locale=locale,
+                timezone_id=timezone_id,
+                proxy=proxy,
+            )
 
-                launch_kwargs: dict[str, Any] = {"headless": headless}
-                if browser_profile is not None:
-                    launch_kwargs.update(browser_profile.launch_options)
-                    if browser_profile.channel:
-                        launch_kwargs["channel"] = browser_profile.channel
-                if proxy:
-                    launch_kwargs["proxy"] = _parse_proxy_for_playwright(proxy)
+        async with engine.acquire() as browser_context:
+            # Create driver instance (no request manager needed for Playwright)
+            effective_rates = rates or scraper.rate_limits
+            driver = cls(
+                scraper=scraper,
+                db=db,
+                browser_context=browser_context,
+                storage_dir=storage_dir,
+                num_workers=num_workers,
+                max_workers=max_workers,
+                resume=resume,
+                max_backoff_time=max_backoff_time,
+                request_manager=None,
+                enable_monitor=enable_monitor,
+                excluded_resource_types=excluded_resource_types,
+                rates=effective_rates,
+            )
+            driver._provided_preps = provided_preps
+            driver._engine = engine
+            driver._browser_profile = browser_profile
 
-                browser_obj = await browser_launcher.launch(**launch_kwargs)
-
-                context_kwargs: dict[str, Any] = {
-                    "viewport": viewport,
-                    "locale": locale,
-                    "timezone_id": timezone_id,
-                    "accept_downloads": True,
-                }
-                if user_agent:
-                    context_kwargs["user_agent"] = user_agent
-                if browser_profile is not None:
-                    context_kwargs.update(browser_profile.context_options)
-
-                browser_context = await browser_obj.new_context(
-                    **context_kwargs
-                )
-
-                # Add init scripts (works for non-persistent profiles too)
-                if browser_profile is not None:
-                    for script_path in browser_profile.init_scripts:
-                        js = script_path.read_text(encoding="utf-8")
-                        await browser_context.add_init_script(js)
-
-            driver: PlaywrightDriver[ScraperReturnDatatype] | None = None
-            try:
-                # Create driver instance (no request manager needed for Playwright)
-                effective_rates = rates or scraper.rate_limits
-                driver = cls(
-                    scraper=scraper,
-                    db=db,
-                    browser_context=browser_context,
-                    storage_dir=storage_dir,
-                    num_workers=num_workers,
-                    max_workers=max_workers,
-                    resume=resume,
-                    max_backoff_time=max_backoff_time,
-                    request_manager=None,
-                    enable_monitor=enable_monitor,
-                    excluded_resource_types=excluded_resource_types,
-                    rates=effective_rates,
-                )
-                driver._provided_preps = provided_preps
-
-                # Store restart params for crash recovery (standard path only;
-                # persistent contexts leave these as None).
-                if not (
-                    browser_profile is not None
-                    and browser_profile.persistent_context
-                ):
-                    driver._playwright = playwright
-                    driver._browser_obj = browser_obj
-                    driver._browser_launcher = browser_launcher  # type: ignore[possibly-undefined]
-                    driver._launch_kwargs = launch_kwargs  # type: ignore[possibly-undefined]
-                    driver._context_kwargs = context_kwargs  # type: ignore[possibly-undefined]
-                    driver._browser_profile = browser_profile
-
-                # Restore cookies on resume
-                if resume:
-                    try:
-                        cookies_json = await db.get_browser_cookies()
-                        if cookies_json:
-                            cookies = json.loads(cookies_json)
-                            await browser_context.add_cookies(cookies)
-                            logger.info(
-                                f"Restored {len(cookies)} browser cookies from DB"
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to restore browser cookies: {e}"
-                        )
-
-                yield driver
-
-                # driver.close() handles DB engine disposal
-                await driver.close()
-
-            finally:
-                # After a browser restart, driver.browser_context and
-                # driver._browser_obj may differ from the originals.
-                # Close whichever is current.
-                ctx_to_close = (
-                    driver.browser_context
-                    if driver is not None
-                    else browser_context
-                )
+            # Restore cookies on resume
+            if resume:
                 try:
-                    await ctx_to_close.close()
-                except Exception:
-                    pass
-                current_browser = (
-                    driver._browser_obj if driver is not None else browser_obj
-                )
-                if current_browser is not None:
-                    try:
-                        await current_browser.close()
-                    except Exception:
-                        pass
+                    cookies_json = await db.get_browser_cookies()
+                    if cookies_json:
+                        cookies = json.loads(cookies_json)
+                        await browser_context.add_cookies(cookies)
+                        logger.info(
+                            f"Restored {len(cookies)} browser cookies from DB"
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to restore browser cookies: {e}")
 
-        finally:
-            await playwright.stop()
+            try:
+                yield driver
+            finally:
+                # driver.close() handles DB engine disposal.  Context +
+                # browser cleanup is owned by engine.acquire().
+                await driver.close()
 
     async def _setup_tab_with_parent_response(
         self,
@@ -1226,6 +1083,22 @@ class PlaywrightDriver(
             raise
 
         except Exception as e:
+            # The bare-archive fetch path (APIRequestContext.fetch) and
+            # other Playwright APIs can raise a *bare* ``Exception`` when
+            # the driver's Node.js process dies — the error message
+            # carries the same "Connection closed" string the
+            # PlaywrightError branch matches on.  Promote those to
+            # TransientException so the request retries and crash
+            # recovery in ``_acquire_worker_page`` gets a shot.
+            if self._is_connection_dead(e):
+                self._worker_pages.pop(worker_id, None)
+                logger.warning(
+                    f"Browser connection lost for request {request_id} "
+                    f"in non-Playwright code path: {e}"
+                )
+                raise TransientException(
+                    f"Browser connection lost: {e}"
+                ) from e
             logger.error(
                 f"Error processing Playwright request {request_id}: {e}",
                 exc_info=True,

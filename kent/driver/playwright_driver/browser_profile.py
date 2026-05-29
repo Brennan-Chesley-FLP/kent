@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -46,7 +45,10 @@ class BrowserProfile:
         context_options: Options passed to ``new_context()`` (non-persistent)
             or merged into ``launch_persistent_context()`` (persistent).
         protocol_params: Params injected into the Playwright protocol message
-            (e.g. ``assistantMode``, ``cdpPort``).
+            (e.g. ``assistantMode``, ``cdpPort``).  PlaywrightEngine only.
+        camoufox_options: Camoufox-specific kwargs (e.g. ``humanize``,
+            ``geoip``, ``os``, ``screen``, ``fonts``, ``block_images``,
+            ``block_webrtc``).  CamoufoxEngine only.
         init_scripts: Resolved absolute paths to JS files loaded via
             ``context.add_init_script()``.
     """
@@ -61,6 +63,7 @@ class BrowserProfile:
     launch_options: dict[str, Any] = field(default_factory=dict)
     context_options: dict[str, Any] = field(default_factory=dict)
     protocol_params: dict[str, Any] = field(default_factory=dict)
+    camoufox_options: dict[str, Any] = field(default_factory=dict)
     init_scripts: list[Path] = field(default_factory=list)
 
 
@@ -127,6 +130,7 @@ def load_browser_profile(profile_path: Path) -> BrowserProfile:
         launch_options=raw.get("launch_options", {}),
         context_options=raw.get("context_options", {}),
         protocol_params=raw.get("protocol_params", {}),
+        camoufox_options=raw.get("camoufox_options", {}),
         init_scripts=init_scripts,
     )
 
@@ -162,49 +166,3 @@ def _validate_script_path(profile_dir: Path, script_rel: str) -> Path:
         raise FileNotFoundError(f"Init script not found: {resolved}")
 
     return resolved
-
-
-# ---------------------------------------------------------------------------
-# Protocol params injection
-# ---------------------------------------------------------------------------
-
-
-def _find_free_port() -> int:
-    """Find and return an available TCP port."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
-
-
-def inject_protocol_params(
-    browser_type_impl: Any,
-    protocol_params: dict[str, Any],
-) -> None:
-    """Monkey-patch a BrowserType to inject protocol params.
-
-    Wraps ``browser_type_impl._channel.send_return_as_dict`` so that
-    ``launchPersistentContext`` calls receive the extra params.
-
-    The special value ``"auto"`` for ``cdpPort`` is replaced with an
-    actual free TCP port number.
-
-    Args:
-        browser_type_impl: ``pw.<browser>._impl_obj``.
-        protocol_params: Dict of params to inject.
-    """
-    original_send = browser_type_impl._channel.send_return_as_dict
-
-    async def _send_with_params(
-        method, timeout_calc, params=None, is_internal=False, title=None
-    ):
-        if method == "launchPersistentContext" and params is not None:
-            for key, value in protocol_params.items():
-                if key == "cdpPort" and value == "auto":
-                    params[key] = _find_free_port()
-                else:
-                    params[key] = value
-        return await original_send(
-            method, timeout_calc, params, is_internal, title
-        )
-
-    browser_type_impl._channel.send_return_as_dict = _send_with_params

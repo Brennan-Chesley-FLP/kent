@@ -15,6 +15,7 @@ import logging
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import httpx
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from kent.data_types import (
     DriverRequirement,
@@ -245,7 +246,124 @@ class ReCaptchaHandler(InterstitialHandler):
         return await response_info.value
 
 
+class CloudflareHandler(InterstitialHandler):
+    """Handles Cloudflare "Just a moment..." interstitials.
+
+    Strategy proven in ``try_camoufox.py`` against the CA appellate
+    courts CF deployment:
+
+    1. Waitlist matches when ``input[name='cf-turnstile-response']``
+       attaches — that input ships in the initial HTML so the handler
+       fires immediately on navigation.
+    2. ``navigate_through`` subscribes to ``page.on("response")`` and
+       counts hits on ``/cdn-cgi/challenge-platform/h/b/flow/ov1/``.
+       The orchestrator's second flow-POST returning 200 is the
+       readiness signal — at that moment the loading spinner inside
+       the Turnstile iframe is swapped for the interactive checkbox.
+    3. Tab + Space at the page level focuses the (in-closed-shadow-root)
+       checkbox and activates it; CF accepts and the page navigates
+       to the real content.
+    4. If the flow signal never fires (CF rendered something else, or
+       the deployment changed), fall back to clicking the iframe
+       body's center — the older approach we've already verified
+       works against Turnstile's default layout.
+
+    Why no selector-targeted click: the Turnstile widget's contents
+    live in a closed shadow root attached to the iframe's body, so
+    ``input[type='checkbox']`` etc. never resolve via ``frame.locator``.
+    Focus traversal *does* cross closed shadow roots, which is why
+    Tab+Space works where selectors don't.
+    """
+
+    _RESPONSE_INPUT = "input[name='cf-turnstile-response']"
+    _CF_FRAME_HOST = "challenges.cloudflare.com"
+    _FLOW_PATH = "/cdn-cgi/challenge-platform/h/b/flow/ov1/"
+    # Empirical: the second /flow/ POST returns ~2s after navigation
+    # in camoufox.  Pad heavily in case the orchestrator is slow.
+    _READY_TIMEOUT_MS = 20_000
+    # After we press Space, the page navigates to a token URL then back
+    # to the original; clear time observed at ~1s, allow 30s headroom.
+    _CLEAR_TIMEOUT_MS = 30_000
+
+    def waitlist(self) -> list[WaitCondition]:
+        return [WaitForSelector(self._RESPONSE_INPUT, state="attached")]
+
+    async def navigate_through(self, page: Page) -> None:
+        # Count /flow/ov1/ responses.  The second one returning 200 is
+        # the orchestrator-finished-setup signal.
+        ready = asyncio.Event()
+        flow_count = 0
+
+        def _on_response(resp):
+            nonlocal flow_count
+            if self._FLOW_PATH in resp.url:
+                flow_count += 1
+                if flow_count >= 2:
+                    ready.set()
+
+        page.on("response", _on_response)
+        try:
+            try:
+                await asyncio.wait_for(
+                    ready.wait(), timeout=self._READY_TIMEOUT_MS / 1000
+                )
+                logger.info(
+                    "Cloudflare widget ready (2 /flow/ responses) — "
+                    "pressing Tab+Space"
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Cloudflare /flow/ readiness signal never fired in %ds; "
+                    "attempting Tab+Space anyway",
+                    self._READY_TIMEOUT_MS // 1000,
+                )
+        finally:
+            page.remove_listener("response", _on_response)
+
+        # Tab focuses the Turnstile checkbox (the only tabbable element
+        # the orchestrator has rendered into the iframe's closed shadow
+        # root); Space activates it.
+        await page.keyboard.press("Tab")
+        await asyncio.sleep(0.15)
+        await page.keyboard.press("Space")
+
+        # Wait for CF to accept and the page to navigate to real content
+        # (cf-turnstile-response input detaches once the new document
+        # finishes loading).
+        try:
+            await page.locator(self._RESPONSE_INPUT).wait_for(
+                state="detached", timeout=self._CLEAR_TIMEOUT_MS
+            )
+            logger.info("Cloudflare challenge cleared via Tab+Space")
+            return
+        except PlaywrightTimeoutError:
+            logger.warning(
+                "Tab+Space did not clear CF in %ds; "
+                "falling back to body-click",
+                self._CLEAR_TIMEOUT_MS // 1000,
+            )
+
+        # Fallback: click the iframe body's center.  Playwright's
+        # default click target is the element's center, which (with
+        # Turnstile's default layout) coincides with the checkbox.
+        cf_frames = [fr for fr in page.frames if self._CF_FRAME_HOST in fr.url]
+        if not cf_frames:
+            raise PlaywrightTimeoutError(
+                "Cloudflare challenge stuck: no challenges.cloudflare.com "
+                "frame in page.frames after Tab+Space failed"
+            )
+        # Prefer the visible widget frame (URL contains "turnstile")
+        # over orchestrator worker frames.
+        cf_frames.sort(key=lambda fr: 0 if "turnstile" in fr.url else 1)
+        await cf_frames[0].locator("body").click(timeout=5_000)
+        await page.locator(self._RESPONSE_INPUT).wait_for(
+            state="detached", timeout=self._CLEAR_TIMEOUT_MS
+        )
+        logger.info("Cloudflare challenge cleared via body-click fallback")
+
+
 INTERSTITIAL_HANDLERS: dict[DriverRequirement, InterstitialHandler] = {
     DriverRequirement.HCAP_HANDLER: HCaptchaHandler(),
     DriverRequirement.RCAP_HANDLER: ReCaptchaHandler(LocalStenoTranscriber()),
+    DriverRequirement.CFCAP_HANDLER: CloudflareHandler(),
 }

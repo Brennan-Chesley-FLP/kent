@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 
 from kent.common.request_manager import AsyncRequestManager, SyncRequestManager
-from kent.driver.playwright_driver.playwright_driver import (
-    _parse_proxy_for_playwright,
+from kent.driver.playwright_driver.engines.base import (
+    parse_proxy_for_playwright as _parse_proxy_for_playwright,
 )
 
 

@@ -566,6 +566,7 @@ def run(
             DriverRequirement.CHROME_ALIKE,
             DriverRequirement.HCAP_HANDLER,
             DriverRequirement.RCAP_HANDLER,
+            DriverRequirement.CFCAP_HANDLER,
             DriverRequirement.STRICTLY_SERIAL,
         )
     )
@@ -592,7 +593,13 @@ def run(
     # Auto-resolve browser profile from $KENT_HOME/profiles/{name}/
     if not browser_profile_path and not user_chose_driver:
         profile_name: str | None = None
-        if DriverRequirement.FF_ALIKE in reqs:
+        # CFCAP_HANDLER scrapers always get the camoufox profile,
+        # regardless of any FF_ALIKE / CHROME_ALIKE they may also declare —
+        # camoufox is the only engine that reliably passes CF managed
+        # challenges.
+        if DriverRequirement.CFCAP_HANDLER in reqs:
+            profile_name = "camoufox"
+        elif DriverRequirement.FF_ALIKE in reqs:
             profile_name = "firefox"
         elif DriverRequirement.CHROME_ALIKE in reqs:
             profile_name = "chrome"

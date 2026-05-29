@@ -73,7 +73,8 @@ def _make_driver_with_fake_context() -> tuple[Any, FakeBrowserContext]:
     driver._worker_pages = {}
     driver.excluded_resource_types = {"image", "media", "font"}
     driver._browser_restart_lock = asyncio.Lock()
-    driver._browser_launcher = None
+    # No engine attached — _restart_browser_context raises immediately.
+    driver._engine = None
     return driver, ctx
 
 
@@ -261,28 +262,30 @@ class RevivableBrowserContext:
         pass
 
 
-class FakeBrowser:
-    """Minimal Browser stand-in for restart tests."""
+class FakeEngine:
+    """Minimal BrowserEngine stand-in: rebuilds the supplied context.
 
-    def __init__(self, context: Any) -> None:
-        self._context = context
+    Mirrors what ``PlaywrightEngine.restart_context()`` does — marks the
+    revivable context as alive and returns it — without standing up a
+    real playwright session.  Duck-types as ``BrowserEngine`` for the
+    driver's purposes; we don't need ``acquire`` here.
+    """
 
-    async def new_context(self, **kwargs: Any) -> Any:
-        self._context.alive = True
-        return self._context
+    engine_name = "fake"
 
-    async def close(self) -> None:
-        pass
+    def __init__(self, ctx: RevivableBrowserContext) -> None:
+        self._ctx = ctx
 
+    @property
+    def supports_restart(self) -> bool:
+        return True
 
-class FakeLauncher:
-    """Mimics playwright.firefox / playwright.chromium."""
+    def acquire(self) -> Any:  # pragma: no cover — never called in these tests
+        raise NotImplementedError
 
-    def __init__(self, browser: FakeBrowser) -> None:
-        self._browser = browser
-
-    async def launch(self, **kwargs: Any) -> FakeBrowser:
-        return self._browser
+    async def restart_context(self) -> Any:
+        self._ctx.alive = True
+        return self._ctx
 
 
 def _make_driver_with_dead_browser() -> tuple[Any, RevivableBrowserContext]:
@@ -293,19 +296,14 @@ def _make_driver_with_dead_browser() -> tuple[Any, RevivableBrowserContext]:
     )
 
     ctx = RevivableBrowserContext()
-    browser = FakeBrowser(ctx)
-    launcher = FakeLauncher(browser)
+    engine = FakeEngine(ctx)
 
     driver = object.__new__(PlaywrightDriver)
     driver.browser_context = ctx
     driver._worker_pages = {}
     driver.excluded_resource_types = {"image", "media", "font"}
     driver._browser_restart_lock = asyncio.Lock()
-    driver._playwright = None
-    driver._browser_obj = browser
-    driver._browser_launcher = launcher
-    driver._launch_kwargs = {}
-    driver._context_kwargs = {}
+    driver._engine = engine  # type: ignore[assignment]
     driver._browser_profile = None
 
     return driver, ctx
@@ -348,9 +346,71 @@ async def test_acquire_clears_stale_worker_pages_on_restart() -> None:
     assert 2 not in driver._worker_pages
 
 
+class FailingRestartEngine:
+    """BrowserEngine stand-in whose restart_context() blows up.
+
+    Models the camoufox relaunch failing because the orphaned browser
+    still holds the persistent-context profile lock after a driver crash.
+    """
+
+    engine_name = "failing"
+
+    def __init__(self, exc: BaseException) -> None:
+        self._exc = exc
+
+    @property
+    def supports_restart(self) -> bool:
+        return True
+
+    def acquire(self) -> Any:  # pragma: no cover — never called here
+        raise NotImplementedError
+
+    async def restart_context(self) -> Any:
+        raise self._exc
+
+
+@pytest.mark.asyncio
+async def test_restart_failure_surfaces_as_transient() -> None:
+    """A failed browser relaunch is retryable, not a permanent failure.
+
+    Regression for the incident where a Firefox driver-process crash took
+    out all workers and the camoufox relaunch failed on the profile lock:
+    the raw exception bypassed the connection-dead → TransientException
+    conversion and every in-flight request was marked permanently failed.
+    """
+    from kent.common.exceptions import TransientException
+    from kent.driver.playwright_driver.playwright_driver import (
+        PlaywrightDriver,
+    )
+
+    driver = object.__new__(PlaywrightDriver)
+    driver.browser_context = DeadBrowserContext()
+    driver._worker_pages = {}
+    driver.excluded_resource_types = {"image", "media", "font"}
+    driver._browser_restart_lock = asyncio.Lock()
+    driver._engine = FailingRestartEngine(RuntimeError("profile in use"))  # type: ignore[assignment]
+    driver._browser_profile = None
+
+    with pytest.raises(TransientException):
+        await driver._acquire_worker_page(0)
+
+
+@pytest.mark.asyncio
+async def test_restart_no_engine_surfaces_as_transient() -> None:
+    """With no engine attached, a dead connection is transient, not fatal."""
+    from kent.common.exceptions import TransientException
+
+    driver, _ = _make_driver_with_fake_context()
+    # Swap in a context whose new_page() always reports a dead connection.
+    driver.browser_context = DeadBrowserContext()
+
+    with pytest.raises(TransientException):
+        await driver._acquire_worker_page(0)
+
+
 @pytest.mark.asyncio
 async def test_is_connection_dead_detects_known_messages() -> None:
-    """_is_connection_dead recognises the error strings from Playwright crashes."""
+    """_is_connection_dead recognises the error strings from playwright crashes."""
     from playwright.async_api import Error as PlaywrightError
 
     driver, _ = _make_driver_with_dead_browser()
