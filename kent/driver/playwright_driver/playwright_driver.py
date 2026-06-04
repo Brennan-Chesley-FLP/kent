@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -908,9 +909,53 @@ class PlaywrightDriver(
                             f"Archive request {request_id}: parent has no stored response"
                         )
 
-                    download = await self._execute_via_download(request, page)
+                    try:
+                        download = await self._execute_via_download(
+                            request, page
+                        )
+                    except PlaywrightTimeoutError as e:
+                        # Snapshot parent DOM before raising so the failure
+                        # retains HTML for debugging. Mirrors the via-navigation
+                        # nav_error path in the non-archive branch.
+                        html_content = await page.content()
+                        debug_response = Response(
+                            status_code=200,
+                            url=page.url,
+                            content=html_content.encode("utf-8"),
+                            text=html_content,
+                            headers={
+                                "content-type": "text/html; charset=utf-8"
+                            },
+                            request=request,
+                        )
+                        await self._store_response(
+                            request_id=request_id,
+                            response=debug_response,
+                            continuation=continuation_name,
+                            speculation_outcome=None,
+                        )
+                        raise TransientException(
+                            f"Playwright timeout: {e}"
+                        ) from e
 
-                    download_path = await download.path()
+                    # Playwright's Download.path() has no native timeout —
+                    # if the server starts the response but trickles bytes
+                    # (or stalls mid-transfer), this would otherwise hang
+                    # forever. Honor HTTPRequestParams.timeout (requests
+                    # library style, seconds) as a hard deadline. For tuple
+                    # timeouts, the read timeout (second element) is used.
+                    download_timeout = request.request.timeout
+                    if isinstance(download_timeout, tuple):
+                        download_timeout = download_timeout[1]
+                    try:
+                        download_path = await asyncio.wait_for(
+                            download.path(), timeout=download_timeout
+                        )
+                    except asyncio.TimeoutError as e:
+                        raise TransientException(
+                            f"Archive request {request_id}: download.path() "
+                            f"exceeded timeout of {download_timeout}s"
+                        ) from e
                     if download_path is None:
                         raise TransientException(
                             f"Archive request {request_id}: download produced no file"
@@ -1172,6 +1217,16 @@ class PlaywrightDriver(
             # Structural failure - will be handled by autowait if enabled
             raise
 
+        except TransientException as e:
+            # Retryable failure raised from inside the try block (nav_error /
+            # await_list_error re-raise after DOM capture, or explicit raises
+            # like archive-download timeouts). Log without traceback noise —
+            # the retry mechanism will handle it.
+            logger.warning(
+                f"Transient error for request {request_id}: {e}"
+            )
+            raise
+
         except Exception as e:
             logger.error(
                 f"Error processing Playwright request {request_id}: {e}",
@@ -1375,9 +1430,28 @@ class PlaywrightDriver(
         Similar to _execute_via_navigation but wraps the click in
         page.expect_download() instead of page.expect_navigation().
 
+        Honors ``request.request.timeout`` (HTTPRequestParams.timeout, in
+        seconds, requests-library style) as a millisecond deadline on both
+        ``page.expect_download`` and the click itself — the click's own
+        "wait for scheduled navigations to finish" phase otherwise uses
+        Playwright's 30s default, ignoring the user's longer timeout. For
+        tuple timeouts, the read timeout (second element) is used.
+
         Returns:
             The Playwright Download object.
         """
+        params = request.request
+        expect_kwargs: dict[str, Any] = {}
+        click_kwargs: dict[str, Any] = {}
+        if params.timeout is not None:
+            timeout_ms = (
+                float(params.timeout) * 1000.0
+                if not isinstance(params.timeout, tuple)
+                else float(params.timeout[1]) * 1000.0
+            )
+            expect_kwargs["timeout"] = timeout_ms
+            click_kwargs["timeout"] = timeout_ms
+
         if isinstance(request.via, ViaLink):
             # Link download: click the link, expect a download
             link_via = request.via
@@ -1385,8 +1459,8 @@ class PlaywrightDriver(
                 page, link_via.selector, "link", request.request.url
             )
 
-            async with page.expect_download() as download_info:
-                await link_element.click()
+            async with page.expect_download(**expect_kwargs) as download_info:
+                await link_element.click(**click_kwargs)
             return await download_info.value
 
         elif isinstance(request.via, ViaFormSubmit):
@@ -1413,8 +1487,8 @@ class PlaywrightDriver(
                         actual_count=0,
                         request_url=request.request.url,
                     )
-                async with page.expect_download() as download_info:
-                    await submit_element.click()
+                async with page.expect_download(**expect_kwargs) as download_info:
+                    await submit_element.click(**click_kwargs)
                 return await download_info.value
             else:
                 # Fallback: click first submit element
@@ -1431,8 +1505,8 @@ class PlaywrightDriver(
                         actual_count=0,
                         request_url=request.request.url,
                     )
-                async with page.expect_download() as download_info:
-                    await submit_element.click()
+                async with page.expect_download(**expect_kwargs) as download_info:
+                    await submit_element.click(**click_kwargs)
                 return await download_info.value
 
         else:
@@ -1440,10 +1514,48 @@ class PlaywrightDriver(
                 f"Archive download requires ViaLink or ViaFormSubmit, got {type(request.via)}"
             )
 
+    async def _jiggle_mouse(self, page: Page) -> bool:
+        """Move the cursor to a random viewport coordinate (single-jump).
+
+        Defensive perturbation against cursor-state-dependent click hangs
+        (observed with camoufox humanization stalling when the cursor already
+        sits on the click target). Called when a click times out, before the
+        inline retry.
+
+        The move itself goes through camoufox's mouse patches and can hang
+        in the same way the click did, so it's wrapped in a hard 3s deadline.
+
+        Returns:
+            True if the move completed within the deadline. False if it
+            hung — caller should skip the inline retry and let the original
+            timeout propagate to the retry queue instead of waiting forever
+            inside this recovery path.
+        """
+        size = page.viewport_size or {"width": 1280, "height": 720}
+        x = random.randint(0, size["width"] - 1)
+        y = random.randint(0, size["height"] - 1)
+        try:
+            await asyncio.wait_for(page.mouse.move(x, y), timeout=3.0)
+            return True
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Jiggle mouse.move(%d, %d) hung > 3s; skipping inline retry",
+                x,
+                y,
+            )
+            return False
+
     async def _execute_via_navigation(
         self, request: BaseRequest, page: Page
     ) -> None:
         """Execute browser navigation based on via field.
+
+        Honors ``request.request.timeout`` (HTTPRequestParams.timeout, in
+        seconds, requests-library style) as a millisecond deadline on
+        ``page.expect_navigation``, the click, and direct ``page.goto`` —
+        otherwise Playwright's 30s default applies and longer user timeouts
+        are silently ignored. For tuple timeouts, the read timeout (second
+        element) is used.
 
         Args:
             request: The request with via field (ViaFormSubmit or ViaLink).
@@ -1452,6 +1564,19 @@ class PlaywrightDriver(
         Raises:
             HTMLStructuralAssumptionException: If selector doesn't match in live DOM.
         """
+        params = request.request
+        expect_kwargs: dict[str, Any] = {}
+        click_kwargs: dict[str, Any] = {}
+        goto_kwargs: dict[str, Any] = {"wait_until": "domcontentloaded"}
+        if params.timeout is not None:
+            timeout_ms = (
+                float(params.timeout) * 1000.0
+                if not isinstance(params.timeout, tuple)
+                else float(params.timeout[1]) * 1000.0
+            )
+            expect_kwargs["timeout"] = timeout_ms
+            click_kwargs["timeout"] = timeout_ms
+            goto_kwargs["timeout"] = timeout_ms
 
         if isinstance(request.via, ViaFormSubmit):
             # Form submission
@@ -1480,15 +1605,25 @@ class PlaywrightDriver(
                         request_url=request.request.url,
                     )
                 # Wait for navigation after click
-                async with page.expect_navigation():
-                    await submit_element.click()
+                try:
+                    async with page.expect_navigation(**expect_kwargs):
+                        await submit_element.click(**click_kwargs)
+                except PlaywrightTimeoutError:
+                    logger.info(
+                        "Click on %s timed out; jiggling mouse and retrying once",
+                        form_via.submit_selector,
+                    )
+                    if not await self._jiggle_mouse(page):
+                        raise
+                    async with page.expect_navigation(**expect_kwargs):
+                        await submit_element.click(**click_kwargs)
             elif "__EVENTTARGET" in form_via.field_data:
                 # ASP.NET __doPostBack-style submission: submit the
                 # form programmatically via JS.  This avoids clicking
                 # a named submit button, which would cause ASP.NET
                 # to handle the button-click event instead of the
                 # __EVENTTARGET postback event.
-                async with page.expect_navigation():
+                async with page.expect_navigation(**expect_kwargs):
                     await form_element.evaluate("(form) => form.submit()")
             else:
                 # Click first submit-type element
@@ -1505,8 +1640,17 @@ class PlaywrightDriver(
                         actual_count=0,
                         request_url=request.request.url,
                     )
-                async with page.expect_navigation():
-                    await submit_element.click()
+                try:
+                    async with page.expect_navigation(**expect_kwargs):
+                        await submit_element.click(**click_kwargs)
+                except PlaywrightTimeoutError:
+                    logger.info(
+                        "Fallback submit click timed out; jiggling mouse and retrying once"
+                    )
+                    if not await self._jiggle_mouse(page):
+                        raise
+                    async with page.expect_navigation(**expect_kwargs):
+                        await submit_element.click(**click_kwargs)
 
             # Navigation timeouts from Phase 2 are NOT caught here;
             # they propagate to _process_regular_request where
@@ -1525,12 +1669,22 @@ class PlaywrightDriver(
             # --- Phase 2: click and navigate (transient on timeout) ---
             # Navigation timeouts propagate to _process_regular_request
             # where PlaywrightTimeoutError becomes TransientException.
-            async with page.expect_navigation():
-                await link_element.click()
+            try:
+                async with page.expect_navigation(**expect_kwargs):
+                    await link_element.click(**click_kwargs)
+            except PlaywrightTimeoutError:
+                logger.info(
+                    "Link click on %s timed out; jiggling mouse and retrying once",
+                    link_via.selector,
+                )
+                if not await self._jiggle_mouse(page):
+                    raise
+                async with page.expect_navigation(**expect_kwargs):
+                    await link_element.click(**click_kwargs)
 
         else:
             # Direct URL navigation (no via)
-            await page.goto(request.request.url, wait_until="domcontentloaded")
+            await page.goto(request.request.url, **goto_kwargs)
 
     async def _process_await_list(
         self, page: Page, await_list: list[Any]
