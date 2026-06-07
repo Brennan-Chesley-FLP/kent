@@ -28,6 +28,7 @@ from kent.driver.persistent_driver.sql_manager import SQLManager
 from kent.driver.sync_driver import SpeculationState
 
 if TYPE_CHECKING:
+    from collections import deque
     from collections.abc import Awaitable, Callable, Generator
 
     from pyrate_limiter import Rate
@@ -63,6 +64,7 @@ class WorkerMixin:
     _rates: list[Rate] | None
     _worker_tasks: dict[int, asyncio.Task[None]]
     _next_worker_id: int
+    _recent_request_durations: deque[float]
     _speculation_state: dict[str, SpeculationState]
     # RequestPrep dispatch table + retry tunables (PersistentDriver class)
     _provided_preps: dict[str, Callable[..., Any]]
@@ -167,6 +169,19 @@ class WorkerMixin:
     def active_worker_count(self) -> int:
         """Number of currently active workers."""
         return sum(1 for t in self._worker_tasks.values() if not t.done())
+
+    def _recent_avg_request_duration_s(self) -> float | None:
+        """Mean of recent in-flight request durations, in seconds.
+
+        Computed in memory from ``_recent_request_durations`` (fed by
+        workers as each request completes), replacing the per-cycle
+        ``avg_completed_request_duration_s`` DB query, which scanned the
+        whole ``requests`` table. Returns None until timing data exists.
+        """
+        durations = self._recent_request_durations
+        if not durations:
+            return None
+        return sum(durations) / len(durations)
 
     @property
     def _strictly_serial(self) -> bool:
@@ -281,9 +296,7 @@ class WorkerMixin:
                 else:
                     max_rate_per_sec = None
 
-                avg_duration_s = (
-                    await self.db.avg_completed_request_duration_s()
-                )
+                avg_duration_s = self._recent_avg_request_duration_s()
 
                 if max_rate_per_sec is None:
                     # No rate limits — scale to max_workers if pending.
@@ -591,6 +604,8 @@ class WorkerMixin:
                         pass
                 req_time = time_module.time() - req_start
                 loop_time = time_module.time() - loop_start
+                # Feed the in-memory window the monitor reads for scaling.
+                self._recent_request_durations.append(req_time)
                 requests_processed += 1
                 logger.info(
                     f"[W{worker_id}] Completed request {request_id} in {req_time * 1000:.1f}ms (loop={loop_time * 1000:.1f}ms, total={requests_processed})"

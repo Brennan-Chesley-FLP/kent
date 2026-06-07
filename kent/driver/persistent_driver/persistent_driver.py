@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -203,6 +204,10 @@ class PersistentDriver(
         self._worker_tasks: dict[int, asyncio.Task[None]] = {}
         self._next_worker_id: int = 0
         self._monitor_task: asyncio.Task[None] | None = None
+        # Rolling window of recent in-flight request durations (seconds),
+        # fed by workers as each request completes. The monitor reads the
+        # mean for scaling math instead of running a full-table query.
+        self._recent_request_durations: deque[float] = deque(maxlen=20)
 
         # Speculation state - populated by _discover_speculate_functions (new @speculate pattern)
         self._speculation_state: dict[str, SpeculationState] = {}

@@ -67,9 +67,15 @@ class RequestQueueMixin:
     async def _get_next_queue_counter_in_session(
         self, session: AsyncSession
     ) -> int:
-        """Get the next queue counter inside an existing session."""
-        result = await session.execute(select(func.max(Request.queue_counter)))
-        return (result.scalar() or 0) + 1
+        """Next queue counter, computed in memory after a one-time seed.
+
+        Reuses the caller's session for the one-time
+        ``max(queue_counter)`` seed so no extra connection is opened.
+        """
+        await self._ensure_queue_counter_seeded(session)  # type: ignore[attr-defined]
+        assert self._queue_counter is not None  # type: ignore[attr-defined]
+        self._queue_counter += 1  # type: ignore[attr-defined]
+        return self._queue_counter  # type: ignore[attr-defined]
 
     async def find_parent_request_id(self, url: str) -> int | None:
         """Find the request ID for a given URL.

@@ -18,6 +18,8 @@ from kent.driver.persistent_driver.scoped_session import ScopedSessionFactory
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from sqlalchemy.ext.asyncio import AsyncSession
+
 
 class SQLManagerBase:
     """Core database connection and initialization for SQLManager.
@@ -51,6 +53,11 @@ class SQLManagerBase:
         self._engine = engine
         self._session_factory = session_factory
         self._lock = asyncio.Lock()
+        # In-memory FIFO counter. Seeded lazily from max(queue_counter) on
+        # first use, then incremented in memory to avoid a full-table
+        # max() scan on every insert. All callers hold self._lock, so
+        # seeding + increment are serialized.
+        self._queue_counter: int | None = None
 
     @classmethod
     @asynccontextmanager
@@ -82,11 +89,26 @@ class SQLManagerBase:
         """Get the underlying async engine."""
         return self._engine
 
-    async def _get_next_queue_counter(self) -> int:
-        """Get the next queue counter value for FIFO ordering."""
-        async with self._session_factory() as session:
+    async def _ensure_queue_counter_seeded(
+        self, session: AsyncSession
+    ) -> None:
+        """Seed the in-memory FIFO counter from the DB once.
+
+        Runs a single ``max(queue_counter)`` scan the first time a counter
+        is requested; subsequent calls are no-ops. Callers hold
+        ``self._lock``, so this never races.
+        """
+        if self._queue_counter is None:
             result = await session.execute(
                 select(func.max(Request.queue_counter))
             )
-            max_val = result.scalar()
-            return (max_val or 0) + 1
+            self._queue_counter = result.scalar() or 0
+
+    async def _get_next_queue_counter(self) -> int:
+        """Next FIFO counter value, computed in memory after a one-time seed."""
+        if self._queue_counter is None:
+            async with self._session_factory() as session:
+                await self._ensure_queue_counter_seeded(session)
+        assert self._queue_counter is not None
+        self._queue_counter += 1
+        return self._queue_counter
