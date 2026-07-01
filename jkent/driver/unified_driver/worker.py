@@ -19,6 +19,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from jkent import observability as obs
 from jkent.common.decorators import get_step_metadata
 from jkent.common.exceptions import (
     PersistentHTTPResponseException,
@@ -105,10 +106,12 @@ class PoolWorker(Worker):
         # the dequeue path's DB-lock waits are attributed. The contextvar is
         # per-task (each worker is its own asyncio.Task), so this does not bleed
         # across workers.
-        try:
-            await self._run_loop()
-        finally:
-            await self._transport.release(self.worker_id)
+
+        with obs.labeled(scraper=self._scraper.__class__.__name__):
+            try:
+                await self._run_loop()
+            finally:
+                await self._transport.release(self.worker_id)
 
     async def _run_loop(self) -> None:
         """The dequeue/handle loop, run inside the scraper label scope."""
@@ -148,49 +151,65 @@ class PoolWorker(Worker):
         # Compute the target step up front so it labels the whole request span
         # (and every phase/metric under it), including failure paths.
         continuation_name = self._continuation_name(request)
-        try:
-            if preresolved:
-                await self._execute_preresolved(
-                    request_id, request, continuation_name
+        outcome = "ok"
+        with (
+            obs.labeled(step=continuation_name),
+            obs.request_span(
+                scraper=self._scraper.__class__.__name__,
+                step=continuation_name,
+            ) as span,
+        ):
+            try:
+                if preresolved:
+                    await self._execute_preresolved(
+                        request_id, request, continuation_name
+                    )
+                else:
+                    await self._execute_one(
+                        request_id,
+                        request,
+                        parent_request_id,
+                        continuation_name,
+                    )
+            except RequestFailedHalt:
+                outcome = "halt"
+                raise  # propagate, stops the run
+            except RequestFailedSkip:
+                outcome = "skip"
+                await self._storage.mark_request_failed(
+                    request_id, "Skipped by on_transient_exception callback"
                 )
-            else:
-                await self._execute_one(
+            except TransientException as e:
+                outcome = "transient"
+                await self._handle_transient(request_id, request, e)
+            except SpeculationHTTPFailure as e:
+                outcome = "speculation_http"
+                await self._handle_speculation_http(request_id, request, e)
+            except PersistentHTTPResponseException as e:
+                outcome = "persistent_http"
+                # Classifier said this status is persistent: no retry.
+                logger.warning(
+                    "Worker %d persistent HTTP %s on request %d: %s",
+                    self.worker_id,
+                    e.status_code,
                     request_id,
-                    request,
-                    parent_request_id,
-                    continuation_name,
+                    e.url,
                 )
-        except RequestFailedHalt:
-            raise  # propagate, stops the run
-        except RequestFailedSkip:
-            await self._storage.mark_request_failed(
-                request_id, "Skipped by on_transient_exception callback"
-            )
-        except TransientException as e:
-            await self._handle_transient(request_id, request, e)
-        except SpeculationHTTPFailure as e:
-            await self._handle_speculation_http(request_id, request, e)
-        except PersistentHTTPResponseException as e:
-            # Classifier said this status is persistent: no retry.
-            logger.warning(
-                "Worker %d persistent HTTP %s on request %d: %s",
-                self.worker_id,
-                e.status_code,
-                request_id,
-                e.url,
-            )
-            await self._storage.mark_request_failed(request_id, str(e))
-            await self._store_error_for(e, request_id, e.url)
-        except Exception as e:
-            logger.exception(
-                "Worker %d error processing request %d",
-                self.worker_id,
-                request_id,
-            )
-            await self._storage.mark_request_failed(request_id, str(e))
-            await self._store_error_for(
-                e, request_id, self._request_url(request)
-            )
+                await self._storage.mark_request_failed(request_id, str(e))
+                await self._store_error_for(e, request_id, e.url)
+            except Exception as e:
+                outcome = "error"
+                logger.exception(
+                    "Worker %d error processing request %d",
+                    self.worker_id,
+                    request_id,
+                )
+                await self._storage.mark_request_failed(request_id, str(e))
+                await self._store_error_for(
+                    e, request_id, self._request_url(request)
+                )
+            finally:
+                span.set_attribute("jkent.outcome", outcome)
 
     async def _execute_preresolved(
         self,
@@ -214,14 +233,15 @@ class PoolWorker(Worker):
             raise RuntimeError(
                 f"pre-resolved request {request_id} has no stored response"
             )
-        await self._continuation.complete_request(
-            request_id,
-            response,
-            request,
-            continuation_name,
-            page=None,
-            store_response=False,
-        )
+        with obs.phase("continuation"):
+            await self._continuation.complete_request(
+                request_id,
+                response,
+                request,
+                continuation_name,
+                page=None,
+                store_response=False,
+            )
 
     async def _handle_transient(
         self, request_id: int, request: Request, e: TransientException
@@ -332,7 +352,8 @@ class PoolWorker(Worker):
         # Gate outside the timed region (and skip it for a skipped
         # download). gate itself no-ops on bypass / replay.
         if not skip_download:
-            await self._rate_limiter.gate(request)
+            with obs.phase("rate_limiter.gate"):
+                await self._rate_limiter.gate(request)
 
         # Re-stamp the persisted start after the gate so a DB-derived
         # duration reflects the execute region, not time spent waiting for
@@ -341,19 +362,20 @@ class PoolWorker(Worker):
 
         # Time only the execute region.
         started = time.monotonic()
-        if is_archive:
-            response = await self._resolve_archive(
-                handle,
-                queued,
-                archive_decision,
-                skip_download=skip_download,
-            )
-        else:
-            response = await self._transport.resolve(
-                handle,
-                queued,
-                await_conditions=self._await_conditions(continuation_name),
-            )
+        with obs.phase("transport.resolve"):
+            if is_archive:
+                response = await self._resolve_archive(
+                    handle,
+                    queued,
+                    archive_decision,
+                    skip_download=skip_download,
+                )
+            else:
+                response = await self._transport.resolve(
+                    handle,
+                    queued,
+                    await_conditions=self._await_conditions(continuation_name),
+                )
         duration_s = time.monotonic() - started
 
         # Track speculation outcome for @speculate requests before the
@@ -365,13 +387,14 @@ class PoolWorker(Worker):
         # WorkerPage handle exposes a live ``.page`` (for autowait);
         # HTTP/replay noop handles do not, so this is None for them —
         # a soft duck-typed capability, no protocol change.
-        await self._continuation.complete_request(
-            request_id,
-            response,
-            request,
-            continuation_name,
-            page=getattr(handle, "page", None),
-        )
+        with obs.phase("continuation"):
+            await self._continuation.complete_request(
+                request_id,
+                response,
+                request,
+                continuation_name,
+                page=getattr(handle, "page", None),
+            )
 
         # Report duration to the monitor and count toward the step's
         # compactor — but only for requests that store a compressible

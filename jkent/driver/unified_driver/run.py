@@ -17,6 +17,7 @@ import signal
 import threading
 from typing import TYPE_CHECKING, Any, Literal
 
+from jkent import observability as obs
 from jkent.data_types import DriverRequirement
 from jkent.driver._speculation_support import get_entry_requests
 from jkent.driver.database_engine.compression import (
@@ -203,7 +204,10 @@ class ScrapeRun(Run):
             self,
             rate_limiter,
             max_workers=self.max_workers,
-            pending_requests=self._db.count_pending_requests,  # type: ignore[misc]
+            # Wrap the pending-count read so each monitor poll also publishes
+            # the jkent.queue.pending gauge; the monitor itself stays telemetry-
+            # blind.
+            pending_requests=self._counted_pending,
             stop_event=self.stop_event,
         )
 
@@ -267,12 +271,35 @@ class ScrapeRun(Run):
         worker = self._make_worker(worker_id)
         task = asyncio.create_task(worker.run())
         self._worker_tasks[worker_id] = task
+        self._publish_worker_active()
 
         def on_done(_: asyncio.Task[None], wid: int = worker_id) -> None:
             self._worker_tasks.pop(wid, None)
+            self._publish_worker_active()
 
         task.add_done_callback(on_done)
         return worker_id
+
+    def _metric_labels(self) -> dict[str, str]:
+        """Per-run metric attributes: scraper name and (if set) flow_run_id."""
+        labels = {"scraper": self.scraper.__class__.__name__}
+        fid = obs.flow_run_id()
+        if fid is not None:
+            labels["flow_run_id"] = fid
+        return labels
+
+    def _publish_worker_active(self) -> None:
+        """Publish the live continuation-worker count as a gauge."""
+        obs.instruments().worker_active.set(
+            len(self._worker_tasks), self._metric_labels()
+        )
+
+    async def _counted_pending(self) -> int:
+        """Read pending-request count and publish it as the queue gauge."""
+        assert self._db is not None
+        pending = await self._db.count_pending_requests()
+        obs.instruments().queue_pending.set(pending, self._metric_labels())
+        return pending
 
     async def _cancel_workers(self) -> None:
         """Cancel and await every live worker task.

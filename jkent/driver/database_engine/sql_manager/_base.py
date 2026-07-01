@@ -13,6 +13,7 @@ from typing_extensions import Self
 
 from jkent.driver.database_engine.database import init_database
 from jkent.driver.database_engine.models import Request
+from jkent.observability import InstrumentedLock
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -50,7 +51,10 @@ class SQLManagerBase:
         """
         self._engine = engine
         self._session_factory = session_factory
-        self._lock = asyncio.Lock()
+        # Instrumented drop-in for asyncio.Lock: records contention (wait) and
+        # hold time for the single per-run SQLite lock. No-op metrics when no
+        # OTel SDK is configured.
+        self._lock: asyncio.Lock = InstrumentedLock()
         # In-memory FIFO counter. Seeded lazily from max(queue_counter) on
         # first use, then incremented in memory to avoid a full-table
         # max() scan on every insert. All callers hold self._lock, so
