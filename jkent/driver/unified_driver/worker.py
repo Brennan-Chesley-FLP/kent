@@ -19,6 +19,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from jkent import observability as obs
 from jkent.common.decorators import get_step_metadata
 from jkent.common.exceptions import (
     PersistentHTTPResponseException,
@@ -101,30 +102,39 @@ class PoolWorker(Worker):
 
     async def run(self) -> None:
         """Process requests until shutdown or the queue is durably empty."""
-        try:
-            while not self._stop_event.is_set():
-                result = await self._queue.get_next_request()
-                if result is None:
-                    # No request is ready right now. That can mean the queue
-                    # is truly drained, OR that the only remaining work is
-                    # retries still in their backoff window (pending rows with
-                    # a future started_at, which the dequeue skips). Before
-                    # retiring, find out which: if a retry is scheduled, sleep
-                    # until it is ready (or the stop event fires) and re-check,
-                    # rather than retiring and leaving it to the slow monitor
-                    # poll. Only a genuinely empty queue retires the worker.
-                    delay = await self._queue.seconds_until_next_pending()
-                    if delay is None:
-                        return  # durably idle: nothing pending now or later
-                    with contextlib.suppress(asyncio.TimeoutError):
-                        await asyncio.wait_for(
-                            self._stop_event.wait(), timeout=delay
-                        )
-                    continue
-                request_id, request, parent_request_id = result
-                await self._handle_one(request_id, request, parent_request_id)
-        finally:
-            await self._transport.release(self.worker_id)
+        # Bind the scraper label for this worker task's whole lifetime so even
+        # the dequeue path's DB-lock waits are attributed. The contextvar is
+        # per-task (each worker is its own asyncio.Task), so this does not bleed
+        # across workers.
+        with obs.labeled(scraper=self._scraper.__class__.__name__):
+            try:
+                await self._run_loop()
+            finally:
+                await self._transport.release(self.worker_id)
+
+    async def _run_loop(self) -> None:
+        """The dequeue/handle loop, run inside the scraper label scope."""
+        while not self._stop_event.is_set():
+            result = await self._queue.get_next_request()
+            if result is None:
+                # No request is ready right now. That can mean the queue
+                # is truly drained, OR that the only remaining work is
+                # retries still in their backoff window (pending rows with
+                # a future started_at, which the dequeue skips). Before
+                # retiring, find out which: if a retry is scheduled, sleep
+                # until it is ready (or the stop event fires) and re-check,
+                # rather than retiring and leaving it to the slow monitor
+                # poll. Only a genuinely empty queue retires the worker.
+                delay = await self._queue.seconds_until_next_pending()
+                if delay is None:
+                    return  # durably idle: nothing pending now or later
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(
+                        self._stop_event.wait(), timeout=delay
+                    )
+                continue
+            request_id, request, parent_request_id = result
+            await self._handle_one(request_id, request, parent_request_id)
 
     async def _handle_one(
         self,
@@ -133,40 +143,107 @@ class PoolWorker(Worker):
         parent_request_id: int | None,
     ) -> None:
         """Lease, gate, resolve, persist, and route failures for one request."""
-        try:
-            # Lease at the top of each attempt; a poisoned handle is rebuilt
-            # here. acquire can raise TransientException — same handling as
-            # resolve below.
-            handle = await self._transport.acquire(self.worker_id)
+        # Compute the target step up front so it labels the whole request span
+        # (and every phase/metric under it), including failure paths.
+        continuation_name = self._continuation_name(request)
+        outcome = "ok"
+        with (
+            obs.labeled(step=continuation_name),
+            obs.request_span(
+                scraper=self._scraper.__class__.__name__,
+                step=continuation_name,
+            ) as span,
+        ):
+            try:
+                await self._execute_one(
+                    request_id, request, parent_request_id, continuation_name
+                )
+            except RequestFailedHalt:
+                outcome = "halt"
+                raise  # propagate, stops the run
+            except RequestFailedSkip:
+                outcome = "skip"
+                await self._storage.mark_request_failed(
+                    request_id, "Skipped by on_transient_exception callback"
+                )
+            except TransientException as e:
+                outcome = "transient"
+                await self._handle_transient(request_id, request, e)
+            except SpeculationHTTPFailure as e:
+                outcome = "speculation_http"
+                await self._handle_speculation_http(request_id, request, e)
+            except PersistentHTTPResponseException as e:
+                outcome = "persistent_http"
+                # Classifier said this status is persistent: no retry.
+                logger.warning(
+                    "Worker %d persistent HTTP %s on request %d: %s",
+                    self.worker_id,
+                    e.status_code,
+                    request_id,
+                    e.url,
+                )
+                await self._storage.mark_request_failed(request_id, str(e))
+                await self._store_error_for(e, request_id, e.url)
+            except Exception as e:
+                outcome = "error"
+                logger.exception(
+                    "Worker %d error processing request %d",
+                    self.worker_id,
+                    request_id,
+                )
+                await self._storage.mark_request_failed(request_id, str(e))
+                await self._store_error_for(
+                    e, request_id, self._request_url(request)
+                )
+            finally:
+                span.set_attribute("jkent.outcome", outcome)
 
-            queued = QueuedRequest(
-                request=request,
-                request_id=request_id,
-                parent_request_id=parent_request_id,
-            )
-            continuation_name = self._continuation_name(request)
-            is_archive = request.archive
+    async def _execute_one(
+        self,
+        request_id: int,
+        request: Request,
+        parent_request_id: int | None,
+        continuation_name: str,
+    ) -> None:
+        """The success path: lease, gate, resolve, persist, run continuation.
 
-            # Archive pre-check BEFORE gating: a skipped download does no
-            # network I/O, so it must not consume a rate-limiter token.
-            archive_decision: ArchiveDecision | None = None
-            skip_download = False
-            if is_archive:
-                archive_decision = await self._archive_should_download(request)
-                skip_download = not archive_decision.download
+        Failures propagate to :meth:`_handle_one`, which routes them by the
+        exception taxonomy.
+        """
+        # Lease at the top of each attempt; a poisoned handle is rebuilt
+        # here. acquire can raise TransientException — same handling as
+        # resolve below.
+        handle = await self._transport.acquire(self.worker_id)
 
-            # Gate outside the timed region (and skip it for a skipped
-            # download). gate itself no-ops on bypass / replay.
-            if not skip_download:
+        queued = QueuedRequest(
+            request=request,
+            request_id=request_id,
+            parent_request_id=parent_request_id,
+        )
+        is_archive = request.archive
+
+        # Archive pre-check BEFORE gating: a skipped download does no
+        # network I/O, so it must not consume a rate-limiter token.
+        archive_decision: ArchiveDecision | None = None
+        skip_download = False
+        if is_archive:
+            archive_decision = await self._archive_should_download(request)
+            skip_download = not archive_decision.download
+
+        # Gate outside the timed region (and skip it for a skipped
+        # download). gate itself no-ops on bypass / replay.
+        if not skip_download:
+            with obs.phase("rate_limiter.gate"):
                 await self._rate_limiter.gate(request)
 
-            # Re-stamp the persisted start after the gate so a DB-derived
-            # duration reflects the execute region, not time spent waiting for
-            # a rate-limiter token (started_at was stamped at dequeue).
-            await self._queue.restamp_request_start(request_id)
+        # Re-stamp the persisted start after the gate so a DB-derived
+        # duration reflects the execute region, not time spent waiting for
+        # a rate-limiter token (started_at was stamped at dequeue).
+        await self._queue.restamp_request_start(request_id)
 
-            # Time only the execute region.
-            started = time.monotonic()
+        # Time only the execute region.
+        started = time.monotonic()
+        with obs.phase("transport.resolve"):
             if is_archive:
                 response = await self._resolve_archive(
                     handle,
@@ -180,17 +257,18 @@ class PoolWorker(Worker):
                     queued,
                     await_conditions=self._await_conditions(continuation_name),
                 )
-            duration_s = time.monotonic() - started
+        duration_s = time.monotonic() - started
 
-            # Track speculation outcome for @speculate requests before the
-            # continuation runs (on the success path).
-            if request.is_speculative and self._track_speculation is not None:
-                await self._track_speculation(request, response)
+        # Track speculation outcome for @speculate requests before the
+        # continuation runs (on the success path).
+        if request.is_speculative and self._track_speculation is not None:
+            await self._track_speculation(request, response)
 
-            # Persist + run continuation + mark complete. A Playwright
-            # WorkerPage handle exposes a live ``.page`` (for autowait /
-            # JSRequestPrep); HTTP/replay noop handles do not, so this is
-            # None for them — a soft duck-typed capability, no protocol change.
+        # Persist + run continuation + mark complete. A Playwright
+        # WorkerPage handle exposes a live ``.page`` (for autowait /
+        # JSRequestPrep); HTTP/replay noop handles do not, so this is
+        # None for them — a soft duck-typed capability, no protocol change.
+        with obs.phase("continuation"):
             await self._continuation.complete_request(
                 request_id,
                 response,
@@ -199,109 +277,89 @@ class PoolWorker(Worker):
                 page=getattr(handle, "page", None),
             )
 
-            # Report duration to the monitor and count toward the step's
-            # compactor — but only for requests that store a compressible
-            # response body. Archive requests persist file metadata (no body),
-            # so counting them would trip the compactor into training a
-            # compression dict over zero responses (ValueError).
-            if self._on_request_duration is not None:
-                self._on_request_duration(duration_s)
-            if not is_archive:
-                await self._record_for_compactor(continuation_name)
+        # Report duration to the monitor and count toward the step's
+        # compactor — but only for requests that store a compressible
+        # response body. Archive requests persist file metadata (no body),
+        # so counting them would trip the compactor into training a
+        # compression dict over zero responses (ValueError).
+        if self._on_request_duration is not None:
+            self._on_request_duration(duration_s)
+        if not is_archive:
+            await self._record_for_compactor(continuation_name)
 
-        except RequestFailedHalt:
-            raise  # propagate, stops the run
-        except RequestFailedSkip:
-            await self._storage.mark_request_failed(
-                request_id, "Skipped by on_transient_exception callback"
+    async def _handle_transient(
+        self, request_id: int, request: Request, e: TransientException
+    ) -> None:
+        """Route a transient failure: persist debug snapshot, retry or fail."""
+        # A transport may attach a partial-DOM snapshot taken before a
+        # timeout (e.g. PlaywrightTransport's ResolveTimeout). Persist it
+        # for debugging before the retry; the next attempt overwrites it.
+        debug_response = getattr(e, "debug_response", None)
+        if debug_response is not None:
+            await self._storage.store_response(
+                request_id,
+                debug_response,
+                self._continuation_name(request),
             )
-        except TransientException as e:
-            # A transport may attach a partial-DOM snapshot taken before a
-            # timeout (e.g. PlaywrightTransport's ResolveTimeout). Persist it
-            # for debugging before the retry; the next attempt overwrites it.
-            debug_response = getattr(e, "debug_response", None)
-            if debug_response is not None:
-                await self._storage.store_response(
-                    request_id,
-                    debug_response,
-                    self._continuation_name(request),
+        retry_delay = await self._storage.handle_retry(request_id, e)
+        if retry_delay is None:
+            # Max backoff exceeded (or no retry state): give up — mark
+            # failed and store the error.
+            await self._storage.mark_request_failed(request_id, str(e))
+            await self._store_error_for(
+                e, request_id, self._request_url(request)
+            )
+        elif self._strictly_serial:
+            # Strict serialization: idle until the just-scheduled retry is
+            # ready rather than pulling other pending work. Stop-event-aware
+            # so a shutdown during the wait stays prompt.
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    self._stop_event.wait(), timeout=retry_delay
                 )
-            retry_delay = await self._storage.handle_retry(request_id, e)
-            if retry_delay is None:
-                # Max backoff exceeded (or no retry state): give up — mark
-                # failed and store the error.
-                await self._storage.mark_request_failed(request_id, str(e))
-                await self._store_error_for(
-                    e, request_id, self._request_url(request)
-                )
-            elif self._strictly_serial:
-                # Strict serialization: idle until the just-scheduled retry is
-                # ready rather than pulling other pending work. Stop-event-aware
-                # so a shutdown during the wait stays prompt.
-                with contextlib.suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(
-                        self._stop_event.wait(), timeout=retry_delay
-                    )
-        except SpeculationHTTPFailure as e:
-            track_speculation = self._track_speculation
-            if not request.is_speculative or track_speculation is None:
-                # SpeculationHTTPFailure only makes sense for a speculative
-                # probe with a tracker wired up. If it ever reaches a
-                # non-speculative request (or one with no tracker), do NOT
-                # silently mark it completed — that would record a persistent
-                # HTTP failure as a success and drop it. Treat it as a failure.
-                logger.warning(
-                    "Worker %d got SpeculationHTTPFailure on non-speculative "
-                    "request %d (HTTP %s): %s",
-                    self.worker_id,
-                    request_id,
-                    e.status_code,
-                    e.url,
-                )
-                await self._storage.mark_request_failed(request_id, str(e))
-                await self._store_error_for(e, request_id, e.url)
-            else:
-                # Persistent HTTP on a speculative probe: record it as a
-                # speculation outcome (not an error), then mark complete. No
-                # retry, no continuation, no error row.
-                logger.info(
-                    "Worker %d speculation probe HTTP %s on request %d: %s",
-                    self.worker_id,
-                    e.status_code,
-                    request_id,
-                    e.url,
-                )
-                synthetic = Response(
-                    status_code=e.status_code,
-                    headers={},
-                    content=b"",
-                    text="",
-                    url=e.url,
-                    request=request,
-                )
-                await track_speculation(request, synthetic)
-                await self._storage.mark_request_completed(request_id)
-        except PersistentHTTPResponseException as e:
-            # Classifier said this status is persistent: no retry.
+
+    async def _handle_speculation_http(
+        self, request_id: int, request: Request, e: SpeculationHTTPFailure
+    ) -> None:
+        """Route a persistent-HTTP result on a speculative probe."""
+        track_speculation = self._track_speculation
+        if not request.is_speculative or track_speculation is None:
+            # SpeculationHTTPFailure only makes sense for a speculative
+            # probe with a tracker wired up. If it ever reaches a
+            # non-speculative request (or one with no tracker), do NOT
+            # silently mark it completed — that would record a persistent
+            # HTTP failure as a success and drop it. Treat it as a failure.
             logger.warning(
-                "Worker %d persistent HTTP %s on request %d: %s",
+                "Worker %d got SpeculationHTTPFailure on non-speculative "
+                "request %d (HTTP %s): %s",
+                self.worker_id,
+                request_id,
+                e.status_code,
+                e.url,
+            )
+            await self._storage.mark_request_failed(request_id, str(e))
+            await self._store_error_for(e, request_id, e.url)
+        else:
+            # Persistent HTTP on a speculative probe: record it as a
+            # speculation outcome (not an error), then mark complete. No
+            # retry, no continuation, no error row.
+            logger.info(
+                "Worker %d speculation probe HTTP %s on request %d: %s",
                 self.worker_id,
                 e.status_code,
                 request_id,
                 e.url,
             )
-            await self._storage.mark_request_failed(request_id, str(e))
-            await self._store_error_for(e, request_id, e.url)
-        except Exception as e:
-            logger.exception(
-                "Worker %d error processing request %d",
-                self.worker_id,
-                request_id,
+            synthetic = Response(
+                status_code=e.status_code,
+                headers={},
+                content=b"",
+                text="",
+                url=e.url,
+                request=request,
             )
-            await self._storage.mark_request_failed(request_id, str(e))
-            await self._store_error_for(
-                e, request_id, self._request_url(request)
-            )
+            await track_speculation(request, synthetic)
+            await self._storage.mark_request_completed(request_id)
 
     async def _resolve_archive(
         self,

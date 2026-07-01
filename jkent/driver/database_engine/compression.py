@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 import zstandard as zstd
 from sqlmodel import col, select
 
+from jkent import observability as obs
 from jkent.contracts import require
 from jkent.driver.database_engine.models import CompressionDict, Request
 
@@ -167,13 +169,30 @@ async def compress_response(
         session_factory, continuation, db_lock=db_lock
     )
 
+    # Time the synchronous zstd call on both wall and on-loop CPU clocks: the
+    # gap between the two, plus the loop-lag metric, is what tells us whether
+    # this compression is blocking co-resident workers. compress() has no
+    # await, so time.thread_time() over it is this call's CPU alone (no other
+    # task can be co-scheduled onto this thread mid-call).
+    labels = obs.current_labels()
+    wall0 = time.monotonic()
+    cpu0 = time.thread_time()
     if dict_result:
         dict_id, dictionary = dict_result
         compressed = compress(content, level=level, dictionary=dictionary)
-        return (compressed, dict_id)
     else:
+        dict_id = None
         compressed = compress(content, level=level)
-        return (compressed, None)
+    inst = obs.instruments()
+    inst.compression_duration.record(
+        time.monotonic() - wall0, {**labels, "kind": "compress"}
+    )
+    inst.request_cpu.record(
+        time.thread_time() - cpu0, {**labels, "phase": "compress"}
+    )
+    if content:
+        inst.compression_ratio.record(len(compressed) / len(content), labels)
+    return (compressed, dict_id)
 
 
 async def decompress_response(
@@ -233,6 +252,7 @@ async def train_compression_dict(
     Raises:
         ValueError: If no responses found for continuation or training fails.
     """
+    _compaction_started = time.monotonic()
     lock: asyncio.Lock = db_lock or asyncio.Lock()
     async with lock, session_factory() as session:
         # Sample responses for this continuation (decompress first if needed)
@@ -317,6 +337,10 @@ async def train_compression_dict(
         dict_id = new_dict.id
         await session.commit()
 
+        obs.instruments().compaction_duration.record(
+            time.monotonic() - _compaction_started,
+            {**obs.current_labels(), "step": continuation, "kind": "train"},
+        )
         return dict_id  # type: ignore[return-value]
 
 
@@ -346,6 +370,7 @@ async def recompress_responses(
     Raises:
         ValueError: If no dictionary exists for this continuation or dict_id.
     """
+    _compaction_started = time.monotonic()
     lock: asyncio.Lock = db_lock or asyncio.Lock()
 
     # Get the dictionary to use
@@ -467,4 +492,8 @@ async def recompress_responses(
                 total_compressed += new_size
             await session.commit()
 
+    obs.instruments().compaction_duration.record(
+        time.monotonic() - _compaction_started,
+        {**obs.current_labels(), "step": continuation, "kind": "recompress"},
+    )
     return (recompressed_count, total_original, total_compressed)
